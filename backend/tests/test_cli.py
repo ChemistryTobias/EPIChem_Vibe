@@ -119,3 +119,50 @@ def test_device_export_missing_code_exits_nonzero(session, monkeypatch):
         cli.main(["device", "export", "DEV-NOPE"])
 
     assert exc_info.value.code == 1
+
+
+def test_sample_add_then_list(session, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "SessionLocal", lambda: session)
+
+    cli.main(
+        [
+            "sample",
+            "add",
+            "SMP-2026-0041",
+            "PEDOT:PSS film",
+            "--state",
+            "staged",
+            "--amount",
+            "1.5",
+            "--unit",
+            "mL",
+            "--location",
+            "RACK-A/3",
+        ]
+    )
+    assert "[created  ] Sample           SMP-2026-0041" in capsys.readouterr().out
+
+    cli.main(["sample", "list"])
+    out = capsys.readouterr().out
+    assert "SMP-2026-0041" in out
+    assert "staged" in out
+    assert "RACK-A/3" in out
+
+
+def test_sample_add_duplicate_code_exits_nonzero(session, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "SessionLocal", lambda: session)
+    cli.main(["sample", "add", "SMP-DUP", "First"])
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["sample", "add", "SMP-DUP", "Second"])
+
+    assert exc_info.value.code == 1
+
+
+def test_sample_list_empty(session, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "SessionLocal", lambda: session)
+
+    cli.main(["sample", "list"])
+
+    assert "No samples registered." in capsys.readouterr().out

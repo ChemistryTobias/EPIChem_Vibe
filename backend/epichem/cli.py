@@ -1,8 +1,9 @@
 """CLI (§8.3 subset). "The CLI must be able to do everything the UI can" —
 at M1 scope that's: create the schema, list/export/import registry rows as
-Descriptor YAML (per-row or bulk), and list devices. The registry (Postgres)
-is the source of truth (ADR 0004); YAML is an export/import interchange
-format, not desired state — there is no `reconcile` command anymore.
+Descriptor YAML (per-row or bulk), list devices, and list/add samples. The
+registry (Postgres) is the source of truth (ADR 0004); YAML is an
+export/import interchange format, not desired state — there is no
+`reconcile` command anymore.
 """
 
 import argparse
@@ -12,8 +13,22 @@ from pathlib import Path
 from sqlalchemy import select
 
 from epichem import exporter, importer
+from epichem.api.schemas import SampleOut
 from epichem.db import SessionLocal, engine
-from epichem.models import Base, Bench, CapabilityClass, Device, Lab, Site, Station, Workcell, Zone
+from epichem.models import (
+    Base,
+    Bench,
+    CapabilityClass,
+    Device,
+    Lab,
+    Sample,
+    Site,
+    Station,
+    Workcell,
+    Zone,
+)
+from epichem.registry import create_entity
+from epichem.schemas.sample import SAMPLE_STATES, SampleWrite
 
 # (kind, CLI name, model_cls, natural-key attr) — one entry per registry kind,
 # feeding the per-kind `export`/`import` subcommands below.
@@ -51,6 +66,56 @@ def cmd_device_list(_args: argparse.Namespace) -> None:
                 caps,
             )
             print("  ".join(columns))
+
+
+# Samples aren't descriptor YAML (docs/adr/0005), so they get their own
+# list/add commands instead of the export/import pair every other kind has.
+# `add` exists mainly so a fresh database can be seeded with something to
+# look at without going through the browser.
+
+
+def cmd_sample_list(_args: argparse.Namespace) -> None:
+    with SessionLocal() as session:
+        samples = session.execute(select(Sample).order_by(Sample.code)).scalars().all()
+        if not samples:
+            print("No samples registered.")
+            return
+        code_width = max(len(s.code) for s in samples)
+        name_width = max(len(s.name) for s in samples)
+        for s in samples:
+            amount = ""
+            if s.amount_value is not None:
+                amount = f"{s.amount_value:g} {s.amount_unit or ''}".strip()
+            columns = (
+                f"{s.code:<{code_width}}",
+                f"{s.name:<{name_width}}",
+                f"{s.state:<14}",
+                f"{amount:<10}",
+                s.location or "",
+            )
+            print("  ".join(columns))
+
+
+def cmd_sample_add(args: argparse.Namespace) -> None:
+    body = SampleWrite(
+        code=args.code,
+        name=args.name,
+        state=args.state,
+        substance=args.substance,
+        amount_value=args.amount,
+        amount_unit=args.unit,
+        location=args.location,
+        owner=args.owner,
+        notes=args.notes,
+    )
+    with SessionLocal() as session:
+        try:
+            create_entity(session, Sample, "Sample", SampleOut, body.model_dump())
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+        session.commit()
+    print(f"[created  ] Sample           {args.code}")
 
 
 def cmd_export(kind: str, model_cls: type, key_attr: str, args: argparse.Namespace) -> None:
@@ -143,6 +208,21 @@ def build_parser() -> argparse.ArgumentParser:
             kind_sub.add_parser("list", help="List registered devices").set_defaults(
                 func=cmd_device_list
             )
+
+    sample_parser = sub.add_parser("sample", help="Sample commands")
+    sample_sub = sample_parser.add_subparsers(dest="sample_command", required=True)
+    sample_sub.add_parser("list", help="List registered samples").set_defaults(func=cmd_sample_list)
+    sample_add = sample_sub.add_parser("add", help="Register a sample")
+    sample_add.add_argument("code", help="Short identifier, e.g. SMP-2026-0041")
+    sample_add.add_argument("name", help="Short human-readable label")
+    sample_add.add_argument("--state", default="registered", choices=SAMPLE_STATES)
+    sample_add.add_argument("--substance", default=None)
+    sample_add.add_argument("--amount", type=float, default=None)
+    sample_add.add_argument("--unit", default=None)
+    sample_add.add_argument("--location", default=None)
+    sample_add.add_argument("--owner", default=None)
+    sample_add.add_argument("--notes", default=None)
+    sample_add.set_defaults(func=cmd_sample_add)
 
     return parser
 

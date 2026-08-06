@@ -2,6 +2,7 @@ from epichem.models.base import Base
 from epichem.models.capability import CapabilityClass
 from epichem.models.device import Device, Signal, StationDeviceBinding
 from epichem.models.revision import Revision
+from epichem.models.sample import Sample
 from epichem.models.topology import Bench, Lab, Site, Station, Workcell, Zone
 
 __all__ = [
@@ -11,6 +12,7 @@ __all__ = [
     "Device",
     "Lab",
     "Revision",
+    "Sample",
     "Signal",
     "Site",
     "Station",

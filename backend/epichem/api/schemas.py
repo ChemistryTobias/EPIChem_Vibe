@@ -125,6 +125,25 @@ class DeviceOut(OutBase):
     station_code: str | None = None
 
 
+class SampleOut(OutBase):
+    """§7.1, minimal slice — see `models/sample.py` for what §7 this
+    deliberately leaves out (composition, lineage, containers, event log).
+    """
+
+    id: uuid.UUID
+    code: str
+    name: str
+    state: str
+    substance: str | None
+    amount_value: float | None
+    amount_unit: str | None
+    location: str | None
+    owner: str | None
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class RevisionOut(OutBase):
     revision_number: int
     action: str
