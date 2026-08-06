@@ -27,8 +27,15 @@ build from a different origin than the API, set `EPICHEM_CORS_ORIGINS` on the ba
 
 ```bash
 npm run typecheck   # tsc --noEmit
+npm test            # vitest run
 npm run build       # typecheck + production bundle into dist/
 ```
+
+Tests sit next to what they cover (`topologyTree.test.ts` beside
+`topologyTree.ts`). They target the three places where a bug wouldn't be
+obvious on sight: the tree-building logic, the API client's problem+json
+handling, and the pager's boundaries. Screens themselves aren't
+snapshot-tested — the churn would outweigh what it catches.
 
 ## Layout
 
@@ -67,6 +74,12 @@ a component is one place, not two directories. Only `tokens.css` and `base.css` 
 - **No data-fetching library.** `useAsync.ts` is ~40 lines and every screen consumes the same
   four-field shape, so replacing it with TanStack Query later touches this file and its call sites
   only.
+- **Paged lists** (`/samples`, `/devices`) come back as `{items, total}` via `apiGetPage`, reading
+  the API's `X-Total-Count` header. Topology lists aren't paged, on purpose — see
+  `backend/epichem/api/pagination.py`.
+- **The API token** lives in localStorage, set by one field in the sidebar. That is not a login
+  screen and shouldn't become one until the backend has real identities: today it's a shared
+  secret with no user behind it.
 - **Hand-written API types** rather than OpenAPI codegen: there are about ten of them and a human
   can read this file. Revisit if it stops fitting on a screen.
 - **Visual language** — sidebar, header, list + right-hand inspector, flat cards, status dots —

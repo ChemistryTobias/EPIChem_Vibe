@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -14,5 +15,12 @@ export default defineConfig({
     proxy: {
       "/api": { target: API_TARGET, changeOrigin: true },
     },
+  },
+  test: {
+    // jsdom, because the things worth testing here touch the DOM or
+    // localStorage. No global test APIs: `import { test } from "vitest"` is
+    // one more line and one less piece of magic.
+    environment: "jsdom",
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });
