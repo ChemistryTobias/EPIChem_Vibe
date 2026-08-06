@@ -1,6 +1,6 @@
 /** Sample endpoints (`api/routers/samples.py`, ADR 0005). */
 
-import { apiDelete, apiGet, apiPost, apiPut, query } from "./client";
+import { apiDelete, apiGet, apiGetPage, apiPost, apiPut, query } from "./client";
 import type { Sample, SampleWrite } from "./types";
 
 export interface SampleFilters {
@@ -9,10 +9,12 @@ export interface SampleFilters {
   substance?: string;
   /** Substring match against code, name and substance. */
   q?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export const listSamples = (filters: SampleFilters = {}) =>
-  apiGet<Sample[]>(`/samples${query(filters)}`);
+  apiGetPage<Sample>(`/samples${query(filters)}`);
 
 export const getSample = (ident: string) => apiGet<Sample>(`/samples/${encodeURIComponent(ident)}`);
 

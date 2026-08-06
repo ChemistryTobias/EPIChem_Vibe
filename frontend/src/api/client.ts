@@ -86,11 +86,28 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, title, detail);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+/**
+ * A page of results plus how many there are in total.
+ *
+ * The API returns list bodies as plain arrays and puts the total in the
+ * `X-Total-Count` header, so `apiGetPage` is the variant that reads both.
+ * Endpoints that aren't paged (the topology lists) keep using `apiGet`.
+ */
+export interface Page<T> {
+  items: T[];
+  total: number;
+}
+
+export const TOTAL_COUNT_HEADER = "X-Total-Count";
+
+function authHeaders(): Record<string, string> {
   const token = getApiToken();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = authHeaders();
+  if (body !== undefined) headers["Content-Type"] = "application/json";
 
   let response: Response;
   try {
@@ -129,6 +146,17 @@ export function query(params: object): string {
 }
 
 export const apiGet = <T>(path: string) => request<T>("GET", path);
+
+/** GET a paged list: the array body plus its `X-Total-Count`. */
+export async function apiGetPage<T>(path: string): Promise<Page<T>> {
+  const response = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+  if (!response.ok) throw await toApiError(response);
+  const items = (await response.json()) as T[];
+  const header = response.headers.get(TOTAL_COUNT_HEADER);
+  // Fall back to the page length if the header is missing — a proxy that
+  // strips it should degrade to "no pager", not to a broken count.
+  return { items, total: header === null ? items.length : Number(header) };
+}
 export const apiPost = <T>(path: string, body: unknown) => request<T>("POST", path, body);
 export const apiPut = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
 export const apiDelete = (path: string) => request<void>("DELETE", path);

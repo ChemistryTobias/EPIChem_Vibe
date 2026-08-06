@@ -1,6 +1,6 @@
 /** Device and capability-class endpoints (`api/routers/devices.py`). */
 
-import { apiGet, query } from "./client";
+import { apiGet, apiGetPage, query } from "./client";
 import type { CapabilityClass, Device } from "./types";
 
 export interface DeviceFilters {
@@ -8,10 +8,12 @@ export interface DeviceFilters {
   capability_class?: string;
   capability?: string;
   mode?: string;
+  limit?: number;
+  offset?: number;
 }
 
 export const listDevices = (filters: DeviceFilters = {}) =>
-  apiGet<Device[]>(`/devices${query(filters)}`);
+  apiGetPage<Device>(`/devices${query(filters)}`);
 
 export const getDevice = (ident: string) => apiGet<Device>(`/devices/${encodeURIComponent(ident)}`);
 

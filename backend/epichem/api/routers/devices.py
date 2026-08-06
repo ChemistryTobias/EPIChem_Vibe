@@ -13,7 +13,7 @@ shared with the YAML import path so there is one copy of the reasoning
 rather than one per caller.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from epichem.api.auth import require_write_token
 from epichem.api.deps import get_session
 from epichem.api.errors import ConflictProblem, UnprocessableProblem
+from epichem.api.pagination import TOTAL_COUNT_HEADER, limit_param, offset_param
 from epichem.api.resolve import resolve_by_code_or_id, resolve_by_natural_key_or_id
 from epichem.api.schemas import CapabilityClassOut, DeviceOut, RevisionOut, SignalOut
 from epichem.api.validation import check_descriptor_kind
@@ -59,9 +60,21 @@ def _to_device_out(session: Session, device: Device) -> DeviceOut:
     return out
 
 
-@router.get("/devices", response_model=list[DeviceOut])
+@router.get(
+    "/devices",
+    response_model=list[DeviceOut],
+    summary="List devices",
+    description=(
+        "Registry records for registered devices. Filters are optional and "
+        "combine with AND. Paged: see `limit`/`offset` and the "
+        "`X-Total-Count` response header."
+    ),
+)
 def list_devices(
+    response: Response,
     session: Session = Depends(get_session),
+    limit: int = Depends(limit_param),
+    offset: int = Depends(offset_param),
     lab: str | None = Query(None, description="Filter by the Lab.code of the device's station"),
     capability_class: str | None = Query(None, description="Filter by CapabilityClass.name"),
     capability: str | None = Query(None, description="Filter by a declared capability action name"),
@@ -85,9 +98,18 @@ def list_devices(
             .where(Lab.code == lab)
         )
 
-    devices = session.execute(stmt).scalars().unique().all()
+    # `capability` filters on a JSON array column, which has no portable
+    # containment operator across sqlite and Postgres — so it stays a Python
+    # filter, which in turn means the window has to be applied here rather
+    # than in SQL, or the page would be short and the total wrong. Fine at
+    # lab scale (tens to low hundreds of devices); revisit if a deployment
+    # ever has enough devices for the unwindowed fetch to hurt.
+    devices = list(session.execute(stmt).scalars().unique())
     if capability:
         devices = [d for d in devices if capability in (d.capabilities or [])]
+
+    response.headers[TOTAL_COUNT_HEADER] = str(len(devices))
+    devices = devices[offset : offset + limit]
 
     codes = station_codes_by_device(session, [d.id for d in devices])
     outs = []

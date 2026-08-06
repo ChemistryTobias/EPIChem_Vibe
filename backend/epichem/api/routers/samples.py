@@ -12,13 +12,14 @@ Structurally this mirrors `routers/devices.py`'s CapabilityClass endpoints:
 one records a `Revision` (ADR 0004), and RFC 9457 problem+json on failure.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from epichem.api.auth import require_write_token
 from epichem.api.deps import get_session
 from epichem.api.errors import ConflictProblem
+from epichem.api.pagination import limit_param, offset_param, paginate
 from epichem.api.resolve import resolve_by_code_or_id
 from epichem.api.schemas import RevisionOut, SampleOut
 from epichem.models import Sample
@@ -33,14 +34,16 @@ router = APIRouter(prefix="/api/v1", tags=["samples"])
     response_model=list[SampleOut],
     summary="List samples",
     description=(
-        "Returns every sample, newest first. All filters are optional and "
-        "combine with AND. This endpoint is what the frontend's Samples "
-        "table reads — there is no pagination yet; add it before pointing "
-        "this at a lab with more samples than a table can hold."
+        "Returns samples newest first. All filters are optional and combine "
+        "with AND. Paged: see `limit`/`offset` and the `X-Total-Count` "
+        "response header."
     ),
 )
 def list_samples(
+    response: Response,
     session: Session = Depends(get_session),
+    limit: int = Depends(limit_param),
+    offset: int = Depends(offset_param),
     state: str | None = Query(
         None,
         description=f"Filter by lifecycle state. One of: {', '.join(SAMPLE_STATES)}.",
@@ -68,7 +71,7 @@ def list_samples(
                 Sample.substance.ilike(pattern),
             )
         )
-    return session.execute(stmt).scalars().all()
+    return paginate(session, stmt, response, limit, offset)
 
 
 @router.get(
