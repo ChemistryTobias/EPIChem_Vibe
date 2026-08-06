@@ -1,0 +1,11 @@
+apiVersion: epichem.dev/v1
+kind: Zone
+metadata:
+  code: ZONE-FUMEHOOD-2
+  name: Fume Hood 2
+spec:
+  lab: LAB-3
+  atmosphere: air
+  pressure: ambient
+  temperature_class: ambient
+  hazard_class: none

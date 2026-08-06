@@ -1,0 +1,38 @@
+apiVersion: epichem.dev/v1
+kind: Device
+metadata:
+  code: DEV-ST-001
+  name: Stirrer S1
+  labels: {vendor: IKA, model: RCT-basic, owner: solbat}
+spec:
+  class: epichem.classes.Stirrer
+  parent: null
+  ophyd:
+    import: mpifkf_devices.ika:RCTBasic
+    args: {prefix: "MPIFKF:ST1:"}
+  transport:
+    protocol: epics-ca
+    uri: "ca://MPIFKF:ST1:"
+    ioc_host: ioc-bench-a.lab3.mpi-fkf.mpg.de
+  network:
+    primary_ip: 10.42.13.22/24
+    mac: "00:1b:44:11:3a:b8"
+    vlan: lab3-instruments
+  location:
+    lab: LAB-3
+    zone: ZONE-FUMEHOOD-2
+    workcell: CELL-A
+    bench: BENCH-A2
+    station: ST1
+    pose: {x_mm: 1520, y_mm: 300, z_mm: 900, yaw_deg: 0}
+  capabilities:
+    - stir
+  envelope:
+    stir_rpm: {min: 0, max: 2000}
+  safety:
+    flags: []
+    interlocks: []
+    max_unattended_minutes: 480
+  operational:
+    mode: read_write
+    calibration: {last: "2026-03-01", due: "2026-09-01", certificate: "kadi:record/8830"}

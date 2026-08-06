@@ -1,0 +1,27 @@
+apiVersion: epichem.dev/v1
+kind: CapabilityClass
+metadata:
+  code: CLASS-HEATER-STIRRER
+  name: HeaterStirrer
+  iri: "http://purl.obolibrary.org/obo/CHMO_0002492"
+spec:
+  extends: [Readable, Configurable]
+  actions:
+    heat:
+      plan: mpifkf_plans.thermal:set_temperature
+      params:
+        setpoint_c: {type: float, required: true, unit: degC, from_envelope: temperature_c}
+        wait_until_stable: {type: bool, default: false}
+      contract:
+        - "MUST reject setpoints outside envelope.temperature_c"
+        - "MUST report actual temperature at >= 1 Hz while heating"
+        - "SHALL NOT exceed envelope.temperature_c under any parameter binding"
+        - "SHOULD reach setpoint within settling_s; exceeding raises a warning event"
+      emits: [temperature_reached, temperature_timeout]
+    stir:
+      plan: mpifkf_plans.thermal:set_stir_rate
+      params:
+        rpm: {type: float, required: true, unit: rpm, from_envelope: stir_rpm}
+      contract:
+        - "MUST reject rpm outside envelope.stir_rpm"
+      emits: []

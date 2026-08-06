@@ -1,0 +1,15 @@
+apiVersion: epichem.dev/v1
+kind: CapabilityClass
+metadata:
+  code: CLASS-STIRRER
+  name: Stirrer
+spec:
+  extends: [Configurable]
+  actions:
+    stir:
+      plan: mpifkf_plans.motion:set_stir_rate
+      params:
+        rpm: {type: float, required: true, unit: rpm, from_envelope: stir_rpm}
+      contract:
+        - "MUST reject rpm outside envelope.stir_rpm"
+      emits: []

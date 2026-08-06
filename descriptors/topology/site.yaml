@@ -1,0 +1,8 @@
+apiVersion: epichem.dev/v1
+kind: Site
+metadata:
+  code: SITE-MPIFKF
+  name: MPI for Solid State Research
+spec:
+  address: Heisenbergstraße 1, 70569 Stuttgart, Germany
+  timezone: Europe/Berlin

@@ -1,0 +1,10 @@
+apiVersion: epichem.dev/v1
+kind: Lab
+metadata:
+  code: LAB-3
+  name: Lab 3
+spec:
+  site: SITE-MPIFKF
+  room_number: "3.12"
+  environment_class: ambient
+  access_control_group: lab3-users

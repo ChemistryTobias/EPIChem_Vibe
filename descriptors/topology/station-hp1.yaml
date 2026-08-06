@@ -1,0 +1,13 @@
+apiVersion: epichem.dev/v1
+kind: Station
+metadata:
+  code: HP1
+  name: Hotplate Position 1
+spec:
+  bench: BENCH-A2
+  kind: hotplate_position
+  grid_col: 3
+  grid_row: 1
+  stack_height: 1
+  capacity: 1
+  accepted_labware_types: [vial_4ml]

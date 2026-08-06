@@ -1,0 +1,14 @@
+apiVersion: epichem.dev/v1
+kind: CapabilityClass
+metadata:
+  code: CLASS-TEMPERATURE-SENSOR
+  name: TemperatureSensor
+spec:
+  extends: [Readable]
+  actions:
+    read_temperature:
+      plan: mpifkf_plans.thermal:read_temperature
+      params: {}
+      contract:
+        - "MUST report a value with an ISO 8601 timestamp"
+      emits: []
