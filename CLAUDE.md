@@ -19,9 +19,13 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
   virtual lab, importable via `epichem import-dir` (ADR 0004: the database is the versioned source
   of truth, not git; YAML is export/import interchange). It's also `test_cli.py`'s fixture; don't
   restructure it without checking that file.
+- Frontend: `frontend/` (React 19, TypeScript, plain CSS, Vite). `npm run dev` (proxies `/api` to
+  `:8000`, so no CORS setup), `npm run typecheck`, `npm run build`. Read `frontend/README.md`
+  before adding a dependency — the absence of a router, data-fetching library, UI kit and codegen
+  is deliberate and each one is argued there.
 - Every module has a one-line docstring pointing back to the plan section it implements. Keep
   doing that — it's what makes "why does this field exist" answerable without re-reading the
-  68K-word spec each time.
+  68K-word spec each time. The frontend does the same, in `/** */` headers.
 
 ## Conventions established so far
 
@@ -32,6 +36,13 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
   `delete_entity` — the write API (`api/routers/`) and YAML import (`epichem/importer.py`) both
   call these, so every write records a `Revision` (ADR 0004) regardless of which path made it.
   Don't write directly to ORM rows outside tests.
+- `Sample` is the one registry kind that is *not* descriptor YAML — it takes a plain JSON body
+  (`schemas/sample.py`), has no import/export, and is absent from `Kind`/`SPEC_BY_KIND`/
+  `TOPOLOGY_WRITE`/`KIND_CLI` on purpose. It's operational data, not configuration; see ADR 0005
+  before "fixing" that inconsistency. Its writes still go through `registry.py`, so they're
+  revisioned like everything else.
+- The frontend hand-mirrors the API response schemas in `frontend/src/api/types.ts`. If you change
+  a `*Out` model in `api/schemas.py`, change that file too — nothing checks it for you.
 - The Descriptor->registry-row translation (`resolve_topology_values`, `device_values`,
   `capability_class_values`, the `TOPOLOGY_WRITE` table) lives once in `epichem/importer.py` and
   is imported by both the write API routers and the CLI/import path — don't add a second copy in

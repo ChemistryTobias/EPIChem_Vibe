@@ -22,6 +22,29 @@ palette/inspector) is the default to build against, because it's the only
 option compatible with the binding "MUST be open source, end to end"
 condition (plan header). Revisit only if that license condition is relaxed.
 
+*Update (frontend pass, 2026-08-06).* A frontend now exists (`frontend/`) but
+this question is still open, because nothing built so far needs a canvas: the
+Topology screen is a tree, not the isometric view. Two things were settled
+around it, though, and neither requires answering Q1:
+
+- **The procedure/workflow editor (M3) will use React Flow (MIT), not
+  JointJS.** §10.2 already lists this as the sanctioned alternative for the
+  procedure DAG specifically. It sidesteps Q1 entirely for that canvas.
+  Nothing is built yet — there is no procedure IR or backend to build
+  against — so this is a recorded decision, not an implementation.
+- **A free-tier isometric implementation already exists, as a reference.**
+  Worth knowing before anyone assumes the isometric view needs a JointJS+
+  license: the approved standalone HTML prototype in `project_plan/` renders
+  its isometric floor plan using **only `@joint/core` (MPL-2.0) APIs** —
+  `joint.dia.Graph`, `joint.dia.Paper`, `joint.dia.Element.define` and
+  `joint.shapes.standard.Link`. The diamond tiles are hand-built polygons
+  (`body/points`), not the commercial `isometric-diagram` demo, and no
+  Stencil/Inspector/Halo/Toolbar/Navigator/Selection component appears
+  anywhere in it. So the `@joint/core`-only path §10.2 recommends is already
+  demonstrated to work for this view. (The prototype is a bundled artifact
+  file; the logic lives in its embedded `x-dc` script block, not in this
+  repo's git history — `git log` here starts at the plan itself.)
+
 **Q3 — ELN target: Chemotion, Kadi4Mat, or both?**
 Deferred — out of scope until M4 (samples & provenance). No adapter is
 implemented in M1; the `Run`/provenance push design in §7.6 stays a design

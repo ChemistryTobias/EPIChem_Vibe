@@ -20,13 +20,19 @@ see ADR 0004 — NetBox scope, workcell granularity, EPICS-only for now, xDL def
 in v1, single-tenant schema, calibration data location). Two remain genuinely open, by design, not
 oversight:
 
-- **JointJS+ vs. `@joint/core`** — moot until frontend work starts; no frontend exists yet.
+- **JointJS+ vs. `@joint/core`** — a frontend now exists, but still nothing that needs a canvas:
+  the Topology screen is a tree. Two related decisions were recorded in ADR 0003 Q1's update
+  without answering this one: the M3 procedure editor will use **React Flow** (MIT), and the
+  bundled HTML prototype's isometric floor plan turns out to use **only `@joint/core` APIs**
+  (`dia.Graph`/`dia.Paper`/`Element.define`, hand-built polygon tiles) — so the free-tier path is
+  already demonstrated for that view. Decide for real when the isometric layout is built.
 - **ELN target (Chemotion / Kadi4Mat / both)** — needs an institutional decision this session
   can't make; deferred to M4.
 
 ## M1 — Topology & registry
 
-**Status: core done, re-architected mid-pass (ADR 0004); frontend half not started.**
+**Status: core done, re-architected mid-pass (ADR 0004); a frontend now exists, but the
+isometric layout — M1's actual exit criterion — does not.**
 
 The registry was originally built git-YAML-as-desired-state (ADR 0001), reconciled into Postgres by
 a one-way reconciler. Partway through M1, scope was explicitly revised: Postgres is now the
@@ -74,12 +80,38 @@ write/import path):
   The underlying pieces it wires together (schema-on-Postgres, import-dir, API) are separately
   verified against sqlite as above; neither the compose file nor real Postgres is.
 
+Frontend (`frontend/` — React + TypeScript + plain CSS on Vite, added after the ADR 0004 pivot):
+
+- [x] App shell — sidebar nav, screen header, list + right-hand inspector two-pane layout, taking
+  its visual language from the approved standalone HTML prototype and its colors/type from
+  `project_plan/DESIGN.md` (transcribed into `src/styles/tokens.css`). Fonts fall back to
+  system-ui/Arial rather than linking Google's CDN (DESIGN.md §3, GDPR); drop self-hosted Roboto
+  into `public/fonts/` to get the real face.
+- [x] **Topology screen** — the containment hierarchy as an expandable tree with a per-node
+  inspector, over the six topology list endpoints. Rows whose parent is missing from the registry
+  are surfaced in a callout rather than silently dropped.
+- [x] **Devices screen** — summary strip + card grid + inspector, filtered through the query
+  parameters `GET /api/v1/devices` already supports (`lab`, `capability_class`, `mode`).
+- [x] **Samples screen** — a plain table over the new samples endpoint, plus a register form,
+  state changes and delete.
+- [x] No mock data anywhere: every screen reads the real API, and says so plainly when the backend
+  is unreachable. Dev server proxies `/api` to `:8000`, so local dev needs no CORS (the backend
+  grew an opt-in `EPICHEM_CORS_ORIGINS` for other deployments; off by default).
+- Deliberately not added: React Router (a ~30-line hash router instead), a data-fetching library
+  (one `useAsync` hook), a UI kit or CSS framework, OpenAPI codegen (hand-written types).
+
 Not built (still M1-scoped per the plan, but out of reach this pass):
 
 - [ ] **Isometric layout viewer (read-only)** — the plan's actual M1 exit criterion is "a real lab
-  room is modelled in git **and renders correctly**." The "modelled in git" half is done; there is
-  no frontend at all yet, so "renders" isn't. This is the single biggest gap between what's here
-  and what M1 asks for.
+  room is modelled in git **and renders correctly**." The model half is done and there is now a
+  frontend, but the Topology screen is a *tree*, not the isometric canvas §10 specifies. Still the
+  single biggest gap between what's here and what M1 asks for. When it's picked up: the bundled
+  prototype already demonstrates an isometric floor plan built on `@joint/core` alone — see
+  ADR 0003 Q1's update.
+- [ ] Frontend tests — there are none. The three screens were verified by rendering them headlessly
+  against a seeded backend (real rows, zero console errors, inspectors populated on select) plus
+  `tsc --noEmit` and a production build, but nothing runs in CI. `topologyTree.ts` is pure and is
+  the obvious first thing to cover.
 - [ ] Alembic migrations — deliberately deferred (not an ADR-level decision, just noted here):
   `epichem init-db` uses `Base.metadata.create_all`, fine while the schema is still finding its
   shape. Add real migrations once it stabilizes and a second deployment needs to upgrade in place.
@@ -98,11 +130,23 @@ no layout editor.
 ## M3 — Procedure designer
 
 **Status: not started.** No IR schema, no DAG canvas, no validator, no `qserver` compile backend.
+One decision recorded ahead of time (ADR 0003 Q1 update): the canvas will use **React Flow** (MIT),
+not JointJS — §10.2 lists it as the sanctioned alternative for the procedure DAG specifically.
+Nothing to build against yet.
 
 ## M4 — Samples & provenance
 
-**Status: not started.** No sample/batch/container/labware model, no lineage DAG, no ELN adapter
-(blocked on the ELN-target decision above).
+**Status: not started, with one deliberate exception.** A *minimal* `Sample` row exists — flat
+fields, no composition list, no containers, no event log, no lineage — so the Samples screen has
+something real to read. See `docs/adr/0005-minimal-sample-model-ahead-of-m4.md` for exactly what is
+in and out, and `backend/epichem/models/sample.py` for the per-field deferrals. Sample writes reuse
+the ADR 0004 revision machinery, so they're audited like every other kind.
+
+Still not built: `Substance`/`Batch`/`Container`/`Labware`/`Slot`, §7.2 composition with `pint`
+units, §7.3's `SampleEvent` log (so lifecycle transitions are unvalidated and `location` is an
+editable string rather than derived), §7.4 lineage DAG + PROV-O, §7.5 DataMatrix marking, and the
+ELN adapter (blocked on the ELN-target decision above). Two forward migrations are known and
+accepted: `substance` and `location` become foreign keys.
 
 ## M5 — Scheduler & scale
 
@@ -116,7 +160,11 @@ no layout editor.
 
 ## Known gaps worth flagging explicitly
 
-- **No auth anywhere.** Don't deploy this past localhost until §12.1 is addressed.
+- **No auth anywhere.** Don't deploy this past localhost until §12.1 is addressed. Note this now
+  covers sample records, not just config: anyone who can reach the API can register, re-state or
+  delete a sample, and `Revision.created_by` is still always null.
+- **`GET /api/v1/samples` has no pagination.** Fine for a lab being built out, not for a real
+  sample population — fix before that.
 - **No observability** (§12.3 OpenTelemetry) — nothing to debug a distributed run with yet, but
   there's also no distributed run yet, so this tracks M2+, not a current regression.
 - Two small schema/spec mismatches the original reconciler build surfaced (still present — the
@@ -135,9 +183,13 @@ no layout editor.
 
 ```bash
 cd backend
-.venv/bin/pytest              # 39 tests, sqlite in-memory, seconds
+.venv/bin/pytest              # 49 tests, sqlite in-memory, seconds
 .venv/bin/ruff check epichem tests
 .venv/bin/epichem init-db && .venv/bin/epichem import-dir --descriptors-dir ../descriptors \
-  && .venv/bin/epichem device list
+  && .venv/bin/epichem device list && .venv/bin/epichem sample list
 .venv/bin/uvicorn epichem.api.app:app --reload   # → /docs for interactive OpenAPI
+
+cd ../frontend
+npm install && npm run build   # tsc --noEmit + production bundle
+npm run dev                    # → http://localhost:5173, proxies /api to :8000
 ```
