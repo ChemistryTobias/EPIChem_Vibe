@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "EPIChem control-plane registry — lab topology, device descriptors, capability classes"
 requires-python = ">=3.11"
 dependencies = [
+  "alembic>=1.14",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "sqlalchemy>=2.0",
@@ -29,6 +30,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["epichem*"]
 
+# The migration tree ships inside the package so `epichem init-db` works from
+# any working directory, not just backend/.
+[tool.setuptools.package-data]
+epichem = ["alembic.ini", "alembic/script.py.mako", "alembic/versions/*.py"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
@@ -40,3 +46,9 @@ target-version = "py311"
 select = ["E", "F", "I", "B", "UP"]
 # B008: FastAPI's Depends()-as-default-argument is the framework's own idiom, not a bug.
 ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Migration bodies are Alembic's output, reformatted only where it aids the
+# reader (see 0001's docstring). Reflowing generated DDL by hand would make
+# every future autogenerate produce a spurious diff.
+"epichem/alembic/versions/*.py" = ["E501"]

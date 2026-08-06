@@ -35,17 +35,32 @@ def test_device_list_empty(session, monkeypatch, capsys):
     assert "No devices registered." in capsys.readouterr().out
 
 
-def test_init_db_creates_schema(monkeypatch, tmp_path, capsys):
+def test_init_db_runs_migrations_to_head(monkeypatch, tmp_path, capsys):
     from sqlalchemy import create_engine, inspect
 
     db_path = tmp_path / "test.db"
+    # init-db goes through Alembic now, and Alembic opens its own connection
+    # from DATABASE_URL — so point the env var, not just cli.engine.
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
     engine = create_engine(f"sqlite:///{db_path}")
     monkeypatch.setattr(cli, "engine", engine)
 
     cli.main(["init-db"])
 
-    assert "devices" in inspect(engine).get_table_names()
+    tables = inspect(engine).get_table_names()
+    assert "devices" in tables
+    assert "alembic_version" in tables  # i.e. it was migrated, not create_all'd
     assert str(db_path) in capsys.readouterr().out
+
+
+def test_db_current_reports_head(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'cur.db'}")
+    cli.main(["init-db"])
+    capsys.readouterr()
+
+    cli.main(["db", "current"])
+
+    assert "0001" in capsys.readouterr().out
 
 
 def test_import_dir_against_example_descriptors(

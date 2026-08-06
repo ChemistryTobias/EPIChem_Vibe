@@ -1,6 +1,6 @@
 """CLI (§8.3 subset). "The CLI must be able to do everything the UI can" —
-at M1 scope that's: create the schema, list/export/import registry rows as
-Descriptor YAML (per-row or bulk), list devices, and list/add samples. The
+at M1 scope that's: create/migrate the schema, list/export/import registry
+rows as Descriptor YAML (per-row or bulk), list devices, list/add samples. The
 registry (Postgres) is the source of truth (ADR 0004); YAML is an
 export/import interchange format, not desired state — there is no
 `reconcile` command anymore.
@@ -12,11 +12,10 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from epichem import exporter, importer
+from epichem import exporter, importer, migrations
 from epichem.api.schemas import SampleOut
 from epichem.db import SessionLocal, engine
 from epichem.models import (
-    Base,
     Bench,
     CapabilityClass,
     Device,
@@ -45,8 +44,31 @@ KIND_CLI = [
 
 
 def cmd_init_db(_args: argparse.Namespace) -> None:
-    Base.metadata.create_all(engine)
-    print(f"Initialized schema on {engine.url}")
+    """Create *or* upgrade the schema — both are `alembic upgrade head`, so a
+    fresh database and an existing one follow the same path.
+    """
+    migrations.upgrade("head")
+    print(f"Schema at head on {engine.url}")
+
+
+def cmd_db_upgrade(args: argparse.Namespace) -> None:
+    migrations.upgrade(args.revision)
+    print(f"Upgraded to {args.revision} on {engine.url}")
+
+
+def cmd_db_downgrade(args: argparse.Namespace) -> None:
+    migrations.downgrade(args.revision)
+    print(f"Downgraded to {args.revision} on {engine.url}")
+
+
+def cmd_db_current(_args: argparse.Namespace) -> None:
+    current = migrations.current_revision()
+    head = migrations.head_revision()
+    if current is None:
+        print(f"not migrated (head is {head}) on {engine.url}")
+        return
+    suffix = "" if current == head else f"  (head is {head} — run `epichem db upgrade`)"
+    print(f"{current}{suffix} on {engine.url}")
 
 
 def cmd_device_list(_args: argparse.Namespace) -> None:
@@ -171,7 +193,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="epichem")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init-db", help="Create the registry schema").set_defaults(func=cmd_init_db)
+    sub.add_parser(
+        "init-db", help="Create or upgrade the registry schema (alembic upgrade head)"
+    ).set_defaults(func=cmd_init_db)
+
+    db_parser = sub.add_parser("db", help="Schema migration commands")
+    db_sub = db_parser.add_subparsers(dest="db_command", required=True)
+    db_upgrade = db_sub.add_parser("upgrade", help="Upgrade to a revision (default: head)")
+    db_upgrade.add_argument("revision", nargs="?", default="head")
+    db_upgrade.set_defaults(func=cmd_db_upgrade)
+    db_downgrade = db_sub.add_parser("downgrade", help="Downgrade to a revision")
+    db_downgrade.add_argument("revision")
+    db_downgrade.set_defaults(func=cmd_db_downgrade)
+    db_sub.add_parser("current", help="Show the revision this database is at").set_defaults(
+        func=cmd_db_current
+    )
 
     import_dir_parser = sub.add_parser(
         "import-dir", help="Bulk-import a directory of descriptor YAML into the registry"
