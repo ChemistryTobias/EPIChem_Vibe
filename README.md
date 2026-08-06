@@ -4,12 +4,12 @@ Lab orchestration control plane for MPI-FKF. Full spec: `project_plan/EPIChem_Pr
 Decisions made to unblock implementation: `docs/adr/`. Progress against the plan's milestones:
 `PROJECT_MILESTONES.md`.
 
-This repo currently implements the **registry** — the topology + device + capability-class model
+This repo implements the **registry** — the topology + device + capability-class model
 from plan §5/§6, plus a deliberately minimal sample model (ADR 0005) — and a **web console** over
 it. The database (Postgres, sqlite fallback for local dev) is the versioned source of truth
-(ADR 0004); YAML is an export/import interchange format, not desired state. It does not yet run
-Bluesky or talk to real hardware, and the console is three list screens, not the plan's isometric
-lab layout — see PROJECT_MILESTONES.md for what's next.
+(ADR 0004); YAML is an export/import interchange format, not desired state. The console has four
+screens — an isometric lab layout, a topology tree, devices and samples — which completes M1. It
+does not yet run Bluesky or talk to real hardware; see PROJECT_MILESTONES.md for what's next.
 
 ## Quick start (local, no Docker)
 
@@ -74,8 +74,9 @@ backend/epichem/
   cli.py              epichem init-db | import-dir | export-dir | <kind> export|import
                        | device list | sample list|add
 
-frontend/             React + TypeScript + plain CSS console (Vite). Three screens — Topology
-                       (tree), Devices, Samples — all against the real API. See frontend/README.md.
+frontend/             React + TypeScript + plain CSS console (Vite). Four screens — Lab layout
+                       (isometric, @joint/core), Topology (tree), Devices, Samples — all against
+                       the real API. See frontend/README.md.
 
 descriptors/          Example "virtual lab": one site/lab/zone/workcell/bench, two stations,
                        two devices, three capability classes — a template for a real lab's
@@ -87,7 +88,7 @@ docs/adr/              M0 decision log (plan §17) + ADR 0004 (DB as source of t
 
 ## Status
 
-M1-scope (topology & registry, plan §14) plus a web console over it and a minimal sample model.
-No auth, no NetBox sync, no ELN adapter, no scheduler, no procedure designer, no Bluesky
-integration, and no isometric lab layout — which is M1's own exit criterion. See
-`PROJECT_MILESTONES.md` for the honest breakdown of what's built vs. deferred.
+M1 complete (topology & registry + the isometric layout that is its exit criterion, plan §14),
+plus a minimal sample model ahead of M4 (ADR 0005). Auth is a shared write token, not an identity
+system. No NetBox sync, no ELN adapter, no scheduler, no procedure designer, no Bluesky
+integration, no CI/CD. See `PROJECT_MILESTONES.md` for the honest breakdown.

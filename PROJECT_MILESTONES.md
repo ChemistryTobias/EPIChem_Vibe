@@ -7,7 +7,7 @@ record of what exists. Update it whenever scope changes — don't let it drift f
 Full milestone table for reference: M0 (decisions) → M1 (topology & registry) → M2 (device plane)
 → M3 (procedure designer) → M4 (samples & provenance) → M5 (scheduler & scale) → M6 (depth).
 Sequencing is deliberate per §14: "topology before devices, devices before procedures... inverting
-any pair produces rework." This build follows that order and stops partway through M1.
+any pair produces rework." This build follows that order: M1 is complete, M2 onward is not.
 
 ---
 
@@ -20,19 +20,18 @@ see ADR 0004 — NetBox scope, workcell granularity, EPICS-only for now, xDL def
 in v1, single-tenant schema, calibration data location). Two remain genuinely open, by design, not
 oversight:
 
-- **JointJS+ vs. `@joint/core`** — a frontend now exists, but still nothing that needs a canvas:
-  the Topology screen is a tree. Two related decisions were recorded in ADR 0003 Q1's update
-  without answering this one: the M3 procedure editor will use **React Flow** (MIT), and the
-  bundled HTML prototype's isometric floor plan turns out to use **only `@joint/core` APIs**
-  (`dia.Graph`/`dia.Paper`/`Element.define`, hand-built polygon tiles) — so the free-tier path is
-  already demonstrated for that view. Decide for real when the isometric layout is built.
+- **JointJS+ vs. `@joint/core`** — **answered by building it.** The isometric layout ships on
+  `@joint/core` (MPL-2.0) alone, with a React-side inspector in place of the commercial Inspector
+  component — exactly plan §10.2's recommendation, and the only option compatible with the
+  binding "MUST be open source, end to end" condition. No JointJS+ component is used or needed.
+  Separately recorded in ADR 0003 Q1: the M3 procedure editor will use **React Flow** (MIT).
 - **ELN target (Chemotion / Kadi4Mat / both)** — needs an institutional decision this session
   can't make; deferred to M4.
 
 ## M1 — Topology & registry
 
-**Status: core done, re-architected mid-pass (ADR 0004); a frontend now exists, but the
-isometric layout — M1's actual exit criterion — does not.**
+**Status: done.** Re-architected mid-pass (ADR 0004), then completed: registry, write API, CLI,
+frontend, and the isometric layout that is M1's stated exit criterion.
 
 The registry was originally built git-YAML-as-desired-state (ADR 0001), reconciled into Postgres by
 a one-way reconciler. Partway through M1, scope was explicitly revised: Postgres is now the
@@ -95,20 +94,24 @@ Frontend (`frontend/` — React + TypeScript + plain CSS on Vite, added after th
   parameters `GET /api/v1/devices` already supports (`lab`, `capability_class`, `mode`).
 - [x] **Samples screen** — a plain table over the new samples endpoint, plus a register form,
   state changes and delete.
+- [x] **Lab layout screen (isometric)** — plan §10's floor plan, on `@joint/core` (MPL-2.0) only:
+  no JointJS+ component anywhere. Projection is §10.3's formulas as pure, unit-tested functions
+  (`isometric.ts`), including the inverse that makes drag-to-move snap to a cell. Click a station
+  to inspect it; in edit mode, drag it to a new cell and the move is PUT to the registry. The
+  canvas holds no authoritative state (§10.3), so a rejected write snaps the tile back. Stations
+  outside their bench grid, or sharing a cell, are called out rather than drawn wrong. Lazy-loaded,
+  since JointJS is ~435 kB and the other three screens don't need it.
+  **This closes M1's exit criterion**: a real lab room is modelled and renders correctly.
+  Not built from §10: multi-bench rooms, zone drawing, station create/delete, bench resize,
+  multi-select, align/distribute, copy-paste, undo/redo, and every layer that needs live state.
 - [x] No mock data anywhere: every screen reads the real API, and says so plainly when the backend
   is unreachable. Dev server proxies `/api` to `:8000`, so local dev needs no CORS (the backend
   grew an opt-in `EPICHEM_CORS_ORIGINS` for other deployments; off by default).
 - Deliberately not added: React Router (a ~30-line hash router instead), a data-fetching library
   (one `useAsync` hook), a UI kit or CSS framework, OpenAPI codegen (hand-written types).
 
-Not built (still M1-scoped per the plan, but out of reach this pass):
+Not built (M1-adjacent, deferred):
 
-- [ ] **Isometric layout viewer (read-only)** — the plan's actual M1 exit criterion is "a real lab
-  room is modelled in git **and renders correctly**." The model half is done and there is now a
-  frontend, but the Topology screen is a *tree*, not the isometric canvas §10 specifies. Still the
-  single biggest gap between what's here and what M1 asks for. When it's picked up: the bundled
-  prototype already demonstrates an isometric floor plan built on `@joint/core` alone — see
-  ADR 0003 Q1's update.
 - [ ] Nothing runs in CI. There is no pipeline at all — see the Delivery section below.
 - [ ] NetBox sync (deferred per ADR 0002)
 - [ ] Full auth/RBAC (§12.1). A shared-token gate on writes now exists (see Known gaps); real

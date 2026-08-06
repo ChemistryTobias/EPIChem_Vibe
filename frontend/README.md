@@ -1,8 +1,8 @@
 # EPIChem frontend
 
-React + TypeScript + plain CSS console for the EPIChem registry. Three screens — **Topology**,
-**Devices**, **Samples** — all reading the real API. There is no mock data anywhere in this app;
-if the backend is down, the screens say so.
+React + TypeScript + plain CSS console for the EPIChem registry. Four screens — **Lab layout**
+(isometric), **Topology**, **Devices**, **Samples** — all reading the real API. There is no mock
+data anywhere in this app; if the backend is down, the screens say so.
 
 ## Run it
 
@@ -54,6 +54,8 @@ src/
     useHashRoute.ts        ~30-line hash router
   components/              shell + shared primitives (Button, StatusDot, Inspector, …)
   screens/
+    layout/                isometric floor plan — isometric.ts is pure geometry (plan §10.3),
+                           useIsometricPaper.ts is all the JointJS lifecycle, shapes.ts the tiles
     topology/              tree view + tree-building logic (topologyTree.ts is pure)
     devices/               card grid + filters
     samples/               table + register form + inspector
@@ -86,11 +88,27 @@ a component is one place, not two directories. Only `tokens.css` and `base.css` 
   follows the approved standalone HTML prototype in `project_plan/`. Its *data model* is not
   followed: that prototype was hard-coded around one spin-coating cell, and the plan says so.
 
+## The isometric layout
+
+Built on **`@joint/core` alone** (MPL-2.0) — no Stencil, Inspector, Halo, Toolbar, Navigator or
+Selection, all of which are JointJS+ commercial. Plan §10.2 recommends exactly this: the free core
+plus React-side panels, which is what `LayoutInspector` is. The projection is §10.3's formulas,
+implemented as pure functions in `isometric.ts` and unit-tested there, including that `toGrid`
+inverts `toScreen` for every cell of a grid — that inverse is what makes dragging land where you
+dropped it.
+
+The canvas holds no authoritative state, per §10.3: a drag reports a grid cell, the screen PUTs it
+and refetches, and the redraw is what moves the tile. A rejected write snaps it back for free.
+
+`@joint/core` is ~435 kB, so this screen is lazy-loaded (`App.tsx`) and the other three don't pay
+for it.
+
+What's *not* built from §10: multi-bench rooms, zone drawing, creating/deleting stations, resizing
+benches, multi-select, align/distribute, copy-paste, undo/redo. The live-status, sample-occupancy,
+transport-route and utilisation layers need M2's device plane — there is no live state to draw.
+
 ## Not here, on purpose
 
-- **The isometric lab layout** (plan §10.2). Still blocked on the JointJS+ vs `@joint/core`
-  licensing question (`docs/adr/0003` Q1). The Topology screen is a tree instead, reading the same
-  six endpoints an isometric view would.
 - **The procedure/workflow editor** (M3). When it is built it will use **React Flow** (MIT), not
   JointJS — decision recorded, nothing to build against yet: no procedure IR or backend exists.
   React Flow is *not* a dependency of this app and is not used by the Samples screen.

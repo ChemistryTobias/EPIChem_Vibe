@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@joint/core": "^4.3.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

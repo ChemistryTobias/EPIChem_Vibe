@@ -22,6 +22,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { route: "layout", label: "Lab layout", hint: "Isometric floor plan of a bench" },
   { route: "topology", label: "Topology", hint: "Site → Lab → Zone → Workcell → Bench → Station" },
   { route: "devices", label: "Devices", hint: "Registered device descriptors" },
   { route: "samples", label: "Samples", hint: "Registered samples" },
@@ -57,10 +58,10 @@ export function Sidebar({ current }: { current: Route }) {
         <TokenField />
 
         <p className="label sidebar__build-label">Build</p>
-        {/* Honest about scope: the plan's other screens (lab layout, procedure
+        {/* Honest about scope: the plan's remaining screens (procedure
             designer, scheduler) are real milestones, not missing links. */}
         <p className="sidebar__note">
-          M1 registry only. The isometric lab layout and the procedure designer are later
+          M1 registry. Live device state, the procedure designer and the scheduler are later
           milestones — see PROJECT_MILESTONES.md.
         </p>
       </div>

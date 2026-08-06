@@ -13,11 +13,11 @@
 
 import { useEffect, useState } from "react";
 
-export const ROUTES = ["topology", "devices", "samples"] as const;
+export const ROUTES = ["layout", "topology", "devices", "samples"] as const;
 
 export type Route = (typeof ROUTES)[number];
 
-export const DEFAULT_ROUTE: Route = "topology";
+export const DEFAULT_ROUTE: Route = "layout";
 
 function readRoute(): Route {
   const name = window.location.hash.replace(/^#\/?/, "");
