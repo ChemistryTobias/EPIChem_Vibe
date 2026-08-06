@@ -1,0 +1,29 @@
+.async {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+.async--loading {
+  color: var(--color-text-secondary);
+}
+
+.async--error {
+  border-left: 3px solid var(--color-danger);
+  background: var(--color-surface-muted);
+  margin: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+}
+
+.async__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.async--empty {
+  color: var(--color-text-secondary);
+}

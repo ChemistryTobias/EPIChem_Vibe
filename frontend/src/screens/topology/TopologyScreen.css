@@ -1,0 +1,99 @@
+.tree,
+.tree__children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-left: 3px solid transparent;
+  /* padding-left is set inline per depth — see TopologyNode.tsx */
+  padding-right: var(--space-3);
+}
+
+.tree__row:hover {
+  background: var(--color-surface-muted);
+}
+
+.tree__row--selected {
+  background: var(--color-surface-muted);
+  border-left-color: var(--color-primary);
+}
+
+.tree__twisty {
+  width: 18px;
+  flex: 0 0 18px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.tree__twisty:disabled {
+  color: var(--color-border);
+  cursor: default;
+}
+
+.tree__label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 7px 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Fixed-width kind column so codes line up down the tree despite indentation
+ * varying — makes it scannable as a list as well as a hierarchy. */
+.tree__kind {
+  width: 62px;
+  flex: 0 0 62px;
+}
+
+.tree__code {
+  width: 128px;
+  flex: 0 0 128px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.tree__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree__count {
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.tree__orphans {
+  margin-top: var(--space-5);
+  border-left: 3px solid var(--color-accent-orange);
+  background: var(--color-surface-muted);
+  padding: var(--space-3) var(--space-4);
+}
+
+.tree__orphans-note {
+  margin: var(--space-1) 0 var(--space-2);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.tree__orphans ul {
+  margin: 0;
+  padding-left: var(--space-4);
+}

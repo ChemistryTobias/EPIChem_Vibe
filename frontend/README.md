@@ -1,0 +1,88 @@
+# EPIChem frontend
+
+React + TypeScript + plain CSS console for the EPIChem registry. Three screens — **Topology**,
+**Devices**, **Samples** — all reading the real API. There is no mock data anywhere in this app;
+if the backend is down, the screens say so.
+
+## Run it
+
+```bash
+# 1. backend, with something in it (from ../backend)
+.venv/bin/epichem init-db
+.venv/bin/epichem import-dir --descriptors-dir ../descriptors
+.venv/bin/epichem sample add SMP-2026-0001 "PEDOT:PSS film" --substance "PEDOT:PSS" \
+  --amount 1.5 --unit mL --location RACK-A/3
+.venv/bin/uvicorn epichem.api.app:app --reload      # :8000
+
+# 2. frontend (from here)
+npm install
+npm run dev                                          # → http://localhost:5173
+```
+
+The dev server proxies `/api` to `http://127.0.0.1:8000` (`vite.config.ts`), so the browser only
+ever talks to one origin and **no CORS configuration is needed for local development**. Point it
+somewhere else with `EPICHEM_API_URL=http://host:port npm run dev`. If you instead serve this
+build from a different origin than the API, set `EPICHEM_CORS_ORIGINS` on the backend — see
+`backend/epichem/api/app.py`.
+
+```bash
+npm run typecheck   # tsc --noEmit
+npm run build       # typecheck + production bundle into dist/
+```
+
+## Layout
+
+```
+src/
+  main.tsx                 mounts App, imports the two global stylesheets
+  App.tsx                  route -> screen, and nothing else
+  api/
+    client.ts              the only place that calls fetch; unwraps RFC 9457 problem+json
+    types.ts               hand-written mirrors of backend/epichem/api/schemas.py
+    topology.ts            per-area endpoint wrappers
+    devices.ts
+    samples.ts
+  hooks/
+    useAsync.ts            {data, error, loading, reload} — the whole data layer
+    useHashRoute.ts        ~30-line hash router
+  components/              shell + shared primitives (Button, StatusDot, Inspector, …)
+  screens/
+    topology/              tree view + tree-building logic (topologyTree.ts is pure)
+    devices/               card grid + filters
+    samples/               table + register form + inspector
+  styles/
+    tokens.css             MPG brand tokens, straight from project_plan/DESIGN.md
+    base.css               reset + the .label / .mono / .muted primitives
+```
+
+Component CSS lives next to the component (`Button.tsx` / `Button.css`) and is imported by it, so
+a component is one place, not two directories. Only `tokens.css` and `base.css` are global.
+
+## Choices worth knowing about
+
+- **No UI kit, no CSS framework.** `styles/tokens.css` is `project_plan/DESIGN.md` in
+  machine-readable form; if a value here and DESIGN.md disagree, DESIGN.md wins.
+- **No router dependency.** Three screens, no params, no nesting — `useHashRoute.ts` is smaller
+  than the README section explaining why you'd add React Router. Swap it in if routing grows.
+- **No data-fetching library.** `useAsync.ts` is ~40 lines and every screen consumes the same
+  four-field shape, so replacing it with TanStack Query later touches this file and its call sites
+  only.
+- **Hand-written API types** rather than OpenAPI codegen: there are about ten of them and a human
+  can read this file. Revisit if it stops fitting on a screen.
+- **Visual language** — sidebar, header, list + right-hand inspector, flat cards, status dots —
+  follows the approved standalone HTML prototype in `project_plan/`. Its *data model* is not
+  followed: that prototype was hard-coded around one spin-coating cell, and the plan says so.
+
+## Not here, on purpose
+
+- **The isometric lab layout** (plan §10.2). Still blocked on the JointJS+ vs `@joint/core`
+  licensing question (`docs/adr/0003` Q1). The Topology screen is a tree instead, reading the same
+  six endpoints an isometric view would.
+- **The procedure/workflow editor** (M3). When it is built it will use **React Flow** (MIT), not
+  JointJS — decision recorded, nothing to build against yet: no procedure IR or backend exists.
+  React Flow is *not* a dependency of this app and is not used by the Samples screen.
+- **Live device state, jog/home controls, signal plots** (M2). The Devices screen shows the
+  registry record for each device, not its runtime.
+- **Sample lineage graphs, event history, containers** (M4, plan §7.4/§7.3). See `docs/adr/0005`
+  for exactly what the minimal sample model does and doesn't have.
+- **Login/auth.** The backend has none yet (§12.1), so neither does this.

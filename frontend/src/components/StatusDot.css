@@ -1,0 +1,45 @@
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.status__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+}
+
+.status__dot--ok {
+  background: var(--color-primary);
+}
+
+.status__dot--info {
+  background: var(--color-accent-blue);
+}
+
+.status__dot--warn {
+  background: var(--color-accent-orange);
+}
+
+.status__dot--danger {
+  background: var(--color-danger);
+}
+
+.status__dot--muted {
+  background: var(--color-border);
+}
+
+/* Visually hidden but still read out / findable by in-page search. */
+.status__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

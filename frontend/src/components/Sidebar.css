@@ -1,0 +1,89 @@
+.sidebar {
+  width: var(--sidebar-width);
+  flex: 0 0 var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-primary-dark);
+  color: #ffffff;
+  padding: var(--space-5) 0 var(--space-4);
+}
+
+/* DESIGN.md §4 "Logoschutzzone": keep the identity block clear of everything else. */
+.sidebar__brand {
+  padding: 0 var(--space-5) var(--space-6);
+}
+
+.sidebar__wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: 0.16em;
+}
+
+.sidebar__institute {
+  margin: var(--space-2) 0 0;
+  font-size: 10px;
+  line-height: 1.4;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.sidebar__section {
+  margin: 0 var(--space-5) var(--space-2);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.sidebar__nav {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar__item {
+  display: block;
+  width: 100%;
+  padding: 10px var(--space-5);
+  border: 0;
+  /* The active marker sits in the border-left slot so switching screens
+     doesn't shift the label by 3px. */
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  cursor: pointer;
+}
+
+.sidebar__item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.sidebar__item--active {
+  background: var(--color-primary);
+  border-left-color: var(--color-accent-green);
+  color: #ffffff;
+}
+
+.sidebar__footer {
+  margin-top: auto;
+  padding: var(--space-4) var(--space-5) 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.sidebar__footer .label {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.sidebar__note {
+  margin: var(--space-2) 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.6);
+}
