@@ -90,6 +90,9 @@ export interface Device {
   transport_protocol: string | null;
   transport_uri: string | null;
   transport_ioc_host: string | null;
+  /** §6.2 nominal|degraded — flags a degraded vendor-bridge onboarding path. */
+  transport_quality: string;
+  network_netbox_device_id: number | null;
   network_primary_ip: string | null;
   network_mac: string | null;
   network_vlan: string | null;

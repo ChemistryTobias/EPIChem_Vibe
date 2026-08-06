@@ -30,7 +30,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 import yaml
@@ -90,14 +90,33 @@ class ImportReport:
 
 # ---- topology (Site -> Lab -> Zone -> Workcell -> Bench -> Station) --------
 
-# (kind, plural [HTTP path segment], model_cls, Out schema, parent spec field
-# name / None, parent model / None, plain attrs copied 1:1 from spec to ORM
-# column). The parent FK column is always f"{field}_id"; the parent
-# relationship attribute on the child ORM model is always named
-# f"{field}" (Lab.site, Zone.lab, ...), which the exporter relies on too.
+
+class TopologyKind(NamedTuple):
+    """One row of the table below.
+
+    A NamedTuple rather than a plain tuple because four modules unpack these
+    (this one, the exporter, the topology router, and the route-registration
+    loop) and `entry.parent_field` survives a reader's short-term memory in a
+    way that `entry[4]` does not.
+    """
+
+    kind: str
+    plural: str  # HTTP path segment
+    model: type
+    out_schema: type
+    #: Name of the spec field naming this kind's parent, or None for Site.
+    #: The parent FK column is always f"{parent_field}_id", and the ORM
+    #: relationship attribute on the child is always `parent_field` itself
+    #: (Lab.site, Zone.lab, ...), which the exporter relies on too.
+    parent_field: str | None
+    parent_model: type | None
+    #: Attrs copied 1:1 from spec to ORM column.
+    attrs: list[str]
+
+
 TOPOLOGY_WRITE = [
-    ("Site", "sites", Site, SiteOut, None, None, ["address", "timezone"]),
-    (
+    TopologyKind("Site", "sites", Site, SiteOut, None, None, ["address", "timezone"]),
+    TopologyKind(
         "Lab",
         "labs",
         Lab,
@@ -106,7 +125,7 @@ TOPOLOGY_WRITE = [
         Site,
         ["room_number", "environment_class", "access_control_group"],
     ),
-    (
+    TopologyKind(
         "Zone",
         "zones",
         Zone,
@@ -115,7 +134,7 @@ TOPOLOGY_WRITE = [
         Lab,
         ["atmosphere", "pressure", "temperature_class", "hazard_class"],
     ),
-    (
+    TopologyKind(
         "Workcell",
         "workcells",
         Workcell,
@@ -124,7 +143,7 @@ TOPOLOGY_WRITE = [
         Zone,
         ["queueserver_endpoint", "redis_namespace", "state", "owning_group"],
     ),
-    (
+    TopologyKind(
         "Bench",
         "benches",
         Bench,
@@ -133,7 +152,7 @@ TOPOLOGY_WRITE = [
         Workcell,
         ["grid_cols", "grid_rows", "height_mm"],
     ),
-    (
+    TopologyKind(
         "Station",
         "stations",
         Station,
@@ -144,7 +163,8 @@ TOPOLOGY_WRITE = [
     ),
 ]
 
-_TOPOLOGY_BY_KIND = {entry[0]: entry for entry in TOPOLOGY_WRITE}
+#: Public so the exporter uses this one instead of rebuilding its own copy.
+TOPOLOGY_BY_KIND = {entry.kind: entry for entry in TOPOLOGY_WRITE}
 
 
 def resolve_parent_id(
@@ -162,22 +182,18 @@ def resolve_parent_id(
     return parent_id
 
 
-def resolve_topology_values(
-    kind: str,
-    parent_field: str | None,
-    parent_model: type | None,
-    attrs: list[str],
-    descriptor: Descriptor,
-    session: Session,
-) -> dict:
+def resolve_topology_values(entry: TopologyKind, descriptor: Descriptor, session: Session) -> dict:
+    """Descriptor -> the `values` dict create_entity/update_entity take.
+    Raises ValueError if the parent code doesn't resolve.
+    """
     spec = descriptor.typed_spec()
     values: dict[str, Any] = {"code": descriptor.metadata.code, "name": descriptor.metadata.name}
-    for attr in attrs:
+    for attr in entry.attrs:
         values[attr] = getattr(spec, attr)
-    if parent_field:
-        parent_code = getattr(spec, parent_field)
-        values[f"{parent_field}_id"] = resolve_parent_id(
-            session, parent_model, parent_field, parent_code
+    if entry.parent_field:
+        parent_code = getattr(spec, entry.parent_field)
+        values[f"{entry.parent_field}_id"] = resolve_parent_id(
+            session, entry.parent_model, entry.parent_field, parent_code
         )
     return values
 
@@ -215,6 +231,7 @@ def device_values(descriptor: Descriptor, spec, refs: dict) -> dict:
         "transport_protocol": spec.transport.protocol,
         "transport_uri": spec.transport.uri,
         "transport_ioc_host": spec.transport.ioc_host,
+        "transport_quality": spec.transport.quality,
         "network_netbox_device_id": spec.network.netbox_device_id,
         "network_primary_ip": spec.network.primary_ip,
         "network_mac": spec.network.mac,
@@ -241,6 +258,44 @@ def station_codes_by_device(session: Session, device_ids: list[UUID]) -> dict[UU
         .where(StationDeviceBinding.device_id.in_(device_ids), StationDeviceBinding.role == "owns")
     ).all()
     return dict(rows)
+
+
+def finalize_station_binding(
+    session: Session, device: Device, station_id: UUID | None, revision
+) -> bool:
+    """Settle a device's station binding *after* its row has been written,
+    and make the Revision tell the truth about it.
+
+    Two things make this awkward enough to be worth one shared function
+    rather than a copy in the HTTP router and a copy in the import path
+    (which is what this used to be):
+
+    1. `DeviceOut.station_code` isn't a Device column — it comes from the
+       binding table — and the binding can only be written once the Device
+       row has an id, i.e. after create/update_entity already recorded its
+       snapshot. So the snapshot has to be patched afterwards, or every
+       revision would claim `station_code: null`.
+    2. If *only* the binding changed, `update_entity` sees no changed Device
+       column and records nothing — but the entity's observable state did
+       change, so a revision still has to be recorded by hand.
+
+    Returns whether a revision now exists for this write.
+    """
+    binding_changed = upsert_station_binding(session, device, station_id)
+    session.flush()
+    station_code = station_codes_by_device(session, [device.id]).get(device.id)
+
+    if revision is not None:
+        revision.snapshot = {**revision.snapshot, "station_code": station_code}
+        return True
+    if binding_changed:
+        snapshot = {
+            **DeviceOut.model_validate(device).model_dump(mode="json"),
+            "station_code": station_code,
+        }
+        record_revision(session, "Device", device.id, "updated", snapshot)
+        return True
+    return False
 
 
 def upsert_station_binding(session: Session, device: Device, station_id: UUID | None) -> bool:
@@ -294,17 +349,16 @@ def _upsert(
         return obj, revision, ("updated" if revision is not None else "unchanged")
 
 
-def _apply_topology(session: Session, descriptor: Descriptor, entry: tuple) -> ImportItem:
-    kind, _plural, model_cls, out_schema, parent_field, parent_model, attrs = entry
+def _apply_topology(session: Session, descriptor: Descriptor, entry: TopologyKind) -> ImportItem:
     code = descriptor.metadata.code
     try:
-        values = resolve_topology_values(
-            kind, parent_field, parent_model, attrs, descriptor, session
-        )
+        values = resolve_topology_values(entry, descriptor, session)
     except ValueError as e:
-        return ImportItem(kind, code, "error", str(e))
-    _obj, _revision, action = _upsert(session, model_cls, kind, out_schema, "code", values)
-    return ImportItem(kind, code, action)
+        return ImportItem(entry.kind, code, "error", str(e))
+    _obj, _revision, action = _upsert(
+        session, entry.model, entry.kind, entry.out_schema, "code", values
+    )
+    return ImportItem(entry.kind, code, action)
 
 
 def _apply_capability_class(session: Session, descriptor: Descriptor) -> ImportItem:
@@ -329,23 +383,10 @@ def _apply_device(session: Session, descriptor: Descriptor) -> ImportItem:
 
     values = device_values(descriptor, spec, refs)
     obj, revision, action = _upsert(session, Device, "Device", DeviceOut, "code", values)
-    binding_changed = upsert_station_binding(session, obj, refs["station_id"])
-    session.flush()
-
-    station_code = station_codes_by_device(session, [obj.id]).get(obj.id)
-    if revision is not None:
-        revision.snapshot = {**revision.snapshot, "station_code": station_code}
-    elif binding_changed:
-        # No Device column changed, but the station binding did — that's
-        # still a real change to the entity's observable state (mirrors
-        # api/routers/devices.py's replace_device handling of the same gap).
-        snapshot = {
-            **DeviceOut.model_validate(obj).model_dump(mode="json"),
-            "station_code": station_code,
-        }
-        record_revision(session, "Device", obj.id, "updated", snapshot)
+    if finalize_station_binding(session, obj, refs["station_id"], revision) and revision is None:
+        # No Device column changed, but the binding did, so a revision was
+        # recorded — report that as an update, not "unchanged".
         action = "updated"
-
     return ImportItem("Device", code, action)
 
 
@@ -358,7 +399,7 @@ def import_descriptor(session: Session, descriptor: Descriptor) -> ImportItem:
     elif descriptor.kind == "Device":
         item = _apply_device(session, descriptor)
     else:
-        item = _apply_topology(session, descriptor, _TOPOLOGY_BY_KIND[descriptor.kind])
+        item = _apply_topology(session, descriptor, TOPOLOGY_BY_KIND[descriptor.kind])
     session.flush()
     return item
 
@@ -381,9 +422,8 @@ def import_directory(session: Session, directory: Path | str) -> ImportReport:
     session.flush()
 
     for entry in TOPOLOGY_WRITE:
-        kind = entry[0]
         for d in result.descriptors:
-            if d.kind == kind:
+            if d.kind == entry.kind:
                 items.append(_apply_topology(session, d, entry))
         session.flush()
 

@@ -8,11 +8,15 @@ would be friction the plan doesn't ask for.
 """
 
 import uuid as uuid_mod
+from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from epichem.models.base import RegistryEntity
+
+if TYPE_CHECKING:  # avoids a topology <-> device import cycle at runtime
+    from epichem.models.device import StationDeviceBinding
 
 
 class Site(RegistryEntity):
@@ -86,3 +90,9 @@ class Station(RegistryEntity):
     accepted_labware_types: Mapped[list[str]] = mapped_column(JSON, default=list)
 
     bench: Mapped[Bench] = relationship(back_populates="stations")
+    # Cascades for the same reason as Device.station_bindings: the binding is
+    # a link owned by both ends, so removing a station removes its links and
+    # leaves the devices themselves alone.
+    device_bindings: Mapped[list["StationDeviceBinding"]] = relationship(
+        back_populates="station", cascade="all, delete-orphan"
+    )

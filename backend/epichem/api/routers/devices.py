@@ -4,17 +4,16 @@ registry (Postgres) is the source of truth (ADR 0004) — writes go through
 recording a `Revision`. The Descriptor->values translation and station-
 binding helpers are shared with the YAML import path — see `epichem.importer`.
 
-Device create/update bypass `create_entity`/`update_entity`'s own snapshot
-for one detail: `DeviceOut.station_code` isn't an ORM column (it's filled in
-from the `StationDeviceBinding` join, see `_to_device_out` below), and the
-binding can only be created/updated *after* the Device row has an id, i.e.
-after `create_entity`/`update_entity` has already recorded its Revision. So
-the Revision's `snapshot` is patched in place with the correct
-`station_code` once the binding is settled, rather than left showing
-`station_code: null` regardless of the real binding.
+Device create/update need one extra step after the generic write path:
+`DeviceOut.station_code` isn't an ORM column (it comes from the
+`StationDeviceBinding` join, see `_to_device_out` below), so the binding can
+only be settled — and the Revision snapshot corrected — once the Device row
+has an id. `finalize_station_binding` (`epichem.importer`) does that, and is
+shared with the YAML import path so there is one copy of the reasoning
+rather than one per caller.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,11 +22,12 @@ from epichem.api.deps import get_session
 from epichem.api.errors import ConflictProblem, UnprocessableProblem
 from epichem.api.resolve import resolve_by_code_or_id, resolve_by_natural_key_or_id
 from epichem.api.schemas import CapabilityClassOut, DeviceOut, RevisionOut, SignalOut
+from epichem.api.validation import check_descriptor_kind
 from epichem.importer import (
     capability_class_values,
     device_values,
+    finalize_station_binding,
     station_codes_by_device,
-    upsert_station_binding,
 )
 from epichem.models import (
     Bench,
@@ -44,7 +44,6 @@ from epichem.registry import (
     create_entity,
     delete_entity,
     list_revisions,
-    record_revision,
     resolve_device_references,
     update_entity,
 )
@@ -118,17 +117,9 @@ def list_device_classes(session: Session = Depends(get_session)):
 # ---- write endpoints (ADR 0004) --------------------------------------------
 
 
-def _check_kind(descriptor: Descriptor, expected_kind: str) -> None:
-    if descriptor.kind != expected_kind:
-        raise HTTPException(
-            status_code=400,
-            detail=f"expected kind={expected_kind!r}, got kind={descriptor.kind!r}",
-        )
-
-
 @router.post("/device-classes", response_model=CapabilityClassOut, status_code=201)
 def create_capability_class(descriptor: Descriptor, session: Session = Depends(get_session)):
-    _check_kind(descriptor, "CapabilityClass")
+    check_descriptor_kind(descriptor,"CapabilityClass")
     values = capability_class_values(descriptor, descriptor.typed_spec())
     try:
         obj, _revision = create_entity(
@@ -144,7 +135,7 @@ def create_capability_class(descriptor: Descriptor, session: Session = Depends(g
 def replace_capability_class(
     ident: str, descriptor: Descriptor, session: Session = Depends(get_session)
 ):
-    _check_kind(descriptor, "CapabilityClass")
+    check_descriptor_kind(descriptor,"CapabilityClass")
     obj = resolve_by_natural_key_or_id(session, CapabilityClass, ident, key_attr="name")
     values = capability_class_values(descriptor, descriptor.typed_spec())
     update_entity(session, obj, "CapabilityClass", CapabilityClassOut, values)
@@ -186,7 +177,7 @@ def _resolve_device_refs(session: Session, spec) -> dict:
 
 @router.post("/devices", response_model=DeviceOut, status_code=201)
 def create_device(descriptor: Descriptor, session: Session = Depends(get_session)):
-    _check_kind(descriptor, "Device")
+    check_descriptor_kind(descriptor,"Device")
     spec = descriptor.typed_spec()
     refs = _resolve_device_refs(session, spec)
     values = device_values(descriptor, spec, refs)
@@ -195,40 +186,20 @@ def create_device(descriptor: Descriptor, session: Session = Depends(get_session
     except ValueError as e:
         raise ConflictProblem(title="Device already exists", detail=str(e)) from e
 
-    upsert_station_binding(session, device, refs["station_id"])
-    session.flush()
-    revision.snapshot = {
-        **revision.snapshot,
-        "station_code": station_codes_by_device(session, [device.id]).get(device.id),
-    }
+    finalize_station_binding(session, device, refs["station_id"], revision)
     session.commit()
     return _to_device_out(session, device)
 
 
 @router.put("/devices/{ident}", response_model=DeviceOut)
 def replace_device(ident: str, descriptor: Descriptor, session: Session = Depends(get_session)):
-    _check_kind(descriptor, "Device")
+    check_descriptor_kind(descriptor,"Device")
     device = resolve_by_code_or_id(session, Device, ident)
     spec = descriptor.typed_spec()
     refs = _resolve_device_refs(session, spec)
     values = device_values(descriptor, spec, refs)
     revision = update_entity(session, device, "Device", DeviceOut, values)
-    binding_changed = upsert_station_binding(session, device, refs["station_id"])
-    session.flush()
-
-    station_code = station_codes_by_device(session, [device.id]).get(device.id)
-    if revision is not None:
-        revision.snapshot = {**revision.snapshot, "station_code": station_code}
-    elif binding_changed:
-        # No Device column changed, but the station binding did — that's
-        # still a real change to the entity's observable state, so it still
-        # needs a revision (update_entity's own diff can't see this, since
-        # station_id isn't a Device column).
-        snapshot = {
-            **DeviceOut.model_validate(device).model_dump(mode="json"),
-            "station_code": station_code,
-        }
-        record_revision(session, "Device", device.id, "updated", snapshot)
+    finalize_station_binding(session, device, refs["station_id"], revision)
     session.commit()
     return _to_device_out(session, device)
 

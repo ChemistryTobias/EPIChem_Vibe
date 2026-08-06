@@ -13,7 +13,7 @@ with `epichem.importer`'s YAML import path, so there's exactly one copy of
 each, not one per caller.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -30,7 +30,8 @@ from epichem.api.schemas import (
     WorkcellOut,
     ZoneOut,
 )
-from epichem.importer import TOPOLOGY_WRITE, resolve_topology_values
+from epichem.api.validation import check_descriptor_kind
+from epichem.importer import TOPOLOGY_WRITE, TopologyKind, resolve_topology_values
 from epichem.models import Bench, Lab, Site, Station, Workcell, Zone
 from epichem.registry import create_entity, delete_entity, list_revisions, update_entity
 from epichem.schemas.descriptor import Descriptor
@@ -133,35 +134,19 @@ def get_station(ident: str, session: Session = Depends(get_session)):
 # ---- write endpoints (ADR 0004) --------------------------------------------
 
 
-def _check_kind(descriptor: Descriptor, expected_kind: str) -> None:
-    if descriptor.kind != expected_kind:
-        raise HTTPException(
-            status_code=400,
-            detail=f"expected kind={expected_kind!r}, got kind={descriptor.kind!r}",
-        )
+def _register_topology_routes(entry: TopologyKind) -> None:
+    kind, plural, model_cls, out_schema = entry.kind, entry.plural, entry.model, entry.out_schema
 
-
-def _register_topology_routes(
-    kind: str,
-    plural: str,
-    model_cls: type,
-    out_schema: type,
-    parent_field: str | None,
-    parent_model: type | None,
-    attrs: list[str],
-) -> None:
     def resolve_values(descriptor: Descriptor, session: Session) -> dict:
         try:
-            return resolve_topology_values(
-                kind, parent_field, parent_model, attrs, descriptor, session
-            )
+            return resolve_topology_values(entry, descriptor, session)
         except ValueError as e:
             raise UnprocessableProblem(
                 title=f"{kind} references could not be resolved", detail=str(e)
             ) from e
 
     def create(descriptor: Descriptor, session: Session = Depends(get_session)):
-        _check_kind(descriptor, kind)
+        check_descriptor_kind(descriptor, kind)
         values = resolve_values(descriptor, session)
         try:
             obj, _revision = create_entity(session, model_cls, kind, out_schema, values)
@@ -171,7 +156,7 @@ def _register_topology_routes(
         return obj
 
     def replace(ident: str, descriptor: Descriptor, session: Session = Depends(get_session)):
-        _check_kind(descriptor, kind)
+        check_descriptor_kind(descriptor, kind)
         obj = resolve_by_code_or_id(session, model_cls, ident)
         values = resolve_values(descriptor, session)
         update_entity(session, obj, kind, out_schema, values)
@@ -210,5 +195,5 @@ def _register_topology_routes(
     )
 
 
-for _kind, _plural, _model, _out, _parent_field, _parent_model, _attrs in TOPOLOGY_WRITE:
-    _register_topology_routes(_kind, _plural, _model, _out, _parent_field, _parent_model, _attrs)
+for _entry in TOPOLOGY_WRITE:
+    _register_topology_routes(_entry)

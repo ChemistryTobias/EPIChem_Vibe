@@ -28,12 +28,11 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from epichem.importer import TOPOLOGY_WRITE, station_codes_by_device
+from epichem.importer import TOPOLOGY_BY_KIND, TOPOLOGY_WRITE, TopologyKind, station_codes_by_device
 from epichem.models import CapabilityClass, Device
 
 API_VERSION = "epichem.dev/v1"
 
-_TOPOLOGY_BY_KIND = {entry[0]: entry for entry in TOPOLOGY_WRITE}
 _SUBDIR_BY_KIND = {
     "Site": "topology",
     "Lab": "topology",
@@ -62,16 +61,15 @@ def _prune(value: Any) -> Any:
     return value
 
 
-def _export_topology(entry: tuple, obj: Any) -> dict:
-    kind, _plural, _model_cls, _out_schema, parent_field, _parent_model, attrs = entry
+def _export_topology(entry: TopologyKind, obj: Any) -> dict:
     spec: dict[str, Any] = {}
-    if parent_field:
-        spec[parent_field] = getattr(obj, parent_field).code
-    for attr in attrs:
+    if entry.parent_field:
+        spec[entry.parent_field] = getattr(obj, entry.parent_field).code
+    for attr in entry.attrs:
         spec[attr] = getattr(obj, attr)
     return {
         "apiVersion": API_VERSION,
-        "kind": kind,
+        "kind": entry.kind,
         "metadata": {"code": obj.code, "name": obj.name},
         "spec": _prune(spec),
     }
@@ -102,6 +100,9 @@ def _export_device(session: Session, obj: Device) -> dict:
         "protocol": obj.transport_protocol,
         "uri": obj.transport_uri,
         "ioc_host": obj.transport_ioc_host,
+        # Omitted when nominal: that's TransportSpec's default, so re-import
+        # reproduces it, and it keeps the common case out of the YAML.
+        "quality": obj.transport_quality if obj.transport_quality != "nominal" else None,
     }
     spec["network"] = {
         "netbox_device_id": obj.network_netbox_device_id,
@@ -156,7 +157,7 @@ def export_row(session: Session, kind: str, obj: Any) -> dict:
         return _export_capability_class(obj)
     if kind == "Device":
         return _export_device(session, obj)
-    return _export_topology(_TOPOLOGY_BY_KIND[kind], obj)
+    return _export_topology(TOPOLOGY_BY_KIND[kind], obj)
 
 
 def to_yaml(document: dict) -> str:
@@ -167,34 +168,55 @@ def _slug(code: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", code.lower()).strip("-")
 
 
+def _unique_path(directory: Path, stem: str, taken: set[Path]) -> Path:
+    """Never let one exported row silently overwrite another.
+
+    Codes are unique per *table*, not globally, and all six topology kinds
+    share one `topology/` directory — so a Site and a Lab both coded "A"
+    used to produce the same filename and the second write clobbered the
+    first. Kind-prefixing the stem fixes that case; this guard covers the
+    remainder (two codes in one kind that slugify identically, e.g. "A/B"
+    and "A-B") by appending a counter rather than losing a row.
+    """
+    path = directory / f"{stem}.yaml"
+    counter = 2
+    while path in taken:
+        path = directory / f"{stem}-{counter}.yaml"
+        counter += 1
+    taken.add(path)
+    return path
+
+
 def export_dir(session: Session, directory: Path | str) -> list[Path]:
     """Bulk export the entire current registry, laid out the same way as
     the `descriptors/` example tree: `topology/*.yaml`, `classes/*.yaml`,
-    `devices/*.yaml`.
+    `devices/*.yaml`. Topology filenames carry their kind (`site-a.yaml`,
+    `lab-a.yaml`) because that one directory holds six kinds; import globs
+    the tree and doesn't care about filenames either way.
     """
     directory = Path(directory)
     written: list[Path] = []
+    taken: set[Path] = set()
 
     for entry in TOPOLOGY_WRITE:
-        kind, _plural, model_cls, *_rest = entry
-        subdir = directory / _SUBDIR_BY_KIND[kind]
+        subdir = directory / _SUBDIR_BY_KIND[entry.kind]
         subdir.mkdir(parents=True, exist_ok=True)
-        for obj in session.execute(select(model_cls)).scalars():
-            path = subdir / f"{_slug(obj.code)}.yaml"
+        for obj in session.execute(select(entry.model)).scalars():
+            path = _unique_path(subdir, f"{entry.kind.lower()}-{_slug(obj.code)}", taken)
             path.write_text(to_yaml(_export_topology(entry, obj)))
             written.append(path)
 
     classes_dir = directory / _SUBDIR_BY_KIND["CapabilityClass"]
     classes_dir.mkdir(parents=True, exist_ok=True)
     for obj in session.execute(select(CapabilityClass)).scalars():
-        path = classes_dir / f"{_slug(obj.name)}.yaml"
+        path = _unique_path(classes_dir, _slug(obj.name), taken)
         path.write_text(to_yaml(_export_capability_class(obj)))
         written.append(path)
 
     devices_dir = directory / _SUBDIR_BY_KIND["Device"]
     devices_dir.mkdir(parents=True, exist_ok=True)
     for obj in session.execute(select(Device)).scalars():
-        path = devices_dir / f"{_slug(obj.code)}.yaml"
+        path = _unique_path(devices_dir, _slug(obj.code), taken)
         path.write_text(to_yaml(_export_device(session, obj)))
         written.append(path)
 

@@ -107,6 +107,8 @@ class DeviceOut(OutBase):
     transport_protocol: str | None
     transport_uri: str | None
     transport_ioc_host: str | None
+    transport_quality: str
+    network_netbox_device_id: int | None
     network_primary_ip: str | None
     network_mac: str | None
     network_vlan: str | None

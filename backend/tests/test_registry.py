@@ -2,8 +2,17 @@ import pytest
 from sqlalchemy import select
 
 from epichem.api.schemas import CapabilityClassOut, DeviceOut, SiteOut
-from epichem.idgen import uuid7
-from epichem.models import CapabilityClass, Device, Site, Station, StationDeviceBinding
+from epichem.models import (
+    Bench,
+    CapabilityClass,
+    Device,
+    Lab,
+    Site,
+    Station,
+    StationDeviceBinding,
+    Workcell,
+    Zone,
+)
 from epichem.registry import (
     create_entity,
     delete_entity,
@@ -100,10 +109,27 @@ def _setup_capability_classes(session):
 
 
 def _setup_station(session):
-    # bench_id is a NOT NULL FK; sqlite doesn't enforce FK constraints by
-    # default (only NOT NULL), and this test only needs Station.code/id, so
-    # a dummy bench id is enough.
-    station = Station(code="HP1", name="Hotplate Station 1", bench_id=uuid7())
+    # A real Site->...->Bench chain, because foreign keys are enforced in
+    # tests now (conftest turns on sqlite's PRAGMA foreign_keys, matching
+    # what epichem.db does at runtime). This used to attach the station to a
+    # made-up bench id, which only worked because sqlite silently ignored
+    # the constraint — the kind of gap the PRAGMA exists to close.
+    site = Site(code="SITE-R", name="Site R")
+    session.add(site)
+    session.flush()
+    lab = Lab(code="LAB-R", name="Lab R", site_id=site.id)
+    session.add(lab)
+    session.flush()
+    zone = Zone(code="ZONE-R", name="Zone R", lab_id=lab.id)
+    session.add(zone)
+    session.flush()
+    workcell = Workcell(code="CELL-R", name="Cell R", zone_id=zone.id)
+    session.add(workcell)
+    session.flush()
+    bench = Bench(code="BENCH-R", name="Bench R", workcell_id=workcell.id)
+    session.add(bench)
+    session.flush()
+    station = Station(code="HP1", name="Hotplate Station 1", bench_id=bench.id)
     session.add(station)
     session.flush()
     return station

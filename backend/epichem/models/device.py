@@ -5,12 +5,16 @@ a role (owns, services, observes)").
 """
 
 import uuid as uuid_mod
+from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from epichem.idgen import uuid7
 from epichem.models.base import Base, RegistryEntity, TimestampMixin
+
+if TYPE_CHECKING:  # avoids a topology <-> device import cycle at runtime
+    from epichem.models.topology import Station
 
 
 class Device(RegistryEntity):
@@ -39,6 +43,10 @@ class Device(RegistryEntity):
     transport_protocol: Mapped[str | None] = mapped_column(default=None)
     transport_uri: Mapped[str | None] = mapped_column(default=None)
     transport_ioc_host: Mapped[str | None] = mapped_column(default=None)
+    # §6.2's nominal/degraded flag for the degraded vendor-bridge onboarding
+    # path. The loader has always accepted it; before this column existed it
+    # was parsed and then silently dropped on the way to the database.
+    transport_quality: Mapped[str] = mapped_column(default="nominal")
 
     network_netbox_device_id: Mapped[int | None] = mapped_column(default=None)
     network_primary_ip: Mapped[str | None] = mapped_column(default=None)
@@ -68,7 +76,19 @@ class Device(RegistryEntity):
     parent: Mapped["Device | None"] = relationship(
         back_populates="children", remote_side="Device.id"
     )
-    signals: Mapped[list["Signal"]] = relationship(back_populates="device")
+    # Both cascade: a device's signals and its station bindings are owned by
+    # the device and are meaningless without it. Without this, deleting a
+    # device either raised IntegrityError forever (any device imported with
+    # `location.station` has a binding, so DELETE could never succeed against
+    # Postgres) or, with sqlite's foreign keys off, silently orphaned the
+    # binding row. Deleting the *device*, not its links, is what the caller
+    # asked for.
+    signals: Mapped[list["Signal"]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
+    station_bindings: Mapped[list["StationDeviceBinding"]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
 
 
 class Signal(Base, TimestampMixin):
@@ -108,3 +128,8 @@ class StationDeviceBinding(Base, TimestampMixin):
     station_id: Mapped[uuid_mod.UUID] = mapped_column(ForeignKey("stations.id"))
     device_id: Mapped[uuid_mod.UUID] = mapped_column(ForeignKey("devices.id"))
     role: Mapped[str] = mapped_column(default="owns")
+
+    # A binding is a link, owned by both ends: deleting either the station or
+    # the device removes the link, not the thing at the other end.
+    device: Mapped[Device] = relationship(back_populates="station_bindings")
+    station: Mapped["Station"] = relationship(back_populates="device_bindings")

@@ -75,9 +75,19 @@ export function DeviceInspector({
         <Field label="IOC host" mono>
           {device.transport_ioc_host}
         </Field>
+        <Field label="Quality">
+          {device.transport_quality === "degraded" ? (
+            <StatusDot tone="warn" label="degraded" />
+          ) : (
+            device.transport_quality
+          )}
+        </Field>
       </FieldGroup>
 
       <FieldGroup title="Network">
+        <Field label="NetBox device ID" mono>
+          {device.network_netbox_device_id}
+        </Field>
         <Field label="Primary IP" mono>
           {device.network_primary_ip}
         </Field>
