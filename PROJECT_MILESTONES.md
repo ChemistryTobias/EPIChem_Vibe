@@ -42,7 +42,7 @@ format instead. See `docs/adr/0004-database-is-source-of-truth-not-git.md` for t
 (modeled on Kadi4Mat's resource-revision pattern). `reconciler.py` and its test suite were removed;
 nothing in the current tree implements git-desired-state reconciliation or drift detection.
 
-Built (all covered by the 39-test suite in `backend/tests/`, sqlite in-memory — **not yet
+Built (all covered by the 91-test suite in `backend/tests/`, sqlite in-memory — **not yet
 re-verified against a real Postgres instance since the ADR 0004 rewrite**; the prior pass's
 `postgres:17` verification covered the retired reconciler/read-only-API shape, not the current
 write/import path):
@@ -70,8 +70,9 @@ write/import path):
   failure isolation), not drift detection; a Device whose `parent` is another device in the *same*
   import batch is not cascade-resolved (a documented scope cut from the old reconciler's fixed-point
   batching — no current descriptor set exercises device-to-device parenting)
-- [x] CLI: `epichem init-db`, `epichem import-dir`/`export-dir`, `epichem <kind> export|import`
-  for all eight kinds, `epichem device list`
+- [x] CLI: `epichem init-db`, `epichem db upgrade|downgrade|current`, `epichem import-dir`/
+  `export-dir`, `epichem <kind> export|import` for all eight descriptor kinds, `epichem device
+  list`, `epichem sample list|add`
 - [x] Example "virtual lab" descriptor set (`descriptors/`) — 1 site → 1 lab → 1 zone → 1 workcell
   → 1 bench → 2 stations, 2 devices, 3 capability classes. Doubles as `test_cli.py`'s fixture and a
   template for a real lab's descriptor set, importable via `epichem import-dir`.
@@ -108,17 +109,27 @@ Not built (still M1-scoped per the plan, but out of reach this pass):
   single biggest gap between what's here and what M1 asks for. When it's picked up: the bundled
   prototype already demonstrates an isometric floor plan built on `@joint/core` alone — see
   ADR 0003 Q1's update.
-- [ ] Frontend tests — there are none. The three screens were verified by rendering them headlessly
-  against a seeded backend (real rows, zero console errors, inspectors populated on select) plus
-  `tsc --noEmit` and a production build, but nothing runs in CI. `topologyTree.ts` is pure and is
-  the obvious first thing to cover.
-- [ ] Alembic migrations — deliberately deferred (not an ADR-level decision, just noted here):
-  `epichem init-db` uses `Base.metadata.create_all`, fine while the schema is still finding its
-  shape. Add real migrations once it stabilizes and a second deployment needs to upgrade in place.
+- [ ] Nothing runs in CI. There is no pipeline at all — see the Delivery section below.
 - [ ] NetBox sync (deferred per ADR 0002)
-- [ ] Auth/RBAC (§12.1) — **neither the read nor the write API has any authentication.** The write
-  path's `Revision.created_by` is nullable and currently always null. Fine for local dev against
-  the sqlite fallback; do not point it at anything reachable by anyone else.
+- [ ] Full auth/RBAC (§12.1). A shared-token gate on writes now exists (see Known gaps); real
+  per-user identity, roles and SSO do not.
+
+Hardening done in a later pass (see `git log`):
+
+- [x] **Alembic migrations** — `epichem init-db` is `alembic upgrade head`, so creating and
+  upgrading a schema are the same path. `epichem db upgrade|downgrade|current` alongside it, and
+  a test asserting the migration tree produces exactly the schema the models declare.
+- [x] **Shared-token auth on writes** + `Revision.created_by`, which was nullable and always null.
+- [x] **Pagination** on `/samples` and `/devices` (`limit`/`offset` + `X-Total-Count`), with the
+  frontend pager to match. Topology lists are deliberately unpaged.
+- [x] **Four backend defects found and fixed** in a read-through: devices with a station binding
+  could never be deleted (or, on sqlite, left orphaned rows); sqlite ran with foreign keys
+  unenforced, so the test suite couldn't catch integrity bugs at all; `export-dir` could silently
+  overwrite one topology row with another; and two real columns were missing from the API and from
+  revision snapshots.
+- [x] **Frontend tests** (Vitest) — 42 covering the tree builder, the API client's error handling,
+  and the pager.
+- [x] **ADR 0006**: no Redis until M2, with the reasoning written down.
 
 ## M2 — Device plane
 
@@ -148,6 +159,23 @@ editable string rather than derived), §7.4 lineage DAG + PROV-O, §7.5 DataMatr
 ELN adapter (blocked on the ELN-target decision above). Two forward migrations are known and
 accepted: `substance` and `location` become foreign keys.
 
+## Delivery — CI/CD, containers, Helm, screenshots
+
+**Status: not started, specified.** Outside the plan's M0–M6 numbering because it's delivery
+infrastructure rather than product scope, but it blocks anything involving a second machine — a
+developer's laptop is currently the only supported way to run EPIChem.
+
+Full specification: `docs/MILESTONE_CI_CD.md`. In short: backend + frontend Docker images, a
+`docker compose` that actually brings up the whole stack (the current one covers Postgres and the
+API only, and has never been run against a real Docker daemon), a GitLab pipeline with lint/test/
+build/deploy stages including a run of the suite against real Postgres, Helm charts for a test and
+a production cluster with migrations as a pre-upgrade hook, and automated UI screenshots via
+Playwright.
+
+Sequenced deliberately *after* the isometric layout and the hardening pass: CI/CD makes a
+deployment reachable by other people, and until this pass the API had no auth, no migrations and
+no pagination. Two of the three prerequisites are now done; the layout view is the remaining one.
+
 ## M5 — Scheduler & scale
 
 **Status: not started.**
@@ -160,11 +188,13 @@ accepted: `substance` and `location` become foreign keys.
 
 ## Known gaps worth flagging explicitly
 
-- **No auth anywhere.** Don't deploy this past localhost until §12.1 is addressed. Note this now
-  covers sample records, not just config: anyone who can reach the API can register, re-state or
-  delete a sample, and `Revision.created_by` is still always null.
-- **`GET /api/v1/samples` has no pagination.** Fine for a lab being built out, not for a real
-  sample population — fix before that.
+- **Auth is a shared token, not an identity system.** Writes require a bearer token from
+  `EPICHEM_API_TOKENS` and the token's label lands in `Revision.created_by` (`api/auth.py`) —
+  so the audit trail says *which token*, not *which person*. Reads are open. With the variable
+  unset, writes are unauthenticated and the API says so at startup. §12.1's OIDC/RBAC design is
+  still owed, and `api/auth.py::require_write_token` is the seam it replaces.
+- **Postgres is still unverified since the ADR 0004 rewrite.** The whole suite runs on sqlite.
+  A `test:postgres` CI stage is specified in `docs/MILESTONE_CI_CD.md` precisely for this.
 - **No observability** (§12.3 OpenTelemetry) — nothing to debug a distributed run with yet, but
   there's also no distributed run yet, so this tracks M2+, not a current regression.
 - Two small schema/spec mismatches the original reconciler build surfaced (still present — the
@@ -183,7 +213,7 @@ accepted: `substance` and `location` become foreign keys.
 
 ```bash
 cd backend
-.venv/bin/pytest              # 49 tests, sqlite in-memory, seconds
+.venv/bin/pytest              # 91 tests, sqlite in-memory, seconds
 .venv/bin/ruff check epichem tests
 .venv/bin/epichem init-db && .venv/bin/epichem import-dir --descriptors-dir ../descriptors \
   && .venv/bin/epichem device list && .venv/bin/epichem sample list
