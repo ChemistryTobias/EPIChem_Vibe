@@ -3,6 +3,7 @@ directly from the SQLAlchemy ORM rows.
 """
 
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -122,3 +123,11 @@ class DeviceOut(OutBase):
     # Not an ORM attribute — filled in by the router from the
     # station_device_bindings table (Device/Station are decoupled, §5.1).
     station_code: str | None = None
+
+
+class RevisionOut(OutBase):
+    revision_number: int
+    action: str
+    created_at: datetime
+    created_by: str | None
+    snapshot: dict

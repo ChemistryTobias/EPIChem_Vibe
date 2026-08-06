@@ -7,7 +7,11 @@ from epichem.api.routers import devices, topology
 def create_app() -> FastAPI:
     app = FastAPI(
         title="EPIChem Registry API",
-        description="Lab topology, device descriptors and capability classes (read-only in M1).",
+        description=(
+            "Lab topology, device descriptors and capability classes. The registry "
+            "(Postgres) is the source of truth (ADR 0004) — reads and writes both go "
+            "through this API, with every write recorded as a Revision."
+        ),
         version="0.1.0",
     )
     install_error_handlers(app)

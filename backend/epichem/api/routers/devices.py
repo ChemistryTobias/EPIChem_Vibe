@@ -1,14 +1,34 @@
-"""Device read endpoints (§8.1 subset)."""
+"""Device and CapabilityClass endpoints (§8.1 subset): read + write. The
+registry (Postgres) is the source of truth (ADR 0004) — writes go through
+`create_entity`/`update_entity`/`delete_entity` (`epichem.registry`), each
+recording a `Revision`. The Descriptor->values translation and station-
+binding helpers are shared with the YAML import path — see `epichem.importer`.
 
-from uuid import UUID
+Device create/update bypass `create_entity`/`update_entity`'s own snapshot
+for one detail: `DeviceOut.station_code` isn't an ORM column (it's filled in
+from the `StationDeviceBinding` join, see `_to_device_out` below), and the
+binding can only be created/updated *after* the Device row has an id, i.e.
+after `create_entity`/`update_entity` has already recorded its Revision. So
+the Revision's `snapshot` is patched in place with the correct
+`station_code` once the binding is settled, rather than left showing
+`station_code: null` regardless of the real binding.
+"""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from epichem.api.deps import get_session
-from epichem.api.resolve import resolve_by_code_or_id
-from epichem.api.schemas import CapabilityClassOut, DeviceOut, SignalOut
+from epichem.api.errors import ConflictProblem, UnprocessableProblem
+from epichem.api.resolve import resolve_by_code_or_id, resolve_by_natural_key_or_id
+from epichem.api.schemas import CapabilityClassOut, DeviceOut, RevisionOut, SignalOut
+from epichem.importer import (
+    capability_class_values,
+    device_values,
+    station_codes_by_device,
+    upsert_station_binding,
+)
 from epichem.models import (
     Bench,
     CapabilityClass,
@@ -20,24 +40,22 @@ from epichem.models import (
     Workcell,
     Zone,
 )
+from epichem.registry import (
+    create_entity,
+    delete_entity,
+    list_revisions,
+    record_revision,
+    resolve_device_references,
+    update_entity,
+)
+from epichem.schemas.descriptor import Descriptor
 
 router = APIRouter(prefix="/api/v1", tags=["devices"])
 
 
-def _station_codes_by_device(session: Session, device_ids: list[UUID]) -> dict[UUID, str]:
-    if not device_ids:
-        return {}
-    rows = session.execute(
-        select(StationDeviceBinding.device_id, Station.code)
-        .join(Station, Station.id == StationDeviceBinding.station_id)
-        .where(StationDeviceBinding.device_id.in_(device_ids), StationDeviceBinding.role == "owns")
-    ).all()
-    return dict(rows)
-
-
 def _to_device_out(session: Session, device: Device) -> DeviceOut:
     out = DeviceOut.model_validate(device)
-    out.station_code = _station_codes_by_device(session, [device.id]).get(device.id)
+    out.station_code = station_codes_by_device(session, [device.id]).get(device.id)
     return out
 
 
@@ -71,7 +89,7 @@ def list_devices(
     if capability:
         devices = [d for d in devices if capability in (d.capabilities or [])]
 
-    codes = _station_codes_by_device(session, [d.id for d in devices])
+    codes = station_codes_by_device(session, [d.id for d in devices])
     outs = []
     for device in devices:
         out = DeviceOut.model_validate(device)
@@ -95,3 +113,142 @@ def list_device_signals(ident: str, session: Session = Depends(get_session)):
 @router.get("/device-classes", response_model=list[CapabilityClassOut])
 def list_device_classes(session: Session = Depends(get_session)):
     return session.execute(select(CapabilityClass)).scalars().all()
+
+
+# ---- write endpoints (ADR 0004) --------------------------------------------
+
+
+def _check_kind(descriptor: Descriptor, expected_kind: str) -> None:
+    if descriptor.kind != expected_kind:
+        raise HTTPException(
+            status_code=400,
+            detail=f"expected kind={expected_kind!r}, got kind={descriptor.kind!r}",
+        )
+
+
+@router.post("/device-classes", response_model=CapabilityClassOut, status_code=201)
+def create_capability_class(descriptor: Descriptor, session: Session = Depends(get_session)):
+    _check_kind(descriptor, "CapabilityClass")
+    values = capability_class_values(descriptor, descriptor.typed_spec())
+    try:
+        obj, _revision = create_entity(
+            session, CapabilityClass, "CapabilityClass", CapabilityClassOut, values
+        )
+    except ValueError as e:
+        raise ConflictProblem(title="CapabilityClass already exists", detail=str(e)) from e
+    session.commit()
+    return obj
+
+
+@router.put("/device-classes/{ident}", response_model=CapabilityClassOut)
+def replace_capability_class(
+    ident: str, descriptor: Descriptor, session: Session = Depends(get_session)
+):
+    _check_kind(descriptor, "CapabilityClass")
+    obj = resolve_by_natural_key_or_id(session, CapabilityClass, ident, key_attr="name")
+    values = capability_class_values(descriptor, descriptor.typed_spec())
+    update_entity(session, obj, "CapabilityClass", CapabilityClassOut, values)
+    session.commit()
+    return obj
+
+
+@router.delete("/device-classes/{ident}", status_code=204)
+def delete_capability_class(ident: str, session: Session = Depends(get_session)):
+    obj = resolve_by_natural_key_or_id(session, CapabilityClass, ident, key_attr="name")
+    try:
+        delete_entity(session, obj, "CapabilityClass", CapabilityClassOut)
+    except IntegrityError:
+        session.rollback()
+        raise ConflictProblem(
+            title="CapabilityClass cannot be deleted",
+            detail=f"CapabilityClass {ident!r} is still referenced by other records",
+        ) from None
+    session.commit()
+    return None
+
+
+@router.get("/device-classes/{ident}/revisions", response_model=list[RevisionOut])
+def list_capability_class_revisions(ident: str, session: Session = Depends(get_session)):
+    obj = resolve_by_natural_key_or_id(session, CapabilityClass, ident, key_attr="name")
+    return list_revisions(session, "CapabilityClass", obj.id)
+
+
+def _resolve_device_refs(session: Session, spec) -> dict:
+    try:
+        return resolve_device_references(
+            session, spec.class_, spec.capabilities, spec.location.station, spec.parent
+        )
+    except ValueError as e:
+        raise UnprocessableProblem(
+            title="Device references could not be resolved", detail=str(e)
+        ) from e
+
+
+@router.post("/devices", response_model=DeviceOut, status_code=201)
+def create_device(descriptor: Descriptor, session: Session = Depends(get_session)):
+    _check_kind(descriptor, "Device")
+    spec = descriptor.typed_spec()
+    refs = _resolve_device_refs(session, spec)
+    values = device_values(descriptor, spec, refs)
+    try:
+        device, revision = create_entity(session, Device, "Device", DeviceOut, values)
+    except ValueError as e:
+        raise ConflictProblem(title="Device already exists", detail=str(e)) from e
+
+    upsert_station_binding(session, device, refs["station_id"])
+    session.flush()
+    revision.snapshot = {
+        **revision.snapshot,
+        "station_code": station_codes_by_device(session, [device.id]).get(device.id),
+    }
+    session.commit()
+    return _to_device_out(session, device)
+
+
+@router.put("/devices/{ident}", response_model=DeviceOut)
+def replace_device(ident: str, descriptor: Descriptor, session: Session = Depends(get_session)):
+    _check_kind(descriptor, "Device")
+    device = resolve_by_code_or_id(session, Device, ident)
+    spec = descriptor.typed_spec()
+    refs = _resolve_device_refs(session, spec)
+    values = device_values(descriptor, spec, refs)
+    revision = update_entity(session, device, "Device", DeviceOut, values)
+    binding_changed = upsert_station_binding(session, device, refs["station_id"])
+    session.flush()
+
+    station_code = station_codes_by_device(session, [device.id]).get(device.id)
+    if revision is not None:
+        revision.snapshot = {**revision.snapshot, "station_code": station_code}
+    elif binding_changed:
+        # No Device column changed, but the station binding did — that's
+        # still a real change to the entity's observable state, so it still
+        # needs a revision (update_entity's own diff can't see this, since
+        # station_id isn't a Device column).
+        snapshot = {
+            **DeviceOut.model_validate(device).model_dump(mode="json"),
+            "station_code": station_code,
+        }
+        record_revision(session, "Device", device.id, "updated", snapshot)
+    session.commit()
+    return _to_device_out(session, device)
+
+
+@router.delete("/devices/{ident}", status_code=204)
+def delete_device(ident: str, session: Session = Depends(get_session)):
+    device = resolve_by_code_or_id(session, Device, ident)
+    try:
+        delete_entity(session, device, "Device", DeviceOut)
+    except IntegrityError:
+        session.rollback()
+        raise ConflictProblem(
+            title="Device cannot be deleted",
+            detail=f"Device {ident!r} is still referenced by other records",
+        ) from None
+    session.commit()
+    return None
+
+
+@router.get("/devices/{ident}/revisions", response_model=list[RevisionOut])
+def list_device_revisions(ident: str, session: Session = Depends(get_session)):
+    device = resolve_by_code_or_id(session, Device, ident)
+    return list_revisions(session, "Device", device.id)

@@ -1,17 +1,39 @@
-"""Read-only topology endpoints (§8.1 subset). Topology is git-backed
-(§4) — it's written by `epichem reconcile`, not through this API. Mutating
-endpoints (`PUT /api/v1/layouts/{lab}`) belong to the M2 layout editor, not
-here.
+"""Topology endpoints (§8.1 subset): read + write. The registry (Postgres)
+is the source of truth for topology (ADR 0004) — writes go through
+`create_entity`/`update_entity`/`delete_entity` (`epichem.registry`), each
+recording a `Revision`. The M2 layout editor still owns visual layout
+editing; this is CRUD only.
+
+Write endpoints for the six topology kinds (Site/Lab/Zone/Workcell/Bench/
+Station) are near-identical apart from which model/parent/attrs they touch,
+so they're registered from one data-driven table (`TOPOLOGY_WRITE`, imported
+from `epichem.importer`) rather than six hand-written copies. That table and
+the Descriptor->values translation (`resolve_topology_values`) are shared
+with `epichem.importer`'s YAML import path, so there's exactly one copy of
+each, not one per caller.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from epichem.api.deps import get_session
+from epichem.api.errors import ConflictProblem, UnprocessableProblem
 from epichem.api.resolve import resolve_by_code_or_id
-from epichem.api.schemas import BenchOut, LabOut, SiteOut, StationOut, WorkcellOut, ZoneOut
+from epichem.api.schemas import (
+    BenchOut,
+    LabOut,
+    RevisionOut,
+    SiteOut,
+    StationOut,
+    WorkcellOut,
+    ZoneOut,
+)
+from epichem.importer import TOPOLOGY_WRITE, resolve_topology_values
 from epichem.models import Bench, Lab, Site, Station, Workcell, Zone
+from epichem.registry import create_entity, delete_entity, list_revisions, update_entity
+from epichem.schemas.descriptor import Descriptor
 
 router = APIRouter(prefix="/api/v1", tags=["topology"])
 
@@ -106,3 +128,87 @@ def list_stations(
 @router.get("/stations/{ident}", response_model=StationOut)
 def get_station(ident: str, session: Session = Depends(get_session)):
     return resolve_by_code_or_id(session, Station, ident)
+
+
+# ---- write endpoints (ADR 0004) --------------------------------------------
+
+
+def _check_kind(descriptor: Descriptor, expected_kind: str) -> None:
+    if descriptor.kind != expected_kind:
+        raise HTTPException(
+            status_code=400,
+            detail=f"expected kind={expected_kind!r}, got kind={descriptor.kind!r}",
+        )
+
+
+def _register_topology_routes(
+    kind: str,
+    plural: str,
+    model_cls: type,
+    out_schema: type,
+    parent_field: str | None,
+    parent_model: type | None,
+    attrs: list[str],
+) -> None:
+    def resolve_values(descriptor: Descriptor, session: Session) -> dict:
+        try:
+            return resolve_topology_values(
+                kind, parent_field, parent_model, attrs, descriptor, session
+            )
+        except ValueError as e:
+            raise UnprocessableProblem(
+                title=f"{kind} references could not be resolved", detail=str(e)
+            ) from e
+
+    def create(descriptor: Descriptor, session: Session = Depends(get_session)):
+        _check_kind(descriptor, kind)
+        values = resolve_values(descriptor, session)
+        try:
+            obj, _revision = create_entity(session, model_cls, kind, out_schema, values)
+        except ValueError as e:
+            raise ConflictProblem(title=f"{kind} already exists", detail=str(e)) from e
+        session.commit()
+        return obj
+
+    def replace(ident: str, descriptor: Descriptor, session: Session = Depends(get_session)):
+        _check_kind(descriptor, kind)
+        obj = resolve_by_code_or_id(session, model_cls, ident)
+        values = resolve_values(descriptor, session)
+        update_entity(session, obj, kind, out_schema, values)
+        session.commit()
+        return obj
+
+    def delete(ident: str, session: Session = Depends(get_session)):
+        obj = resolve_by_code_or_id(session, model_cls, ident)
+        try:
+            delete_entity(session, obj, kind, out_schema)
+        except IntegrityError:
+            session.rollback()
+            raise ConflictProblem(
+                title=f"{kind} cannot be deleted",
+                detail=f"{kind} {ident!r} is still referenced by other records",
+            ) from None
+        session.commit()
+        return None
+
+    def revisions(ident: str, session: Session = Depends(get_session)):
+        obj = resolve_by_code_or_id(session, model_cls, ident)
+        return list_revisions(session, kind, obj.id)
+
+    router.add_api_route(
+        f"/{plural}", create, methods=["POST"], response_model=out_schema, status_code=201
+    )
+    router.add_api_route(
+        f"/{plural}/{{ident}}", replace, methods=["PUT"], response_model=out_schema
+    )
+    router.add_api_route(f"/{plural}/{{ident}}", delete, methods=["DELETE"], status_code=204)
+    router.add_api_route(
+        f"/{plural}/{{ident}}/revisions",
+        revisions,
+        methods=["GET"],
+        response_model=list[RevisionOut],
+    )
+
+
+for _kind, _plural, _model, _out, _parent_field, _parent_model, _attrs in TOPOLOGY_WRITE:
+    _register_topology_routes(_kind, _plural, _model, _out, _parent_field, _parent_model, _attrs)
