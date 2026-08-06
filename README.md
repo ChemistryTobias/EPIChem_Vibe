@@ -5,7 +5,8 @@ Decisions made to unblock implementation: `docs/adr/`. Progress against the plan
 `PROJECT_MILESTONES.md`.
 
 This repo currently implements the **registry** — the topology + device + capability-class model
-from plan §5/§6, backed by git YAML descriptors and a reconciler, with a read API. It does not yet
+from plan §5/§6. The database (Postgres, sqlite fallback for local dev) is the versioned source of
+truth (ADR 0004); YAML is an export/import interchange format, not desired state. It does not yet
 run Bluesky, talk to real hardware, or have a frontend — see PROJECT_MILESTONES.md for what's next.
 
 ## Quick start (local, no Docker)
@@ -17,7 +18,7 @@ python3 -m venv .venv
 
 # schema + example virtual lab, using the sqlite fallback (no Postgres needed)
 .venv/bin/epichem init-db
-.venv/bin/epichem reconcile --descriptors-dir ../descriptors
+.venv/bin/epichem import-dir --descriptors-dir ../descriptors
 .venv/bin/epichem device list
 
 # API
@@ -34,7 +35,7 @@ python3 -m venv .venv
 docker compose up --build
 ```
 
-Brings up Postgres, runs `epichem init-db` + `epichem reconcile` against `./descriptors`, then
+Brings up Postgres, runs `epichem init-db` + `epichem import-dir` against `./descriptors`, then
 serves the API on `:8000`. (Written to the standard Compose spec; not exercised in the sandbox this
 was built in — no Docker available there. Validate before relying on it.)
 
@@ -45,17 +46,22 @@ backend/epichem/
   idgen.py           UUIDv7 generation
   db.py              SQLAlchemy engine/session (Postgres via DATABASE_URL, sqlite fallback)
   models/            ORM: topology (Site..Station), Device/Signal/StationDeviceBinding, CapabilityClass
-  schemas/descriptor.py   Pydantic schemas for the git-backed descriptor YAML
+  models/revision.py  Full-snapshot revision history, one row per entity write (ADR 0004)
+  registry.py         Versioned write service layer: create/update/delete_entity, each recording
+                       a Revision
+  schemas/descriptor.py   Pydantic schemas for descriptor YAML — also the write API's request body
   descriptors/loader.py   Reads a descriptors directory into validated Descriptor objects
-  reconciler.py       Desired state (descriptors) → observed state (DB), reports drift
-  api/                FastAPI read endpoints (§8.1 subset) + RFC 9457 error responses
-  cli.py              epichem init-db | reconcile | device list
+  importer.py          Descriptor -> registry-row translation, shared by the write API and YAML
+                       import (epichem import-dir)
+  exporter.py           Registry rows -> descriptor YAML (epichem <kind> export, export-dir)
+  api/                FastAPI read + write endpoints (§8.1 subset) + RFC 9457 error responses
+  cli.py              epichem init-db | import-dir | export-dir | <kind> export|import | device list
 
 descriptors/          Example "virtual lab": one site/lab/zone/workcell/bench, two stations,
-                       two devices, three capability classes — the reconciler's test fixture and
-                       a template for a real lab's descriptor set.
+                       two devices, three capability classes — a template for a real lab's
+                       descriptor set, importable via `epichem import-dir`.
 
-docs/adr/              M0 decision log (plan §17)
+docs/adr/              M0 decision log (plan §17) + ADR 0004 (DB as source of truth)
 ```
 
 ## Status

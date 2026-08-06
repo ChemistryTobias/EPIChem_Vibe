@@ -15,9 +15,10 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
 - No Postgres needed for local dev/tests: `epichem/db.py` falls back to a local sqlite file, and
   tests use an in-memory sqlite engine with `StaticPool` (required for in-memory sqlite —
   otherwise each connection gets its own empty database).
-- Descriptor YAML lives in `descriptors/` at the repo root (topology/classes/devices) — this is
-  the git-backed "desired state" the reconciler reads (plan §4). It's also the reconciler's test
-  fixture; don't restructure it without checking `backend/tests/test_reconciler.py`.
+- Descriptor YAML lives in `descriptors/` at the repo root (topology/classes/devices) — an example
+  virtual lab, importable via `epichem import-dir` (ADR 0004: the database is the versioned source
+  of truth, not git; YAML is export/import interchange). It's also `test_cli.py`'s fixture; don't
+  restructure it without checking that file.
 - Every module has a one-line docstring pointing back to the plan section it implements. Keep
   doing that — it's what makes "why does this field exist" answerable without re-reading the
   68K-word spec each time.
@@ -27,12 +28,14 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
 - Enumerated fields (environment_class, atmosphere, workcell state, ...) are plain strings
   validated at the pydantic descriptor layer, not DB enums — see the module docstring in
   `models/topology.py` for why.
-- Registry mutation happens two ways only: the reconciler (from descriptors) or direct DB writes
-  in tests. The read API (`api/routers/`) is deliberately read-only in M1 — topology/device
-  mutation via HTTP is an M2 (layout editor) concern, not something to bolt on early.
-- `ReconcileReport`/`ReconcileItem` shape (built by the reconciler): check
-  `backend/epichem/reconciler.py`'s module docstring before consuming it from a new call site —
-  don't assume the shape, it was designed by whoever wrote that file.
+- Registry mutation goes through `epichem/registry.py`'s `create_entity`/`update_entity`/
+  `delete_entity` — the write API (`api/routers/`) and YAML import (`epichem/importer.py`) both
+  call these, so every write records a `Revision` (ADR 0004) regardless of which path made it.
+  Don't write directly to ORM rows outside tests.
+- The Descriptor->registry-row translation (`resolve_topology_values`, `device_values`,
+  `capability_class_values`, the `TOPOLOGY_WRITE` table) lives once in `epichem/importer.py` and
+  is imported by both the write API routers and the CLI/import path — don't add a second copy in
+  a new call site.
 
 ## Process
 
@@ -47,4 +50,4 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
   self-contained, testable features. It's a project-level agent file — if a session's Agent tool
   doesn't list it as an available `subagent_type`, agent definitions are loaded at session start,
   so it needs a fresh session to register; until then, inline its guidelines into a
-  `general-purpose` agent's prompt instead (see how the reconciler was delegated for a template).
+  `general-purpose` agent's prompt instead (see how `registry.py` was delegated for a template).

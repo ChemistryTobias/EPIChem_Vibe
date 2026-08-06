@@ -26,7 +26,7 @@ services:
       - ./descriptors:/descriptors:ro
     command: >
       sh -c "epichem init-db &&
-             epichem reconcile --descriptors-dir /descriptors &&
+             epichem import-dir --descriptors-dir /descriptors &&
              uvicorn epichem.api.app:app --host 0.0.0.0 --port 8000"
 
 volumes:
