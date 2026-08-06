@@ -1,11 +1,11 @@
-"""Reads descriptor YAML files from a directory (a git checkout in real
-deployments) into validated `Descriptor` objects. §6.1: "Descriptors are
-files in git. The registry ingests them; the registry is a cache and query
-index, not the source of truth."
+"""Reads descriptor YAML files from a directory into validated `Descriptor`
+objects. Used by `epichem.importer.import_directory` for bulk YAML import
+(ADR 0004 §3) — the registry (Postgres) is the source of truth; YAML is an
+export/import interchange format, not desired state.
 
 A bad file doesn't abort the whole load — it's collected as a `DescriptorError`
-so the reconciler can report every problem in one pass instead of stopping at
-the first typo.
+so the caller can report every problem in one pass instead of stopping at the
+first typo.
 """
 
 from dataclasses import dataclass

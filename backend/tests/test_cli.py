@@ -48,19 +48,19 @@ def test_init_db_creates_schema(monkeypatch, tmp_path, capsys):
     assert str(db_path) in capsys.readouterr().out
 
 
-def test_reconcile_against_example_descriptors(
+def test_import_dir_against_example_descriptors(
     session, monkeypatch, capsys, example_descriptors_dir
 ):
     monkeypatch.setattr(cli, "SessionLocal", lambda: session)
 
-    cli.main(["reconcile", "--descriptors-dir", str(example_descriptors_dir)])
+    cli.main(["import-dir", "--descriptors-dir", str(example_descriptors_dir)])
 
     out = capsys.readouterr().out
     assert "[created  ] Device          DEV-HP-001" in out
     assert "[created  ] Device          DEV-ST-001" in out
 
 
-def test_reconcile_exits_nonzero_on_error(session, monkeypatch, tmp_path):
+def test_import_dir_exits_nonzero_on_error(session, monkeypatch, tmp_path):
     (tmp_path / "device.yaml").write_text(
         """
 apiVersion: epichem.dev/v1
@@ -76,6 +76,46 @@ spec:
     monkeypatch.setattr(cli, "SessionLocal", lambda: session)
 
     with pytest.raises(SystemExit) as exc_info:
-        cli.main(["reconcile", "--descriptors-dir", str(tmp_path)])
+        cli.main(["import-dir", "--descriptors-dir", str(tmp_path)])
+
+    assert exc_info.value.code == 1
+
+
+def test_export_dir_writes_yaml_tree(
+    session, monkeypatch, capsys, example_descriptors_dir, tmp_path
+):
+    monkeypatch.setattr(cli, "SessionLocal", lambda: session)
+    cli.main(["import-dir", "--descriptors-dir", str(example_descriptors_dir)])
+    capsys.readouterr()
+
+    out_dir = tmp_path / "export"
+    cli.main(["export-dir", "--out-dir", str(out_dir)])
+
+    out = capsys.readouterr().out
+    assert "wrote" in out
+    assert (out_dir / "devices" / "dev-hp-001.yaml").exists()
+
+
+def test_device_export_import_round_trip(
+    session, monkeypatch, capsys, example_descriptors_dir, tmp_path
+):
+    monkeypatch.setattr(cli, "SessionLocal", lambda: session)
+    cli.main(["import-dir", "--descriptors-dir", str(example_descriptors_dir)])
+    capsys.readouterr()
+
+    out_file = tmp_path / "dev-hp-001.yaml"
+    cli.main(["device", "export", "DEV-HP-001", "-o", str(out_file)])
+    assert out_file.exists()
+
+    cli.main(["device", "import", str(out_file)])
+    out = capsys.readouterr().out
+    assert "[unchanged] Device          DEV-HP-001" in out
+
+
+def test_device_export_missing_code_exits_nonzero(session, monkeypatch):
+    monkeypatch.setattr(cli, "SessionLocal", lambda: session)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["device", "export", "DEV-NOPE"])
 
     assert exc_info.value.code == 1

@@ -22,10 +22,11 @@ class Device(RegistryEntity):
     labels: Mapped[dict] = mapped_column(JSON, default=dict)
 
     # spec.class — raw dotted reference from the descriptor (e.g.
-    # "epichem.classes.HeaterStirrer"), plus the resolved FK the reconciler
-    # fills in once it can match the trailing segment to a registered
-    # CapabilityClass.name. Kept as two fields because the descriptor's
-    # dotted-path convention isn't itself a database key.
+    # "epichem.classes.HeaterStirrer"), plus the resolved FK the write path
+    # (epichem.registry.resolve_device_references) fills in once it can
+    # match the trailing segment to a registered CapabilityClass.name. Kept
+    # as two fields because the descriptor's dotted-path convention isn't
+    # itself a database key.
     capability_class_ref: Mapped[str | None] = mapped_column(default=None)
     capability_class_id: Mapped[uuid_mod.UUID | None] = mapped_column(
         ForeignKey("capability_classes.id"), default=None

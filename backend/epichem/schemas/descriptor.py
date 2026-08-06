@@ -1,8 +1,9 @@
-"""Pydantic schemas for the git-backed descriptor YAML files (§4, §6.1,
-§6.3): the `apiVersion/kind/metadata/spec` envelope, one `spec` shape per
-`kind`. These are the schemas descriptor authors write against, and what
-the loader (epichem.descriptors.loader) validates files into before the
-reconciler upserts them into the registry.
+"""Pydantic schemas for descriptor YAML files (§4, §6.1, §6.3): the
+`apiVersion/kind/metadata/spec` envelope, one `spec` shape per `kind`. This
+is also the write API's request body shape (ADR 0004 §3) — YAML import and
+HTTP writes share one model and one Descriptor->values translation path
+(epichem.importer). The loader (epichem.descriptors.loader) validates files
+into these before epichem.importer upserts them into the registry.
 
 Topology kinds (Site/Lab/Zone/Workcell/Bench/Station) aren't given an
 explicit YAML example in the plan — only Device (§6.1) and CapabilityClass
