@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from epichem.api.auth import require_write_token
 from epichem.api.deps import get_session
 from epichem.api.errors import ConflictProblem
 from epichem.api.resolve import resolve_by_code_or_id
@@ -83,6 +84,7 @@ def get_sample(ident: str, session: Session = Depends(get_session)):
 
 @router.post(
     "/samples",
+    dependencies=[Depends(require_write_token)],
     response_model=SampleOut,
     status_code=201,
     summary="Register a sample",
@@ -103,6 +105,7 @@ def create_sample(body: SampleWrite, session: Session = Depends(get_session)):
 
 @router.put(
     "/samples/{ident}",
+    dependencies=[Depends(require_write_token)],
     response_model=SampleOut,
     summary="Replace a sample",
     description=(
@@ -122,6 +125,7 @@ def replace_sample(ident: str, body: SampleWrite, session: Session = Depends(get
 
 @router.delete(
     "/samples/{ident}",
+    dependencies=[Depends(require_write_token)],
     status_code=204,
     summary="Delete a sample",
     description=(

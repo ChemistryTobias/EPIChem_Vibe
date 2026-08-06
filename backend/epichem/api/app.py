@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from epichem.api.auth import TOKENS_ENV, warn_if_open
 from epichem.api.errors import install_error_handlers
 from epichem.api.routers import devices, samples, topology
 
@@ -27,11 +28,17 @@ def create_app() -> FastAPI:
             "Lab topology, device descriptors, capability classes and samples. "
             "The registry (Postgres) is the source of truth (ADR 0004) — reads "
             "and writes both go through this API, with every write recorded as "
-            "a Revision."
+            "a Revision.\n\n"
+            f"**Writes** (POST/PUT/DELETE) require `Authorization: Bearer <token>` "
+            f"when `{TOKENS_ENV}` is set; the token's label is recorded as the "
+            "revision's `created_by`. Reads are open. With the variable unset, "
+            "writes are unauthenticated — fine for localhost, not for anything "
+            "reachable by anyone else."
         ),
         version="0.1.0",
     )
     install_error_handlers(app)
+    warn_if_open()
 
     origins = _cors_origins()
     if origins:

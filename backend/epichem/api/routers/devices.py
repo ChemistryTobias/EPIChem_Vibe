@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from epichem.api.auth import require_write_token
 from epichem.api.deps import get_session
 from epichem.api.errors import ConflictProblem, UnprocessableProblem
 from epichem.api.resolve import resolve_by_code_or_id, resolve_by_natural_key_or_id
@@ -68,9 +69,9 @@ def list_devices(
 ):
     stmt = select(Device)
     if capability_class:
-        stmt = stmt.join(
-            CapabilityClass, CapabilityClass.id == Device.capability_class_id
-        ).where(CapabilityClass.name == capability_class)
+        stmt = stmt.join(CapabilityClass, CapabilityClass.id == Device.capability_class_id).where(
+            CapabilityClass.name == capability_class
+        )
     if mode:
         stmt = stmt.where(Device.operational_mode == mode)
     if lab:
@@ -117,9 +118,14 @@ def list_device_classes(session: Session = Depends(get_session)):
 # ---- write endpoints (ADR 0004) --------------------------------------------
 
 
-@router.post("/device-classes", response_model=CapabilityClassOut, status_code=201)
+@router.post(
+    "/device-classes",
+    dependencies=[Depends(require_write_token)],
+    response_model=CapabilityClassOut,
+    status_code=201,
+)
 def create_capability_class(descriptor: Descriptor, session: Session = Depends(get_session)):
-    check_descriptor_kind(descriptor,"CapabilityClass")
+    check_descriptor_kind(descriptor, "CapabilityClass")
     values = capability_class_values(descriptor, descriptor.typed_spec())
     try:
         obj, _revision = create_entity(
@@ -131,11 +137,15 @@ def create_capability_class(descriptor: Descriptor, session: Session = Depends(g
     return obj
 
 
-@router.put("/device-classes/{ident}", response_model=CapabilityClassOut)
+@router.put(
+    "/device-classes/{ident}",
+    dependencies=[Depends(require_write_token)],
+    response_model=CapabilityClassOut,
+)
 def replace_capability_class(
     ident: str, descriptor: Descriptor, session: Session = Depends(get_session)
 ):
-    check_descriptor_kind(descriptor,"CapabilityClass")
+    check_descriptor_kind(descriptor, "CapabilityClass")
     obj = resolve_by_natural_key_or_id(session, CapabilityClass, ident, key_attr="name")
     values = capability_class_values(descriptor, descriptor.typed_spec())
     update_entity(session, obj, "CapabilityClass", CapabilityClassOut, values)
@@ -143,7 +153,9 @@ def replace_capability_class(
     return obj
 
 
-@router.delete("/device-classes/{ident}", status_code=204)
+@router.delete(
+    "/device-classes/{ident}", dependencies=[Depends(require_write_token)], status_code=204
+)
 def delete_capability_class(ident: str, session: Session = Depends(get_session)):
     obj = resolve_by_natural_key_or_id(session, CapabilityClass, ident, key_attr="name")
     try:
@@ -175,9 +187,14 @@ def _resolve_device_refs(session: Session, spec) -> dict:
         ) from e
 
 
-@router.post("/devices", response_model=DeviceOut, status_code=201)
+@router.post(
+    "/devices",
+    dependencies=[Depends(require_write_token)],
+    response_model=DeviceOut,
+    status_code=201,
+)
 def create_device(descriptor: Descriptor, session: Session = Depends(get_session)):
-    check_descriptor_kind(descriptor,"Device")
+    check_descriptor_kind(descriptor, "Device")
     spec = descriptor.typed_spec()
     refs = _resolve_device_refs(session, spec)
     values = device_values(descriptor, spec, refs)
@@ -191,9 +208,11 @@ def create_device(descriptor: Descriptor, session: Session = Depends(get_session
     return _to_device_out(session, device)
 
 
-@router.put("/devices/{ident}", response_model=DeviceOut)
+@router.put(
+    "/devices/{ident}", dependencies=[Depends(require_write_token)], response_model=DeviceOut
+)
 def replace_device(ident: str, descriptor: Descriptor, session: Session = Depends(get_session)):
-    check_descriptor_kind(descriptor,"Device")
+    check_descriptor_kind(descriptor, "Device")
     device = resolve_by_code_or_id(session, Device, ident)
     spec = descriptor.typed_spec()
     refs = _resolve_device_refs(session, spec)
@@ -204,7 +223,7 @@ def replace_device(ident: str, descriptor: Descriptor, session: Session = Depend
     return _to_device_out(session, device)
 
 
-@router.delete("/devices/{ident}", status_code=204)
+@router.delete("/devices/{ident}", dependencies=[Depends(require_write_token)], status_code=204)
 def delete_device(ident: str, session: Session = Depends(get_session)):
     device = resolve_by_code_or_id(session, Device, ident)
     try:

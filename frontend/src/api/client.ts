@@ -13,6 +13,38 @@
 
 export const API_BASE = "/api/v1";
 
+/**
+ * Where the API token lives.
+ *
+ * localStorage, not a build-time env var: a token baked into the bundle
+ * would be shipped to everyone who loads the page. Not a cookie/session
+ * either — the backend's auth is a shared bearer token (ADR-less, see
+ * `backend/epichem/api/auth.py`), there is no user, and there is no login
+ * flow to build one on. `TokenField` in the sidebar is the whole UI for it.
+ *
+ * Reads never need it. Writes need it only when the backend has
+ * EPICHEM_API_TOKENS set; with the variable unset, this stays empty and
+ * nothing changes.
+ */
+const TOKEN_STORAGE_KEY = "epichem.apiToken";
+
+export function getApiToken(): string {
+  try {
+    return window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
+  } catch {
+    return ""; // private-mode browsers can throw on localStorage access
+  }
+}
+
+export function setApiToken(token: string): void {
+  try {
+    if (token) window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  } catch {
+    // Nothing useful to do; the request will 401 and say so.
+  }
+}
+
 /** RFC 9457 Problem Details. */
 interface Problem {
   type?: string;
@@ -55,11 +87,16 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const token = getApiToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {

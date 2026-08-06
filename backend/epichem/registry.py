@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from epichem.actor import current_actor
 from epichem.models.capability import CapabilityClass
 from epichem.models.device import Device
 from epichem.models.revision import Revision
@@ -58,6 +59,11 @@ def record_revision(
     snapshot: dict,
     created_by: str | None = None,
 ) -> Revision:
+    # Falls back to whoever the current HTTP request authenticated as
+    # (epichem.api.auth). Stays None for CLI/import writes, which have no
+    # identity to record — a null created_by means "not through the API".
+    if created_by is None:
+        created_by = current_actor.get()
     revision = Revision(
         entity_type=entity_type,
         entity_id=entity_id,

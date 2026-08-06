@@ -80,6 +80,10 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.sidebar__build-label {
+  margin-top: var(--space-4);
+}
+
 .sidebar__note {
   margin: var(--space-2) 0 0;
   font-size: 10px;

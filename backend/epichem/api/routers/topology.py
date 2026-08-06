@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from epichem.api.auth import require_write_token
 from epichem.api.deps import get_session
 from epichem.api.errors import ConflictProblem, UnprocessableProblem
 from epichem.api.resolve import resolve_by_code_or_id
@@ -180,13 +181,33 @@ def _register_topology_routes(entry: TopologyKind) -> None:
         obj = resolve_by_code_or_id(session, model_cls, ident)
         return list_revisions(session, kind, obj.id)
 
+    # Every write is gated on a bearer token when EPICHEM_API_TOKENS is set
+    # (api/auth.py); reads are left open. Applied here rather than per
+    # function so a new write route can't be added without it.
+    write = [Depends(require_write_token)]
+
     router.add_api_route(
-        f"/{plural}", create, methods=["POST"], response_model=out_schema, status_code=201
+        f"/{plural}",
+        create,
+        methods=["POST"],
+        response_model=out_schema,
+        status_code=201,
+        dependencies=write,
     )
     router.add_api_route(
-        f"/{plural}/{{ident}}", replace, methods=["PUT"], response_model=out_schema
+        f"/{plural}/{{ident}}",
+        replace,
+        methods=["PUT"],
+        response_model=out_schema,
+        dependencies=write,
     )
-    router.add_api_route(f"/{plural}/{{ident}}", delete, methods=["DELETE"], status_code=204)
+    router.add_api_route(
+        f"/{plural}/{{ident}}",
+        delete,
+        methods=["DELETE"],
+        status_code=204,
+        dependencies=write,
+    )
     router.add_api_route(
         f"/{plural}/{{ident}}/revisions",
         revisions,

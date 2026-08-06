@@ -10,6 +10,7 @@
 
 import type { Route } from "../hooks/useHashRoute";
 import { navigate } from "../hooks/useHashRoute";
+import { TokenField } from "./TokenField";
 
 import "./Sidebar.css";
 
@@ -53,7 +54,9 @@ export function Sidebar({ current }: { current: Route }) {
       </ul>
 
       <div className="sidebar__footer">
-        <p className="label">Build</p>
+        <TokenField />
+
+        <p className="label sidebar__build-label">Build</p>
         {/* Honest about scope: the plan's other screens (lab layout, procedure
             designer, scheduler) are real milestones, not missing links. */}
         <p className="sidebar__note">
