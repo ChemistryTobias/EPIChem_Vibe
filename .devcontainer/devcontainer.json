@@ -1,0 +1,24 @@
+{
+  "name": "Claude Code Sandbox",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "postCreateCommand": "npm install -g @anthropic-ai/claude-code",
+  "remoteEnv": {
+    "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}"},
+    "mounts": [
+    "source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume"
+  ],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "anthropic.claude-code",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
