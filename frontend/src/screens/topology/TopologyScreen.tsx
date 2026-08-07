@@ -48,13 +48,13 @@ export function TopologyScreen() {
   const counts = tree ? countByKind(tree.roots) : null;
   const subtitle = counts
     ? `${counts.Site} sites · ${counts.Lab} labs · ${counts.Zone} zones · ` +
-      `${counts.Workcell} workcells · ${counts.Bench} benches · ${counts.Station} stations`
-    : "Site → Lab → Zone → Workcell → Bench → Station";
+      `${counts.Station} stations · ${counts.Device} devices`
+    : "Site → Lab → Zone → Station → Device";
 
   return (
     <>
       <ScreenHeader
-        title="Topology"
+        title="Device management — Hierarchy"
         subtitle={subtitle}
         actions={
           <>

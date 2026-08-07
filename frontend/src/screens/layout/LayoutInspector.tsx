@@ -14,11 +14,11 @@ import type { PlacedStation } from "./isometric";
 
 interface LayoutInspectorProps {
   placed: PlacedStation | null;
-  benchCode: string;
+  labCode: string;
   onClose: () => void;
 }
 
-export function LayoutInspector({ placed, benchCode, onClose }: LayoutInspectorProps) {
+export function LayoutInspector({ placed, labCode, onClose }: LayoutInspectorProps) {
   if (!placed) {
     return (
       <Inspector
@@ -28,7 +28,7 @@ export function LayoutInspector({ placed, benchCode, onClose }: LayoutInspectorP
     );
   }
 
-  const { station, device, cell } = placed;
+  const { station, device } = placed;
 
   return (
     <Inspector
@@ -38,14 +38,17 @@ export function LayoutInspector({ placed, benchCode, onClose }: LayoutInspectorP
       onClose={onClose}
     >
       <FieldGroup title="Position">
-        <Field label="Bench" mono>
-          {benchCode}
+        <Field label="Lab" mono>
+          {labCode}
         </Field>
-        <Field label="Grid cell" mono>
-          col {cell.col}, row {cell.row}
+        <Field label="Position" mono>
+          {station.pos_x} m, {station.pos_y} m
         </Field>
-        <Field label="Stack height" mono>
-          {station.stack_height}
+        <Field label="Footprint" mono>
+          {station.size_x_m} × {station.size_y_m} m
+        </Field>
+        <Field label="Height" mono>
+          {station.height_m} m
         </Field>
       </FieldGroup>
 

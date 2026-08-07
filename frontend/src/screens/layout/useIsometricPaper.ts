@@ -4,23 +4,30 @@
  *
  * The rule from plan §10.3 — "never let the canvas hold authoritative state;
  * reload it from the model and it must render identically" — is what shapes
- * this hook. It renders *from* props on every change and owns nothing. A
- * drag doesn't update the canvas's idea of where a station is; it reports a
- * new grid cell, the screen writes it to the registry and refetches, and the
- * redraw is what moves the tile. If the write fails, the tile snaps back,
- * because the canvas never believed the drag in the first place.
+ * this hook. It renders *from* props on every change and owns nothing. A drag
+ * doesn't update the canvas's idea of where a station is; it reports a new
+ * metric position, the screen writes it to the registry and refetches, and the
+ * redraw is what moves the box. If the write fails, the box snaps back, because
+ * the canvas never believed the drag in the first place (ADR 0010).
  */
 
 import { useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
-import type { GridCell, PlacedStation, TileMetrics } from "./isometric";
-import { DEFAULT_METRICS, benchCells, benchExtent, toGrid, toScreen } from "./isometric";
-import { FloorTile, StationTile, floorPoints, stationFaces, stationFill } from "./shapes";
+import type { Lab } from "../../api/types";
+import type { FloorPos, PlacedStation, TileMetrics } from "./isometric";
+import { DEFAULT_METRICS, canvasExtent, snap, toFloor } from "./isometric";
+import {
+  FloorGrid,
+  StationTile,
+  floorGridPath,
+  floorSurfacePoints,
+  stationBox,
+  stationFill,
+} from "./shapes";
 
 export interface IsometricPaperOptions {
-  cols: number;
-  rows: number;
+  lab: Lab | null;
   placed: PlacedStation[];
   metrics?: TileMetrics;
   selectedCode: string | null;
@@ -29,10 +36,12 @@ export interface IsometricPaperOptions {
   /** False puts the canvas in read-only "operations" mode (§10.3). */
   editable: boolean;
   onSelect: (code: string | null) => void;
-  onMove: (placed: PlacedStation, cell: GridCell) => void;
+  onMove: (placed: PlacedStation, pos: FloorPos) => void;
 }
 
-const CELL_NAMESPACE = { ...shapes, epi: { FloorTile, Station: StationTile } };
+const CELL_NAMESPACE = { ...shapes, epi: { FloorGrid, Station: StationTile } };
+
+const MARGIN = 24;
 
 export function useIsometricPaper(options: IsometricPaperOptions) {
   // A callback ref held in state, not a plain useRef. The container div is
@@ -62,7 +71,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       height: "100%",
       background: { color: "transparent" },
       gridSize: 1,
-      // Only stations move, and only in edit mode. Floor tiles are scenery.
+      // Only stations move, and only in edit mode. The floor is scenery.
       interactive: (cellView) =>
         handlers.current.editable && cellView.model.get("type") === "epi.Station",
     });
@@ -73,22 +82,30 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     paper.on("blank:pointerclick", () => handlers.current.onSelect(null));
 
     paper.on("element:pointerup", (view) => {
-      const { cols, rows, metrics = DEFAULT_METRICS, placed } = handlers.current;
+      const { lab, metrics = DEFAULT_METRICS, placed } = handlers.current;
       const code = view.model.get("stationCode") as string | undefined;
       const target = placed.find((p) => p.station.code === code);
-      if (!code || !target) return;
+      if (!lab || !code || !target) return;
 
-      const { origin } = benchExtent(cols, rows, metrics);
+      const { origin } = canvasExtent(lab.width_m, lab.depth_m, metrics);
+      const anchor = view.model.get("anchor") as { x: number; y: number };
       const position = view.model.position();
-      const cell = toGrid(
-        { x: position.x + metrics.tileW / 2, y: position.y },
+      // The floor anchor moved with the box; invert it back to metres, then
+      // snap to the grid (soft — the write stores whatever we send).
+      const dropped = toFloor(
+        { x: position.x + anchor.x, y: position.y + anchor.y },
         origin,
         metrics,
-        target.station.stack_height,
       );
+      const next = snap(dropped, lab.grid_size_m);
 
-      if (cell.col === target.cell.col && cell.row === target.cell.row) return;
-      handlers.current.onMove(target, cell);
+      if (
+        Math.abs(next.x - target.station.pos_x) < 1e-6 &&
+        Math.abs(next.y - target.station.pos_y) < 1e-6
+      ) {
+        return;
+      }
+      handlers.current.onMove(target, next);
     });
 
     graphRef.current = graph;
@@ -102,69 +119,56 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
   }, [container]);
 
   // Redraw whenever anything visible changes.
-  const { cols, rows, placed, metrics = DEFAULT_METRICS, selectedCode, showLabels, showFloor } =
-    options;
+  const { lab, placed, metrics = DEFAULT_METRICS, selectedCode, showLabels, showFloor } = options;
 
   useEffect(() => {
     const graph = graphRef.current;
     const paper = paperRef.current;
-    if (!graph || !paper) return;
+    if (!graph || !paper || !lab) return;
 
-    const { width, height, origin } = benchExtent(cols, rows, metrics);
+    const { width, height, origin } = canvasExtent(lab.width_m, lab.depth_m, metrics);
     // Extra headroom for the tallest station box, so nothing is clipped.
-    const tallest = placed.reduce((max, p) => Math.max(max, p.station.stack_height), 0);
-    paper.setDimensions(width + metrics.tileW, height + metrics.tileH + tallest * metrics.stackUnit);
-    paper.translate(0, tallest * metrics.stackUnit);
+    const tallest = placed.reduce((max, p) => Math.max(max, p.station.height_m), 0);
+    const lift = tallest * metrics.heightUnit;
+    paper.setDimensions(width + MARGIN * 2, height + lift + MARGIN * 2);
+    paper.translate(MARGIN, lift + MARGIN);
 
-    // Full rebuild rather than a diff: a bench is tens of cells, and a
-    // rebuild can't drift out of sync with the data the way a diff can.
+    // Full rebuild rather than a diff: a lab is tens of cells, and a rebuild
+    // can't drift out of sync with the data the way a diff can.
     graph.clear();
 
     if (showFloor) {
-      graph.addCells(
-        benchCells(cols, rows).map((cell) => {
-          const screen = toScreen(cell, origin, metrics);
-          const tile = new FloorTile({
-            position: { x: screen.x - metrics.tileW / 2, y: screen.y },
-            size: { width: metrics.tileW, height: metrics.tileH },
-          });
-          tile.attr("body/points", floorPoints(metrics));
-          return tile;
-        }),
-      );
+      const floor = new FloorGrid({ position: { x: 0, y: 0 }, size: { width, height } });
+      floor.attr({
+        surface: { points: floorSurfacePoints(lab, origin, metrics) },
+        grid: { d: floorGridPath(lab, origin, metrics) },
+      });
+      graph.addCell(floor);
     }
 
     // `placed` is already sorted back-to-front (painter's algorithm, §10.3),
     // and JointJS paints in insertion order.
     for (const item of placed) {
-      const boxHeight = item.station.stack_height * metrics.stackUnit;
-      const screen = toScreen(item.cell, origin, metrics, item.station.stack_height);
-      const faces = stationFaces(metrics, boxHeight);
+      const box = stationBox(item.station, origin, metrics);
       const fill = stationFill(item.device?.operational_mode ?? null);
       const selected = item.station.code === selectedCode;
 
-      const tile = new StationTile({
-        position: { x: screen.x - metrics.tileW / 2, y: screen.y },
-        size: { width: metrics.tileW, height: metrics.tileH + boxHeight },
-      });
+      const tile = new StationTile({ position: box.position, size: box.size });
       tile.set("stationCode", item.station.code);
+      tile.set("anchor", box.anchor);
       tile.attr({
         top: {
-          points: faces.top,
+          points: box.faces.top,
           fill: fill.top,
           stroke: selected ? "#00B1EA" : "#FFFFFF",
           strokeWidth: selected ? 3 : 1,
         },
-        left: { points: faces.left, fill: fill.left },
-        right: { points: faces.right, fill: fill.right },
-        label: {
-          text: showLabels ? item.station.code : "",
-          x: metrics.tileW / 2,
-          y: metrics.tileH / 2,
-        },
+        left: { points: box.faces.left, fill: fill.left },
+        right: { points: box.faces.right, fill: fill.right },
+        label: { text: showLabels ? item.station.code : "", x: box.label.x, y: box.label.y },
         badge: {
-          cx: metrics.tileW / 2,
-          cy: metrics.tileH / 2 - 12,
+          cx: box.badge.x,
+          cy: box.badge.y,
           fill: item.device ? "#C6D325" : "transparent",
           stroke: item.device ? "#FFFFFF" : "transparent",
         },
@@ -174,7 +178,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // `container` is a dep so this re-runs in the same commit the paper is
     // created in — effects fire in declaration order, so the paper exists by
     // the time this reads it.
-  }, [container, cols, rows, placed, metrics, selectedCode, showLabels, showFloor]);
+  }, [container, lab, placed, metrics, selectedCode, showLabels, showFloor]);
 
   return setContainer;
 }

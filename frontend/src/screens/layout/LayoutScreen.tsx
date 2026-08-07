@@ -1,17 +1,20 @@
 /**
- * Lab layout (plan §10): the isometric floor plan of one bench, with
- * click-to-inspect and drag-to-move.
+ * Lab layout (plan §10): the isometric floor plan of one metric lab canvas,
+ * with click-to-inspect and drag-to-move.
  *
  * This is M1's actual exit criterion — "a real lab room is modelled **and
  * renders correctly**". The Topology screen shows the same registry as a
  * tree; this shows it as the room.
  *
  * Scope, stated plainly so it isn't mistaken for the whole of §10:
- * - Renders one bench at a time. Multi-bench rooms and zone drawing are not
- *   here; the bench is the unit that carries a grid in the model (§5.1).
- * - Editing is limited to moving a station between cells. Creating and
- *   deleting stations, resizing benches, multi-select, align/distribute,
- *   copy-paste and undo/redo (§10.3's editor affordances) are not built.
+ * - Renders one lab at a time. The lab is a metric canvas (ADR 0010:
+ *   width_m × depth_m floor, grid_size_m raster); zone drawing and the site
+ *   floorplan map are not here yet.
+ * - Editing is limited to dragging a station's box to a new position, which
+ *   snaps to the grid (ADR 0010). Creating and deleting stations, resizing the
+ *   canvas or grid, drag-to-resize footprints, editing box heights,
+ *   multi-select, align/distribute, copy-paste and undo/redo (§10.3
+ *   affordances) are not built yet.
  * - The live-status, sample-occupancy, transport-route and utilisation
  *   layers need the M2 device plane. The layer toggles here cover only what
  *   the registry can actually answer today.
@@ -25,7 +28,7 @@ import { AsyncBoundary } from "../../components/AsyncBoundary";
 import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
-import type { GridCell, PlacedStation } from "./isometric";
+import type { FloorPos, PlacedStation } from "./isometric";
 import { placeStations, placementProblems } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
 import { useIsometricPaper } from "./useIsometricPaper";
@@ -45,60 +48,56 @@ async function fetchLayout() {
 
 export function LayoutScreen() {
   const layout = useAsync(useCallback(fetchLayout, []));
-  const [benchCode, setBenchCode] = useState<string | null>(null);
+  const [labCode, setLabCode] = useState<string | null>(null);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [editable, setEditable] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [showFloor, setShowFloor] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const benches = layout.data?.topology.benches ?? [];
-  // Default to the first bench, but let an explicit choice win.
-  const bench = benches.find((b) => b.code === benchCode) ?? benches[0] ?? null;
+  const labs = layout.data?.topology.labs ?? [];
+  // Default to the first lab, but let an explicit choice win.
+  const lab = labs.find((l) => l.code === labCode) ?? labs[0] ?? null;
 
   const placed = useMemo(
     () =>
-      bench && layout.data
-        ? placeStations(layout.data.topology.stations, layout.data.devices, bench)
+      lab && layout.data
+        ? placeStations(layout.data.topology.stations, layout.data.devices, lab)
         : [],
-    [bench, layout.data],
+    [lab, layout.data],
   );
 
-  const problems = useMemo(
-    () => (bench ? placementProblems(placed, bench) : []),
-    [placed, bench],
-  );
+  const problems = useMemo(() => (lab ? placementProblems(placed, lab) : []), [placed, lab]);
 
   const selected = placed.find((p) => p.station.code === selectedCode) ?? null;
 
+  // A station's zone code, for the full-replace PUT (a station may sit in a zone).
+  const zoneCodeOf = useCallback(
+    (zoneId: string | null) =>
+      zoneId ? (layout.data?.topology.zones.find((z) => z.id === zoneId)?.code ?? null) : null,
+    [layout.data],
+  );
+
   const onMove = useCallback(
-    async (target: PlacedStation, cell: GridCell) => {
-      if (!bench) return;
-      // Refuse before writing rather than letting the registry hold a
-      // station that isn't on its own bench.
-      if (cell.col < 0 || cell.col >= bench.grid_cols || cell.row < 0 || cell.row >= bench.grid_rows) {
-        setError(
-          `${target.station.code} can't move to (${cell.col}, ${cell.row}) — outside the ${bench.grid_cols}×${bench.grid_rows} grid.`,
-        );
-        layout.reload();
-        return;
-      }
+    async (target: PlacedStation, pos: FloorPos) => {
+      if (!lab) return;
+      // Snap-but-not-bound (ADR 0010): a box may land partly off the floor;
+      // that's a warning (see placementProblems), not a refused write.
       setError(null);
       try {
-        await moveStation(target.station, bench.code, cell);
+        await moveStation(target.station, lab.code, zoneCodeOf(target.station.zone_id), pos);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
       }
       // Reload either way: the canvas holds no authoritative state (§10.3),
-      // so a failed write simply snaps the tile back where it was.
+      // so a failed write simply snaps the box back where it was.
       layout.reload();
     },
-    [bench, layout],
+    [lab, layout, zoneCodeOf],
   );
 
   const containerRef = useIsometricPaper({
-    cols: bench?.grid_cols ?? 0,
-    rows: bench?.grid_rows ?? 0,
+    lab,
     placed,
     selectedCode,
     showLabels,
@@ -111,10 +110,10 @@ export function LayoutScreen() {
   return (
     <>
       <ScreenHeader
-        title="Lab layout"
+        title="Device management — Lab layout"
         subtitle={
-          bench
-            ? `${bench.code} · ${bench.grid_cols}×${bench.grid_rows} grid · ${placed.length} stations`
+          lab
+            ? `${lab.code} · ${lab.width_m}×${lab.depth_m} m floor · ${lab.grid_size_m} m grid · ${placed.length} stations`
             : "Isometric floor plan (§10)"
         }
         actions={
@@ -134,10 +133,10 @@ export function LayoutScreen() {
         <div className="screen__content layout__content">
           <AsyncBoundary
             state={layout}
-            isEmpty={(data) => data.topology.benches.length === 0}
+            isEmpty={(data) => data.topology.labs.length === 0}
             empty={
               <p>
-                No benches registered. Import the example lab with{" "}
+                No labs registered. Import the example lab with{" "}
                 <code className="mono">epichem import-dir --descriptors-dir ./descriptors</code>.
               </p>
             }
@@ -145,20 +144,20 @@ export function LayoutScreen() {
             {() => (
               <>
                 <div className="toolbar">
-                  <label className="label" htmlFor="layout-bench">
-                    Bench
+                  <label className="label" htmlFor="layout-lab">
+                    Lab
                   </label>
                   <select
-                    id="layout-bench"
-                    value={bench?.code ?? ""}
+                    id="layout-lab"
+                    value={lab?.code ?? ""}
                     onChange={(e) => {
-                      setBenchCode(e.target.value);
+                      setLabCode(e.target.value);
                       setSelectedCode(null);
                     }}
                   >
-                    {benches.map((b) => (
-                      <option key={b.id} value={b.code}>
-                        {b.code} — {b.name}
+                    {labs.map((l) => (
+                      <option key={l.id} value={l.code}>
+                        {l.code} — {l.name}
                       </option>
                     ))}
                   </select>
@@ -236,7 +235,7 @@ export function LayoutScreen() {
 
         <LayoutInspector
           placed={selected}
-          benchCode={bench?.code ?? ""}
+          labCode={lab?.code ?? ""}
           onClose={() => setSelectedCode(null)}
         />
       </div>

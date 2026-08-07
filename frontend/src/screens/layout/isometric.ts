@@ -1,189 +1,197 @@
 /**
- * Isometric projection, straight from plan §10.3.
+ * Isometric projection in metres, from plan §10.3 and ADR 0010.
  *
- *     screen.x = origin.x + (col - row) * (tileW / 2)
- *     screen.y = origin.y + (col + row) * (tileH / 2) - stackHeight
- *     depth    = col + row            // painter's algorithm: render ascending
+ * The lab is a metric canvas: a width_m × depth_m floor with a grid_size_m
+ * raster. A station is a box placed on it at (pos_x, pos_y) metres, with a
+ * size_x_m × size_y_m footprint and a height_m box height. Everything here is
+ * metres in, screen pixels out.
+ *
+ *     screen.x = origin.x + (x - y) * mHalfW
+ *     screen.y = origin.y + (x + y) * mHalfH - heightM * heightUnit
+ *     depth    = x + y            // painter's algorithm: render ascending
  *
  * Pure functions, no JointJS and no React — the geometry is the part that's
- * easy to get subtly wrong and hard to eyeball on a canvas, so it lives
- * apart from the rendering and is tested directly (`isometric.test.ts`).
+ * easy to get subtly wrong and hard to eyeball on a canvas, so it lives apart
+ * from the rendering and is tested directly (`isometric.test.ts`).
  *
- * `toGrid` is the inverse, and it's what makes dragging work: a tile is
- * dropped at some pixel position and has to become a `grid_col`/`grid_row`
- * the registry will accept.
+ * `toFloor` is the inverse, and it's what makes dragging work: a box dropped
+ * at some pixel position becomes a metric (pos_x, pos_y) the registry accepts.
+ * `snap` rounds that to the grid — the editor snaps by default but nothing
+ * forces it (snap-but-not-bound, ADR 0010).
  */
 
-import type { Bench, Device, Station } from "../../api/types";
+import type { Device, Lab, Station } from "../../api/types";
 
 /**
- * §10.3: "Prototype values (W2=50, H2=29, TW=100, TH=58, per-kind default
- * heights) are a good starting scale; make them configurable per lab."
- * Configurable per call rather than per lab for now — no lab-level display
- * settings exist in the registry yet.
+ * Scale, in screen pixels. Per metre rather than per cell now (ADR 0010), so
+ * the projection is independent of the lab's grid_size_m — a finer grid just
+ * draws more lines, it doesn't rescale the room.
  */
 export interface TileMetrics {
-  /** Full tile width in screen px. */
-  tileW: number;
-  /** Full tile height in screen px. */
-  tileH: number;
-  /** Screen px a station rises per unit of `stack_height`. */
-  stackUnit: number;
+  /** Screen px per metre along the horizontal (x−y) spread. */
+  mHalfW: number;
+  /** Screen px per metre along the vertical (x+y) spread. */
+  mHalfH: number;
+  /** Screen px a box rises per metre of height_m. */
+  heightUnit: number;
 }
 
-export const DEFAULT_METRICS: TileMetrics = { tileW: 100, tileH: 58, stackUnit: 22 };
+export const DEFAULT_METRICS: TileMetrics = { mHalfW: 46, mHalfH: 27, heightUnit: 40 };
 
+/** A screen position, in pixels. */
 export interface Point {
   x: number;
   y: number;
 }
 
-export interface GridCell {
-  col: number;
-  row: number;
+/** A position on the lab floor, in metres. */
+export interface FloorPos {
+  x: number;
+  y: number;
 }
 
-/** Grid cell -> the screen position of that tile's centre. */
+/** Floor metres → the screen position of that point (raised by heightM). */
 export function toScreen(
-  cell: GridCell,
+  pos: FloorPos,
   origin: Point,
   metrics: TileMetrics = DEFAULT_METRICS,
-  stackHeight = 0,
+  heightM = 0,
 ): Point {
   return {
-    x: origin.x + (cell.col - cell.row) * (metrics.tileW / 2),
-    y: origin.y + (cell.col + cell.row) * (metrics.tileH / 2) - stackHeight * metrics.stackUnit,
+    x: origin.x + (pos.x - pos.y) * metrics.mHalfW,
+    y: origin.y + (pos.x + pos.y) * metrics.mHalfH - heightM * metrics.heightUnit,
   };
 }
 
 /**
- * Screen position -> the grid cell it lands in. The inverse of `toScreen`,
- * rounded to the nearest cell so a drop snaps.
+ * Screen position → the floor metres it lands on. The inverse of `toScreen`.
  *
- * `stackHeight` must be the same value `toScreen` was given, or a raised
- * tile reads as being one row further back than it is.
+ * `heightM` must match the value `toScreen` was given, or a raised point reads
+ * as being further back on the floor than it is.
  */
-export function toGrid(
+export function toFloor(
   point: Point,
   origin: Point,
   metrics: TileMetrics = DEFAULT_METRICS,
-  stackHeight = 0,
-): GridCell {
-  const dx = (point.x - origin.x) / (metrics.tileW / 2);
-  const dy = (point.y - origin.y + stackHeight * metrics.stackUnit) / (metrics.tileH / 2);
+  heightM = 0,
+): FloorPos {
+  const dx = (point.x - origin.x) / metrics.mHalfW;
+  const dy = (point.y - origin.y + heightM * metrics.heightUnit) / metrics.mHalfH;
   return {
-    col: Math.round((dx + dy) / 2),
-    row: Math.round((dy - dx) / 2),
+    x: (dx + dy) / 2,
+    y: (dy - dx) / 2,
   };
 }
 
-/** Painter's algorithm: render ascending, so nearer tiles paint over farther. */
-export function depth(cell: GridCell): number {
-  return cell.col + cell.row;
+/** Round a floor position to the nearest grid intersection (soft snap). */
+export function snap(pos: FloorPos, gridSizeM: number): FloorPos {
+  if (gridSizeM <= 0) return pos;
+  return {
+    x: Math.round(pos.x / gridSizeM) * gridSizeM,
+    y: Math.round(pos.y / gridSizeM) * gridSizeM,
+  };
 }
 
-/** The four corners of a tile's diamond, relative to its own bounding box. */
-export function diamondPoints(metrics: TileMetrics = DEFAULT_METRICS): string {
-  const { tileW: w, tileH: h } = metrics;
-  return [
-    [w / 2, 0],
-    [w, h / 2],
-    [w / 2, h],
-    [0, h / 2],
-  ]
-    .map((p) => p.join(","))
-    .join(" ");
+/** Painter's algorithm: render ascending, so nearer boxes paint over farther. */
+export function depth(pos: FloorPos): number {
+  return pos.x + pos.y;
 }
 
 /**
- * How big the drawing is, in screen px, for a bench of `cols x rows`.
- * Used to size the paper and to place the origin so nothing is clipped:
- * the leftmost point of the diamond field is at col=0,row=rows-1.
+ * How big the drawing is, in screen px, for a width_m × depth_m floor.
+ * Used to size the paper and to place the origin so nothing is clipped: the
+ * leftmost point of the diamond is the far corner (x=0, y=depth_m).
  */
-export function benchExtent(
-  cols: number,
-  rows: number,
+export function canvasExtent(
+  widthM: number,
+  depthM: number,
   metrics: TileMetrics = DEFAULT_METRICS,
 ): { width: number; height: number; origin: Point } {
-  const width = (cols + rows) * (metrics.tileW / 2);
-  const height = (cols + rows) * (metrics.tileH / 2);
   return {
-    width,
-    height,
-    // Shift right by the depth of the row axis so col=0,row=max sits at x=0.
-    origin: { x: rows * (metrics.tileW / 2), y: 0 },
+    width: (widthM + depthM) * metrics.mHalfW,
+    height: (widthM + depthM) * metrics.mHalfH,
+    // Shift right by the depth so the far-left corner (0, depth_m) sits at x=0.
+    origin: { x: depthM * metrics.mHalfW, y: 0 },
   };
 }
 
-/** Every cell of a bench grid, in paint order. */
-export function benchCells(cols: number, rows: number): GridCell[] {
-  const cells: GridCell[] = [];
-  for (let col = 0; col < cols; col++) {
-    for (let row = 0; row < rows; row++) cells.push({ col, row });
-  }
-  return cells.sort((a, b) => depth(a) - depth(b));
+/** Grid-line intersections along each axis, as metre offsets 0..extent. */
+export function gridLines(extentM: number, gridSizeM: number): number[] {
+  const lines: number[] = [];
+  if (gridSizeM <= 0) return [0, extentM];
+  // A tiny epsilon so a floor that divides evenly still gets its far edge line.
+  for (let v = 0; v <= extentM + 1e-9; v += gridSizeM) lines.push(Math.min(v, extentM));
+  if (lines[lines.length - 1] < extentM) lines.push(extentM);
+  return lines;
 }
 
 /**
- * What the canvas draws: one bench's stations, each with whatever device is
- * bound to it, sorted back-to-front.
+ * What the canvas draws: one lab's stations, each with whatever device it
+ * holds, sorted back-to-front (ADR 0007: the grid is the lab's, and a station
+ * belongs to a lab).
  *
- * The pairing is by `Device.station_code`, which the API already derives
- * from the station_device_bindings join — the canvas doesn't re-implement
- * that relationship, it reads it.
+ * The pairing is by `Device.station_code`, which the API derives from the
+ * station FK — the canvas doesn't re-implement that relationship, it reads it.
+ * A station holds several devices; the canvas shows the first as its badge.
  */
 export interface PlacedStation {
   station: Station;
   device: Device | null;
-  cell: GridCell;
+  /** The station box's near corner on the floor, in metres. */
+  pos: FloorPos;
 }
 
 export function placeStations(
   stations: Station[],
   devices: Device[],
-  bench: Bench,
+  lab: Lab,
 ): PlacedStation[] {
-  const deviceByStation = new Map(
-    devices.filter((d) => d.station_code).map((d) => [d.station_code as string, d]),
-  );
+  const deviceByStation = new Map<string, Device>();
+  for (const d of devices) {
+    if (d.station_code && !deviceByStation.has(d.station_code)) {
+      deviceByStation.set(d.station_code, d);
+    }
+  }
 
   return stations
-    .filter((s) => s.bench_id === bench.id)
+    .filter((s) => s.lab_id === lab.id)
     .map((station) => ({
       station,
       device: deviceByStation.get(station.code) ?? null,
-      cell: { col: station.grid_col, row: station.grid_row },
+      pos: { x: station.pos_x, y: station.pos_y },
     }))
-    .sort((a, b) => depth(a.cell) - depth(b.cell));
+    .sort((a, b) => depth(a.pos) - depth(b.pos));
 }
 
-/** Stations sitting outside their bench's declared grid, or on top of each other. */
+/** Stations whose box falls off the lab canvas, or overlaps another. */
 export interface PlacementProblem {
   code: string;
   reason: string;
 }
 
-export function placementProblems(placed: PlacedStation[], bench: Bench): PlacementProblem[] {
+export function placementProblems(placed: PlacedStation[], lab: Lab): PlacementProblem[] {
   const problems: PlacementProblem[] = [];
-  const occupied = new Map<string, string>();
+  const seen: { code: string; x0: number; y0: number; x1: number; y1: number }[] = [];
 
-  for (const { station, cell } of placed) {
-    if (cell.col < 0 || cell.col >= bench.grid_cols || cell.row < 0 || cell.row >= bench.grid_rows) {
+  for (const { station, pos } of placed) {
+    const x0 = pos.x;
+    const y0 = pos.y;
+    const x1 = pos.x + station.size_x_m;
+    const y1 = pos.y + station.size_y_m;
+
+    if (x0 < -1e-6 || y0 < -1e-6 || x1 > lab.width_m + 1e-6 || y1 > lab.depth_m + 1e-6) {
       problems.push({
         code: station.code,
-        reason: `at (${cell.col}, ${cell.row}), outside the bench's ${bench.grid_cols}×${bench.grid_rows} grid`,
+        reason: `box at (${x0}, ${y0}) m spills outside the ${lab.width_m}×${lab.depth_m} m floor`,
       });
       continue;
     }
-    const key = `${cell.col},${cell.row}`;
-    const existing = occupied.get(key);
-    if (existing) {
-      problems.push({
-        code: station.code,
-        reason: `shares cell (${cell.col}, ${cell.row}) with ${existing}`,
-      });
+
+    const hit = seen.find((s) => x0 < s.x1 - 1e-6 && x1 > s.x0 + 1e-6 && y0 < s.y1 - 1e-6 && y1 > s.y0 + 1e-6);
+    if (hit) {
+      problems.push({ code: station.code, reason: `overlaps ${hit.code}` });
     } else {
-      occupied.set(key, station.code);
+      seen.push({ code: station.code, x0, y0, x1, y1 });
     }
   }
 

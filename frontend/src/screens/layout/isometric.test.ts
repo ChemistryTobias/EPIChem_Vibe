@@ -1,141 +1,155 @@
 /**
  * Geometry is the part of the isometric view that's easy to get subtly
- * wrong and impossible to eyeball — a half-tile offset looks plausible
- * until you drag something. These test plan §10.3's formulas directly.
+ * wrong and impossible to eyeball — a half-metre offset looks plausible
+ * until you drag something. These test plan §10.3 / ADR 0010's formulas
+ * directly, in metres.
  */
 
 import { describe, expect, test } from "vitest";
 
-import type { Bench, Device, Station } from "../../api/types";
+import type { Device, Lab, Station } from "../../api/types";
 import {
   DEFAULT_METRICS,
-  benchCells,
-  benchExtent,
+  canvasExtent,
   depth,
   placeStations,
   placementProblems,
-  toGrid,
+  snap,
+  toFloor,
   toScreen,
 } from "./isometric";
 
 const ORIGIN = { x: 0, y: 0 };
+const M = DEFAULT_METRICS;
 
 describe("toScreen", () => {
-  test("puts the origin cell at the origin", () => {
-    expect(toScreen({ col: 0, row: 0 }, ORIGIN)).toEqual({ x: 0, y: 0 });
+  test("puts the origin at the origin", () => {
+    expect(toScreen({ x: 0, y: 0 }, ORIGIN)).toEqual({ x: 0, y: 0 });
   });
 
-  test("moves right and down along the column axis", () => {
-    expect(toScreen({ col: 1, row: 0 }, ORIGIN)).toEqual({ x: 50, y: 29 });
+  test("moves right and down along the x axis", () => {
+    expect(toScreen({ x: 1, y: 0 }, ORIGIN)).toEqual({ x: M.mHalfW, y: M.mHalfH });
   });
 
-  test("moves left and down along the row axis", () => {
-    expect(toScreen({ col: 0, row: 1 }, ORIGIN)).toEqual({ x: -50, y: 29 });
+  test("moves left and down along the y axis", () => {
+    expect(toScreen({ x: 0, y: 1 }, ORIGIN)).toEqual({ x: -M.mHalfW, y: M.mHalfH });
   });
 
-  test("raises a stacked tile without moving it sideways", () => {
-    const flat = toScreen({ col: 2, row: 1 }, ORIGIN);
-    const raised = toScreen({ col: 2, row: 1 }, ORIGIN, DEFAULT_METRICS, 2);
+  test("raises a box without moving it sideways", () => {
+    const flat = toScreen({ x: 2, y: 1 }, ORIGIN);
+    const raised = toScreen({ x: 2, y: 1 }, ORIGIN, M, 1.5);
 
     expect(raised.x).toBe(flat.x);
-    expect(raised.y).toBe(flat.y - 2 * DEFAULT_METRICS.stackUnit);
+    expect(raised.y).toBe(flat.y - 1.5 * M.heightUnit);
   });
 });
 
-describe("toGrid", () => {
-  test("inverts toScreen exactly for every cell of a grid", () => {
-    for (const cell of benchCells(6, 4)) {
-      expect(toGrid(toScreen(cell, ORIGIN), ORIGIN)).toEqual(cell);
+describe("toFloor", () => {
+  test("inverts toScreen exactly", () => {
+    for (const pos of [{ x: 0, y: 0 }, { x: 3, y: 2 }, { x: 1.5, y: 0.5 }]) {
+      const back = toFloor(toScreen(pos, ORIGIN), ORIGIN);
+      expect(back.x).toBeCloseTo(pos.x, 9);
+      expect(back.y).toBeCloseTo(pos.y, 9);
     }
   });
 
-  test("inverts toScreen for raised tiles too", () => {
-    const cell = { col: 3, row: 2 };
-    const screen = toScreen(cell, ORIGIN, DEFAULT_METRICS, 3);
-
-    expect(toGrid(screen, ORIGIN, DEFAULT_METRICS, 3)).toEqual(cell);
-  });
-
-  test("snaps a near-miss drop to the nearest cell", () => {
-    const exact = toScreen({ col: 2, row: 1 }, ORIGIN);
-
-    expect(toGrid({ x: exact.x + 8, y: exact.y - 5 }, ORIGIN)).toEqual({ col: 2, row: 1 });
+  test("inverts toScreen for raised points too", () => {
+    const pos = { x: 3, y: 2 };
+    const back = toFloor(toScreen(pos, ORIGIN, M, 1.1), ORIGIN, M, 1.1);
+    expect(back.x).toBeCloseTo(pos.x, 9);
+    expect(back.y).toBeCloseTo(pos.y, 9);
   });
 
   test("respects a non-zero origin", () => {
     const origin = { x: 400, y: 120 };
+    const back = toFloor(toScreen({ x: 4, y: 3 }, origin), origin);
+    expect(back.x).toBeCloseTo(4, 9);
+    expect(back.y).toBeCloseTo(3, 9);
+  });
+});
 
-    expect(toGrid(toScreen({ col: 4, row: 3 }, origin), origin)).toEqual({ col: 4, row: 3 });
+describe("snap", () => {
+  test("rounds to the nearest grid multiple", () => {
+    expect(snap({ x: 2.2, y: 1.9 }, 0.5)).toEqual({ x: 2.0, y: 2.0 });
+  });
+
+  test("leaves a value already on the grid alone", () => {
+    expect(snap({ x: 2.5, y: 1.0 }, 0.5)).toEqual({ x: 2.5, y: 1.0 });
+  });
+
+  test("is a no-op for a non-positive grid", () => {
+    expect(snap({ x: 2.2, y: 1.9 }, 0)).toEqual({ x: 2.2, y: 1.9 });
   });
 });
 
 describe("depth", () => {
-  test("orders back-to-front so nearer tiles paint last", () => {
-    const cells = [
-      { col: 2, row: 2 },
-      { col: 0, row: 0 },
-      { col: 1, row: 0 },
+  test("orders back-to-front so nearer boxes paint last", () => {
+    const positions = [
+      { x: 2, y: 2 },
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
     ];
 
-    expect([...cells].sort((a, b) => depth(a) - depth(b))[0]).toEqual({ col: 0, row: 0 });
+    expect([...positions].sort((a, b) => depth(a) - depth(b))[0]).toEqual({ x: 0, y: 0 });
   });
 });
 
-describe("benchExtent", () => {
-  test("is wide enough for both diagonals", () => {
-    const { width, height } = benchExtent(4, 3);
+describe("canvasExtent", () => {
+  test("is wide and tall enough for both diagonals", () => {
+    const { width, height } = canvasExtent(6, 4);
 
-    expect(width).toBe((4 + 3) * 50);
-    expect(height).toBe((4 + 3) * 29);
+    expect(width).toBe((6 + 4) * M.mHalfW);
+    expect(height).toBe((6 + 4) * M.mHalfH);
   });
 
-  test("places the origin so the leftmost tile is not clipped", () => {
-    const { origin } = benchExtent(4, 3);
-    const leftmost = toScreen({ col: 0, row: 2 }, origin);
+  test("places the origin so the far-left corner is not clipped", () => {
+    const { origin } = canvasExtent(6, 4);
+    const farLeft = toScreen({ x: 0, y: 4 }, origin);
 
-    expect(leftmost.x).toBeGreaterThanOrEqual(0);
-  });
-});
-
-describe("benchCells", () => {
-  test("covers the whole grid exactly once", () => {
-    const cells = benchCells(3, 2);
-
-    expect(cells).toHaveLength(6);
-    expect(new Set(cells.map((c) => `${c.col},${c.row}`)).size).toBe(6);
-  });
-
-  test("comes back in paint order", () => {
-    const depths = benchCells(3, 3).map(depth);
-
-    expect(depths).toEqual([...depths].sort((a, b) => a - b));
+    expect(farLeft.x).toBeGreaterThanOrEqual(0);
   });
 });
 
 // --- placement ------------------------------------------------------------
 
-const bench: Bench = {
-  id: "b1",
-  code: "BENCH-1",
-  name: "Bench 1",
-  workcell_id: "w1",
-  grid_cols: 4,
-  grid_rows: 3,
-  height_mm: null,
+const lab: Lab = {
+  id: "lab1",
+  code: "LAB-1",
+  name: "Lab 1",
+  site_id: "s1",
+  room_number: null,
+  environment_class: "ambient",
+  access_control_group: null,
+  width_m: 6,
+  depth_m: 4,
+  grid_size_m: 0.5,
 };
 
-function station(code: string, col: number, row: number, bench_id = "b1"): Station {
+function station(
+  code: string,
+  pos_x: number,
+  pos_y: number,
+  lab_id = "lab1",
+  size = 1,
+): Station {
   return {
     id: `st-${code}`,
     code,
     name: `Station ${code}`,
-    bench_id,
+    lab_id,
+    zone_id: null,
     kind: "generic",
-    grid_col: col,
-    grid_row: row,
-    stack_height: 1,
+    pos_x,
+    pos_y,
+    size_x_m: size,
+    size_y_m: size,
+    height_m: 0.5,
     capacity: 1,
     accepted_labware_types: [],
+    queueserver_endpoint: null,
+    redis_namespace: null,
+    state: "active",
+    owning_group: null,
   };
 }
 
@@ -144,7 +158,9 @@ function device(code: string, station_code: string | null): Device {
     id: `d-${code}`,
     code,
     name: `Device ${code}`,
+    node_kind: "device",
     labels: {},
+    station_id: null,
     parent_id: null,
     capability_class_ref: null,
     capability_class_id: null,
@@ -174,24 +190,24 @@ function device(code: string, station_code: string | null): Device {
 }
 
 describe("placeStations", () => {
-  test("keeps only this bench's stations", () => {
+  test("keeps only this lab's stations", () => {
     const placed = placeStations(
-      [station("A", 0, 0), station("B", 1, 0, "other-bench")],
+      [station("A", 0, 0), station("B", 1, 0, "other-lab")],
       [],
-      bench,
+      lab,
     );
 
     expect(placed.map((p) => p.station.code)).toEqual(["A"]);
   });
 
   test("pairs a device with its station by station_code", () => {
-    const placed = placeStations([station("A", 0, 0)], [device("DEV-1", "A")], bench);
+    const placed = placeStations([station("A", 0, 0)], [device("DEV-1", "A")], lab);
 
     expect(placed[0].device?.code).toBe("DEV-1");
   });
 
   test("leaves an unbound station without a device", () => {
-    const placed = placeStations([station("A", 0, 0)], [device("DEV-1", null)], bench);
+    const placed = placeStations([station("A", 0, 0)], [device("DEV-1", null)], lab);
 
     expect(placed[0].device).toBeNull();
   });
@@ -200,7 +216,7 @@ describe("placeStations", () => {
     const placed = placeStations(
       [station("far", 2, 2), station("near", 0, 0), station("mid", 1, 0)],
       [],
-      bench,
+      lab,
     );
 
     expect(placed.map((p) => p.station.code)).toEqual(["near", "mid", "far"]);
@@ -209,29 +225,35 @@ describe("placeStations", () => {
 
 describe("placementProblems", () => {
   test("says nothing about a well-formed layout", () => {
-    const placed = placeStations([station("A", 0, 0), station("B", 1, 1)], [], bench);
+    const placed = placeStations([station("A", 0, 0), station("B", 2, 2)], [], lab);
 
-    expect(placementProblems(placed, bench)).toEqual([]);
+    expect(placementProblems(placed, lab)).toEqual([]);
   });
 
-  test("flags a station outside the bench grid", () => {
-    const placed = placeStations([station("A", 9, 0)], [], bench);
+  test("flags a box that spills off the floor", () => {
+    const placed = placeStations([station("A", 5.5, 0)], [], lab); // 5.5 + 1 > 6
 
-    expect(placementProblems(placed, bench)[0]).toMatchObject({ code: "A" });
-    expect(placementProblems(placed, bench)[0].reason).toContain("outside");
+    expect(placementProblems(placed, lab)[0]).toMatchObject({ code: "A" });
+    expect(placementProblems(placed, lab)[0].reason).toContain("outside");
   });
 
   test("flags a negative coordinate", () => {
-    const placed = placeStations([station("A", -1, 0)], [], bench);
+    const placed = placeStations([station("A", -1, 0)], [], lab);
 
-    expect(placementProblems(placed, bench)).toHaveLength(1);
+    expect(placementProblems(placed, lab)).toHaveLength(1);
   });
 
-  test("flags two stations sharing a cell", () => {
-    const placed = placeStations([station("A", 1, 1), station("B", 1, 1)], [], bench);
+  test("flags two overlapping boxes", () => {
+    const placed = placeStations([station("A", 1, 1), station("B", 1.5, 1.5)], [], lab);
 
-    const problems = placementProblems(placed, bench);
+    const problems = placementProblems(placed, lab);
     expect(problems).toHaveLength(1);
-    expect(problems[0].reason).toContain("shares cell");
+    expect(problems[0].reason).toContain("overlaps");
+  });
+
+  test("lets two boxes touch edge-to-edge without overlapping", () => {
+    const placed = placeStations([station("A", 0, 0), station("B", 1, 0)], [], lab);
+
+    expect(placementProblems(placed, lab)).toEqual([]);
   });
 });

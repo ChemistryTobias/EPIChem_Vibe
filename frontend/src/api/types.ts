@@ -29,6 +29,11 @@ export interface Lab {
   room_number: string | null;
   environment_class: string;
   access_control_group: string | null;
+  /** The lab is a metric canvas (ADR 0010): floor size and grid spacing in
+   * metres. The guide-cell count is derived (width_m / grid_size_m). */
+  width_m: number;
+  depth_m: number;
+  grid_size_m: number;
 }
 
 export interface Zone {
@@ -40,47 +45,43 @@ export interface Zone {
   pressure: string | null;
   temperature_class: string | null;
   hazard_class: string | null;
-}
-
-export interface Workcell {
-  id: string;
-  code: string;
-  name: string;
-  zone_id: string;
-  queueserver_endpoint: string | null;
-  redis_namespace: string | null;
-  state: string;
-  owning_group: string | null;
-}
-
-export interface Bench {
-  id: string;
-  code: string;
-  name: string;
-  workcell_id: string;
-  grid_cols: number;
-  grid_rows: number;
-  height_mm: number | null;
+  /** §12.2 safety classification: human | robot | shared. */
+  occupancy: string;
 }
 
 export interface Station {
   id: string;
   code: string;
   name: string;
-  bench_id: string;
+  /** A station always belongs to a lab; a zone is optional (ADR 0007). */
+  lab_id: string;
+  zone_id: string | null;
   kind: string;
-  grid_col: number;
-  grid_row: number;
-  stack_height: number;
+  /** The station's box on the lab canvas, in metres (ADR 0010): position from
+   * the lab origin (snap-but-not-bound), footprint, and isometric box height. */
+  pos_x: number;
+  pos_y: number;
+  size_x_m: number;
+  size_y_m: number;
+  height_m: number;
   capacity: number;
   accepted_labware_types: string[];
+  /** Execution binding, moved off the removed Workcell (ADR 0007). */
+  queueserver_endpoint: string | null;
+  redis_namespace: string | null;
+  state: string;
+  owning_group: string | null;
 }
 
 export interface Device {
   id: string;
   code: string;
   name: string;
+  /** "device" (controllable leaf) or "module" (grouping/passive), ADR 0007. */
+  node_kind: string;
   labels: Record<string, string>;
+  /** The station this node belongs to (ADR 0007: a direct FK, not a binding). */
+  station_id: string | null;
   parent_id: string | null;
   capability_class_ref: string | null;
   capability_class_id: string | null;
@@ -106,7 +107,7 @@ export interface Device {
   safety_max_unattended_minutes: number | null;
   operational_mode: string;
   operational_calibration: Record<string, unknown> | null;
-  /** Derived from the station_device_bindings join, not a Device column. */
+  /** Derived from the station FK (Device.station_code property), not a column. */
   station_code: string | null;
 }
 

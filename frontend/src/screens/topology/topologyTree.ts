@@ -1,22 +1,23 @@
 /**
- * Turns the six flat topology lists into the Site → Lab → Zone → Workcell →
- * Bench → Station tree the screen renders.
+ * Turns the flat topology + device lists into the
+ * Site → Lab → Zone(optional) → Station → Module/Device tree the Hierarchy
+ * renders (ADR 0007/0009).
  *
- * Pure — no React, no fetching — so the hierarchy logic can be reasoned
- * about (and eventually tested) on its own.
+ * Pure — no React, no fetching — so the hierarchy logic can be reasoned about
+ * (and tested) on its own.
  *
- * Rows whose parent isn't in the snapshot are *not* dropped. They come back
- * in `orphans` so the screen can say so out loud: a lab with a dangling
- * `site_id` is a registry problem worth seeing, not something a UI should
- * quietly hide.
+ * Rows whose parent isn't in the snapshot are *not* dropped. They come back in
+ * `orphans` so the screen can say so out loud: a station with a dangling
+ * `lab_id`, or a device pointing at no station, is a registry problem worth
+ * seeing, not something a UI should quietly hide.
  */
 
-import type { Bench, Lab, Site, Station, Workcell, Zone } from "../../api/types";
+import type { Device, Lab, Site, Station, Zone } from "../../api/types";
 import type { TopologySnapshot } from "../../api/topology";
 
-export type TopologyKind = "Site" | "Lab" | "Zone" | "Workcell" | "Bench" | "Station";
+export type TopologyKind = "Site" | "Lab" | "Zone" | "Station" | "Device";
 
-export type TopologyRow = Site | Lab | Zone | Workcell | Bench | Station;
+export type TopologyRow = Site | Lab | Zone | Station | Device;
 
 export interface TreeNode {
   id: string;
@@ -34,11 +35,12 @@ export interface TopologyTree {
   orphans: { kind: TopologyKind; code: string; parentId: string }[];
 }
 
-/** Group rows by the foreign key naming their parent. */
-function groupByParent<T>(rows: T[], parentIdOf: (row: T) => string): Map<string, T[]> {
+/** Group rows by the foreign key naming their parent (skipping null keys). */
+function groupByParent<T>(rows: T[], parentIdOf: (row: T) => string | null): Map<string, T[]> {
   const grouped = new Map<string, T[]>();
   for (const row of rows) {
     const key = parentIdOf(row);
+    if (key === null) continue;
     const bucket = grouped.get(key);
     if (bucket) bucket.push(row);
     else grouped.set(key, [row]);
@@ -49,13 +51,21 @@ function groupByParent<T>(rows: T[], parentIdOf: (row: T) => string): Map<string
 const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
 
 export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
-  const { sites, labs, zones, workcells, benches, stations } = snapshot;
+  const { sites, labs, zones, stations, devices } = snapshot;
 
   const labsBySite = groupByParent(labs, (l) => l.site_id);
   const zonesByLab = groupByParent(zones, (z) => z.lab_id);
-  const workcellsByZone = groupByParent(workcells, (w) => w.zone_id);
-  const benchesByWorkcell = groupByParent(benches, (b) => b.workcell_id);
-  const stationsByBench = groupByParent(stations, (s) => s.bench_id);
+  // A station's parent in the tree is its zone if it has one, otherwise its lab.
+  const stationsByZone = groupByParent(stations, (s) => s.zone_id);
+  const stationsDirectlyUnderLab = groupByParent(
+    stations,
+    (s) => (s.zone_id === null ? s.lab_id : null),
+  );
+  const devicesByStation = groupByParent(
+    devices,
+    (d) => (d.parent_id === null ? d.station_id : null),
+  );
+  const devicesByParent = groupByParent(devices, (d) => d.parent_id);
 
   const node = (kind: TopologyKind, row: TopologyRow, children: TreeNode[] = []): TreeNode => ({
     id: row.id,
@@ -66,36 +76,31 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
     children,
   });
 
+  // A device and its nested modules/devices (recursive on parent_id).
+  const deviceNode = (device: Device): TreeNode =>
+    node(
+      "Device",
+      device,
+      (devicesByParent.get(device.id) ?? []).sort(byCode).map(deviceNode),
+    );
+
+  const stationNode = (s: Station): TreeNode =>
+    node("Station", s, (devicesByStation.get(s.id) ?? []).sort(byCode).map(deviceNode));
+
   const roots = [...sites].sort(byCode).map((site) =>
     node(
       "Site",
       site,
       (labsBySite.get(site.id) ?? []).sort(byCode).map((lab) =>
-        node(
-          "Lab",
-          lab,
-          (zonesByLab.get(lab.id) ?? []).sort(byCode).map((zone) =>
-            node(
-              "Zone",
-              zone,
-              (workcellsByZone.get(zone.id) ?? []).sort(byCode).map((workcell) =>
-                node(
-                  "Workcell",
-                  workcell,
-                  (benchesByWorkcell.get(workcell.id) ?? []).sort(byCode).map((bench) =>
-                    node(
-                      "Bench",
-                      bench,
-                      (stationsByBench.get(bench.id) ?? [])
-                        .sort(byCode)
-                        .map((station) => node("Station", station)),
-                    ),
-                  ),
-                ),
-              ),
+        node("Lab", lab, [
+          // Zones first, then any station sitting directly under the lab.
+          ...(zonesByLab.get(lab.id) ?? [])
+            .sort(byCode)
+            .map((zone) =>
+              node("Zone", zone, (stationsByZone.get(zone.id) ?? []).sort(byCode).map(stationNode)),
             ),
-          ),
-        ),
+          ...(stationsDirectlyUnderLab.get(lab.id) ?? []).sort(byCode).map(stationNode),
+        ]),
       ),
     ),
   );
@@ -104,22 +109,32 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
     Site: new Set(sites.map((s) => s.id)),
     Lab: new Set(labs.map((l) => l.id)),
     Zone: new Set(zones.map((z) => z.id)),
-    Workcell: new Set(workcells.map((w) => w.id)),
-    Bench: new Set(benches.map((b) => b.id)),
+    Station: new Set(stations.map((s) => s.id)),
+    Device: new Set(devices.map((d) => d.id)),
   };
 
   const orphans: TopologyTree["orphans"] = [
     ...labs.filter((l) => !known.Site.has(l.site_id)).map((l) => orphan("Lab", l.code, l.site_id)),
     ...zones.filter((z) => !known.Lab.has(z.lab_id)).map((z) => orphan("Zone", z.code, z.lab_id)),
-    ...workcells
-      .filter((w) => !known.Zone.has(w.zone_id))
-      .map((w) => orphan("Workcell", w.code, w.zone_id)),
-    ...benches
-      .filter((b) => !known.Workcell.has(b.workcell_id))
-      .map((b) => orphan("Bench", b.code, b.workcell_id)),
+    // A station is misplaced if its lab is missing, or if it names a zone that
+    // isn't in the registry.
     ...stations
-      .filter((s) => !known.Bench.has(s.bench_id))
-      .map((s) => orphan("Station", s.code, s.bench_id)),
+      .filter((s) => !known.Lab.has(s.lab_id))
+      .map((s) => orphan("Station", s.code, s.lab_id)),
+    ...stations
+      .filter((s) => s.zone_id !== null && !known.Zone.has(s.zone_id))
+      .map((s) => orphan("Station", s.code, s.zone_id as string)),
+    // A device with no place in the tree: no parent and no (known) station.
+    ...devices
+      .filter(
+        (d) =>
+          d.parent_id === null &&
+          (d.station_id === null || !known.Station.has(d.station_id)),
+      )
+      .map((d) => orphan("Device", d.code, d.station_id ?? "(unplaced)")),
+    ...devices
+      .filter((d) => d.parent_id !== null && !known.Device.has(d.parent_id))
+      .map((d) => orphan("Device", d.code, d.parent_id as string)),
   ];
 
   return { roots, orphans };
@@ -136,7 +151,7 @@ export function collectNodeIds(nodes: TreeNode[]): string[] {
 
 /** Count of nodes per kind, for the header subtitle. */
 export function countByKind(nodes: TreeNode[]): Record<TopologyKind, number> {
-  const counts = { Site: 0, Lab: 0, Zone: 0, Workcell: 0, Bench: 0, Station: 0 };
+  const counts = { Site: 0, Lab: 0, Zone: 0, Station: 0, Device: 0 };
   const walk = (list: TreeNode[]) => {
     for (const n of list) {
       counts[n.kind] += 1;

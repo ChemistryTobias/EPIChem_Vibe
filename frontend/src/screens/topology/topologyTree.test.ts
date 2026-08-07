@@ -1,13 +1,14 @@
 /**
- * `buildTopologyTree` is the one piece of real logic in this app that isn't
- * a thin wrapper over fetch or JSX — it turns six flat lists into a
- * hierarchy — so it's where tests are worth the most per line.
+ * `buildTopologyTree` is the one piece of real logic in this app that isn't a
+ * thin wrapper over fetch or JSX — it turns flat lists into a hierarchy
+ * (Site → Lab → Zone(optional) → Station → Module/Device) — so it's where
+ * tests are worth the most per line.
  */
 
 import { describe, expect, test } from "vitest";
 
 import type { TopologySnapshot } from "../../api/topology";
-import type { Bench, Lab, Site, Station, Workcell, Zone } from "../../api/types";
+import type { Device, Lab, Site, Station, Zone } from "../../api/types";
 import { buildTopologyTree, collectNodeIds, countByKind } from "./topologyTree";
 
 const site = (id: string, code: string): Site => ({
@@ -26,6 +27,9 @@ const lab = (id: string, code: string, site_id: string): Lab => ({
   room_number: null,
   environment_class: "ambient",
   access_control_group: null,
+  width_m: 6,
+  depth_m: 4,
+  grid_size_m: 0.5,
 });
 
 const zone = (id: string, code: string, lab_id: string): Zone => ({
@@ -37,63 +41,91 @@ const zone = (id: string, code: string, lab_id: string): Zone => ({
   pressure: null,
   temperature_class: null,
   hazard_class: null,
+  occupancy: "shared",
 });
 
-const workcell = (id: string, code: string, zone_id: string): Workcell => ({
+const station = (
+  id: string,
+  code: string,
+  lab_id: string,
+  zone_id: string | null = null,
+): Station => ({
   id,
   code,
-  name: `Cell ${code}`,
+  name: `Station ${code}`,
+  lab_id,
   zone_id,
+  kind: "generic",
+  pos_x: 0,
+  pos_y: 0,
+  size_x_m: 1,
+  size_y_m: 1,
+  height_m: 0.5,
+  capacity: 1,
+  accepted_labware_types: [],
   queueserver_endpoint: null,
   redis_namespace: null,
   state: "active",
   owning_group: null,
 });
 
-const bench = (id: string, code: string, workcell_id: string): Bench => ({
+const device = (
+  id: string,
+  code: string,
+  opts: { station_id?: string | null; parent_id?: string | null; node_kind?: string } = {},
+): Device => ({
   id,
   code,
-  name: `Bench ${code}`,
-  workcell_id,
-  grid_cols: 1,
-  grid_rows: 1,
-  height_mm: null,
-});
-
-const station = (id: string, code: string, bench_id: string): Station => ({
-  id,
-  code,
-  name: `Station ${code}`,
-  bench_id,
-  kind: "generic",
-  grid_col: 0,
-  grid_row: 0,
-  stack_height: 1,
-  capacity: 1,
-  accepted_labware_types: [],
+  name: `Device ${code}`,
+  node_kind: opts.node_kind ?? "device",
+  labels: {},
+  station_id: opts.station_id ?? null,
+  parent_id: opts.parent_id ?? null,
+  capability_class_ref: null,
+  capability_class_id: null,
+  capabilities: [],
+  ophyd_import: null,
+  ophyd_args: {},
+  transport_protocol: null,
+  transport_uri: null,
+  transport_ioc_host: null,
+  transport_quality: "nominal",
+  network_netbox_device_id: null,
+  network_primary_ip: null,
+  network_mac: null,
+  network_vlan: null,
+  pose_x_mm: null,
+  pose_y_mm: null,
+  pose_z_mm: null,
+  pose_yaw_deg: null,
+  envelope: {},
+  safety_flags: [],
+  safety_interlocks: [],
+  safety_max_unattended_minutes: null,
+  operational_mode: "read_write",
+  operational_calibration: null,
+  station_code: null,
 });
 
 const empty: TopologySnapshot = {
   sites: [],
   labs: [],
   zones: [],
-  workcells: [],
-  benches: [],
   stations: [],
+  devices: [],
 };
 
-/** One full Site -> ... -> Station chain. */
+/** One full Site -> Lab -> Zone -> Station -> Device chain. */
 const fullChain: TopologySnapshot = {
   sites: [site("s1", "SITE-1")],
   labs: [lab("l1", "LAB-1", "s1")],
   zones: [zone("z1", "ZONE-1", "l1")],
-  workcells: [workcell("w1", "CELL-1", "z1")],
-  benches: [bench("b1", "BENCH-1", "w1")],
-  stations: [station("st1", "ST-1", "b1")],
+  stations: [station("st1", "ST-1", "l1", "z1")],
+  devices: [device("d1", "DEV-1", { station_id: "st1" })],
 };
 
 describe("buildTopologyTree", () => {
-  test("nests all six levels under the site", () => {
+  test("nests Site -> Lab -> Zone -> Station -> Device", () => {
     const { roots } = buildTopologyTree(fullChain);
 
     expect(roots).toHaveLength(1);
@@ -103,7 +135,37 @@ describe("buildTopologyTree", () => {
       path.push(node.kind);
       node = node.children[0];
     }
-    expect(path).toEqual(["Site", "Lab", "Zone", "Workcell", "Bench", "Station"]);
+    expect(path).toEqual(["Site", "Lab", "Zone", "Station", "Device"]);
+  });
+
+  test("puts a zone-less station directly under its lab", () => {
+    const { roots } = buildTopologyTree({
+      ...empty,
+      sites: [site("s1", "SITE-1")],
+      labs: [lab("l1", "LAB-1", "s1")],
+      stations: [station("st1", "ST-1", "l1")],
+    });
+
+    const labNode = roots[0].children[0];
+    expect(labNode.children.map((n) => n.kind)).toEqual(["Station"]);
+    expect(labNode.children[0].code).toBe("ST-1");
+  });
+
+  test("nests a module and its devices under a station", () => {
+    const { roots } = buildTopologyTree({
+      ...empty,
+      sites: [site("s1", "SITE-1")],
+      labs: [lab("l1", "LAB-1", "s1")],
+      stations: [station("st1", "ST-1", "l1")],
+      devices: [
+        device("m1", "MOD-1", { station_id: "st1", node_kind: "module" }),
+        device("d1", "DEV-1", { station_id: "st1", parent_id: "m1" }),
+      ],
+    });
+
+    const stationNode = roots[0].children[0].children[0];
+    expect(stationNode.children.map((n) => n.code)).toEqual(["MOD-1"]);
+    expect(stationNode.children[0].children.map((n) => n.code)).toEqual(["DEV-1"]);
   });
 
   test("handles an empty registry without throwing", () => {
@@ -119,22 +181,7 @@ describe("buildTopologyTree", () => {
     expect(roots.map((n) => n.code)).toEqual(["SITE-A", "SITE-B"]);
   });
 
-  test("puts every child under its own parent when there are several", () => {
-    const { roots } = buildTopologyTree({
-      ...empty,
-      sites: [site("s1", "SITE-1"), site("s2", "SITE-2")],
-      labs: [lab("l1", "LAB-1", "s1"), lab("l2", "LAB-2", "s2"), lab("l3", "LAB-3", "s1")],
-    });
-
-    expect(roots.map((s) => s.children.map((l) => l.code))).toEqual([
-      ["LAB-1", "LAB-3"],
-      ["LAB-2"],
-    ]);
-  });
-
   test("reports a row whose parent is missing instead of dropping it", () => {
-    // The whole point: a dangling FK is a registry problem the operator
-    // should see, not something the UI quietly hides.
     const { roots, orphans } = buildTopologyTree({
       ...empty,
       sites: [site("s1", "SITE-1")],
@@ -147,23 +194,13 @@ describe("buildTopologyTree", () => {
     ]);
   });
 
-  test("reports orphans at every level", () => {
+  test("reports an unplaced device as an orphan, not silently hidden", () => {
     const { orphans } = buildTopologyTree({
-      sites: [],
-      labs: [lab("l1", "L", "missing")],
-      zones: [zone("z1", "Z", "missing")],
-      workcells: [workcell("w1", "W", "missing")],
-      benches: [bench("b1", "B", "missing")],
-      stations: [station("st1", "S", "missing")],
+      ...empty,
+      devices: [device("d1", "DEV-LOST")],
     });
 
-    expect(orphans.map((o) => o.kind)).toEqual([
-      "Lab",
-      "Zone",
-      "Workcell",
-      "Bench",
-      "Station",
-    ]);
+    expect(orphans).toEqual([{ kind: "Device", code: "DEV-LOST", parentId: "(unplaced)" }]);
   });
 
   test("keeps the raw row on each node for the inspector", () => {
@@ -178,7 +215,7 @@ describe("collectNodeIds", () => {
   test("returns every id in the tree, depth-first", () => {
     const { roots } = buildTopologyTree(fullChain);
 
-    expect(collectNodeIds(roots)).toEqual(["s1", "l1", "z1", "w1", "b1", "st1"]);
+    expect(collectNodeIds(roots)).toEqual(["s1", "l1", "z1", "st1", "d1"]);
   });
 
   test("is empty for an empty tree", () => {
@@ -190,16 +227,15 @@ describe("countByKind", () => {
   test("counts every level, not just the roots", () => {
     const { roots } = buildTopologyTree({
       ...fullChain,
-      stations: [station("st1", "ST-1", "b1"), station("st2", "ST-2", "b1")],
+      stations: [station("st1", "ST-1", "l1", "z1"), station("st2", "ST-2", "l1", "z1")],
     });
 
     expect(countByKind(roots)).toEqual({
       Site: 1,
       Lab: 1,
       Zone: 1,
-      Workcell: 1,
-      Bench: 1,
       Station: 2,
+      Device: 1,
     });
   });
 
