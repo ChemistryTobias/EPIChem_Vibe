@@ -104,6 +104,14 @@ PROJECT_MILESTONES.md     Honest record of what's built vs. what the plan descri
 
 ## Conventions worth knowing
 
+> **Heads-up before you build topology:** the model described above is M1's, and it's being
+> reworked for M2. ADRs 0007–0009 flatten `Site → Lab → Zone → Workcell → Bench → Station` to
+> `Site → Lab → Zone(optional) → Station → Module → Device` (a Station becomes a group of ≥1
+> device; `Workcell`/`Bench` go away), demote NetBox to an optional import, and rename the
+> Topology screen to **Device Management** (Hierarchy / Device Status / Lab Layout) with a
+> New-Device-first creation flow. Read those ADRs before changing `models/topology.py`,
+> `importer.py`, the descriptor schemas or the topology screens.
+
 These are the ones that bite if you don't know them; the rest are documented inline (every module
 has a one-line docstring pointing at the plan section it implements — keep doing that).
 

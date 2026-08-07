@@ -151,3 +151,53 @@ Destructive actions: don't invent a new red — none exists in the MPG palette. 
 - Redraw, recolor, or stylize the Minerva bildmarke.
 - Use more than ~4 MPG colors in one screen, or the bright accent colors as dominant backgrounds.
 - Use pill-shaped/fully-rounded buttons, gradients, glossy highlights, or soft drop-shadow elevation — none of these are part of the brand's flat, geometric visual language.
+
+---
+
+## 7. Lab map & isometric layout
+
+Design reference for the **Device Management → Lab Layout** editor (plan §10, ADR 0007/0009):
+the site map, the per-lab isometric floor, and the per-station device sub-layout. The brand's core
+motif is **squares and circles as pure geometric fields** on a raster (Quadrateraster) — which maps
+onto a grid-based lab editor almost literally, so lean into it rather than fighting it.
+
+### Site map (2-D floorplan)
+
+- A plan-view of the site, optionally over an **uploaded floorplan image**. Keep the plan itself
+  quiet: floorplan on a `#EEEEEE` (grey light) surface, lab rectangles as **flat outlines** in
+  `#A7A7A8` (grey), the selected/active lab filled `#006C66` (MPG green) or outlined
+  `#005555` (green dark). No gloss, no shadow — a lab is a flat filled rectangle, not a card.
+- The manual's **Circles & Lines** motif is a landing/splash flourish only — keep it **out** of the
+  map and the isometric floor, where it competes with data.
+
+### Isometric floor (per lab)
+
+- **Tiles are flat geometric fields**, not skeuomorphic 3-D boxes. Station tiles read as clean
+  diamonds/rectangles in the **green family** (`#006C66` fill, `#005555` edges); differentiate
+  station *kind* with the small-scale accents (blue light, orange, green light) as edge/badge
+  colour, never as a second large fill (respect the "max 2 large fills, prefer one family" rule).
+- **Box height** (the user-editable isometric depth, §10.3) is rendered as the tile's extruded
+  side faces in a **darker shade of the same hue** — a flat tonal step, *not* a drop shadow or a
+  gloss gradient. Depth is communicated by geometry + flat shading, consistent with §5's
+  "no skeuomorphism, flat color shift not depth effects."
+- The **grid raster** itself is a light `#A7A7A8`/`#EEEEEE` line set — present enough to read as a
+  raster (echoing the Quadrateraster identity), faint enough to sit behind the tiles.
+
+### Zones (human vs. robot, hazard)
+
+Zones are drawn regions, so they use **outline + tint**, never a dominant fill:
+
+- **Human area:** neutral — grey (`#A7A7A8`) dashed outline, no tint or a very light grey wash.
+- **Robot area:** `#29485D` (MPG blue dark, the sanctioned institute-variant colour) outline/tint —
+  distinct from the green plant, reads as "machine".
+- **Hazard zone:** `#EF7C00` (MPG orange, the manual's attention colour) outline/hatch.
+- Keep these as accents at region scale; the green stations remain the visual subject.
+
+### Devices in the station sub-layout & live status
+
+- In a station's sub-layout, **modules are squares, leaf devices are circles** (§10.1) — the exact
+  square/circle pairing the brand system is built on.
+- **Live status badges** use the accent set at small scale: `#C6D325` (green light) = ok/idle,
+  `#EF7C00` (orange) = warning, and for a genuine fault use a **deliberate accessible red**
+  (`#C0392B`-class) as the one-off exception §5 already sanctions — do **not** press MPG orange into
+  double duty as "error". Every badge carries its timestamp/staleness (plan §13 UI principle).

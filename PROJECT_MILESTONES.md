@@ -47,6 +47,11 @@ re-verified against a real Postgres instance since the ADR 0004 rewrite**; the p
 write/import path):
 
 - [x] Registry schema (SQLAlchemy): `Site → Lab → Zone → Workcell → Bench → Station`, `Device`
+  **— superseded by ADR 0007 (2026-08-07):** M2 flattens this to `Site → Lab →
+  Zone(optional) → Station → Module → Device`, drops `Workcell`/`Bench`, makes a
+  Station a group of ≥1 device, and replaces `StationDeviceBinding` with a
+  station-owned device subtree. The six-level schema below is what M1 *shipped*;
+  the four ADR-0007 kinds are what M2 migrates to.
   (containment tree via `parent_id`), `Signal` (table exists, nothing populates it yet — that's
   ophyd introspection, M2), `CapabilityClass`, `StationDeviceBinding` (the
   Station↔Device many-to-many with a role, replacing the prototype's `STATIONS[].deviceId`),
@@ -139,10 +144,32 @@ Hardening done in a later pass (see `git log`):
 
 ## M2 — Device plane
 
-**Status: not started.** No real devices behind IOCs, no queueserver, no `plans_allowed`/
-`devices_allowed` introspection service (the palette-generation mechanism the plan calls "the
-single highest-leverage integration in the project," §9.2), no MQTT state tree, no Devices screen,
-no layout editor.
+**Status: not started. Scope reshaped 2026-08-07 (ADRs 0007–0009)** — before the device-plane work
+proper, M2 now begins with a topology rework and UI re-section agreed with the user. Documentation
+for all of it is landed (this pass); no code is written yet.
+
+**M2 front-load (the agreed first buildable slice, ADR 0009):**
+
+- [ ] **Topology migration (ADR 0007)** — flatten to `Site → Lab → Zone(optional) → Station →
+  Module → Device`. Drop the `workcells`/`benches` tables; move grid geometry onto `Lab` and the
+  execution fields (queueserver endpoint, redis namespace, state, owning group) onto `Station`;
+  make `Station` a group of ≥1 device; fold `Module` into the existing `Device` containment tree
+  via a `kind`/`role` discriminator; remove `StationDeviceBinding`. Update `descriptors/`, the
+  pydantic schemas, `importer.py`/`exporter.py`, and `test_cli.py`'s fixture accordingly.
+- [ ] **Device Management shell (ADR 0009)** — rename the Topology screen's section to *Device
+  Management* with three subsections: **Hierarchy** (the M1 nested list, *kept*), **Device Status**
+  (registry state now, live MQTT state at the device-plane step), **Lab Layout**. Add the
+  **New-Device-first** creation flow: a prominent one-click `New Device`, a single `+` for
+  everything else, and blank-slate guidance (Site → Lab → Station → Device).
+- [ ] **NetBox / CSV import (ADR 0008)** — an idempotent upsert through `registry.py` that reads a
+  NetBox API or CSV export (a rack imports as a Station grouping its devices). EPIChem stays
+  authoritative; no live sync.
+
+**M2 device plane proper (unchanged from the plan, still not started):** real devices behind IOCs,
+queueserver per cell, the `plans_allowed`/`devices_allowed` introspection service (the
+palette-generation mechanism the plan calls "the single highest-leverage integration in the
+project," §9.2), the MQTT state tree, live Device Status, and the layout-editor upgrades
+(floorplan upload, drag-to-create-lab, box-height editing, per-station sub-layouts — §10).
 
 ## M3 — Procedure designer
 
