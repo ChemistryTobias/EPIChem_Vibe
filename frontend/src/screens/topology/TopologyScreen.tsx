@@ -1,5 +1,5 @@
 /**
- * Hierarchy screen: the registry's containment hierarchy as an expandable
+ * Topology screen: the registry's containment hierarchy as an expandable
  * tree, with a detail panel for the selected node.
  *
  * A tree, not the plan's isometric lab layout (§10.2). That view is a later
@@ -18,21 +18,21 @@ import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
 import { CreatePanel } from "./create/CreatePanel";
 import type { CreateKind } from "./create/nodeCreate";
-import { HierarchyInspector } from "./HierarchyInspector";
-import { HierarchyNode } from "./HierarchyNode";
-import { buildHierarchyTree, collectNodeIds, countByKind } from "./hierarchyTree";
-import type { TreeNode } from "./hierarchyTree";
+import { TopologyInspector } from "./TopologyInspector";
+import { TopologyNode } from "./TopologyNode";
+import { buildTopologyTree, collectNodeIds, countByKind } from "./topologyTree";
+import type { TreeNode } from "./topologyTree";
 
-import "./HierarchyScreen.css";
+import "./TopologyScreen.css";
 
-/** The "+ Add" menu, in order: the common targets first, the rare ones last. */
+/** The "Add" menu, in order: the common targets first, the rare ones last. */
 const ADD_KINDS: CreateKind[] = ["Station", "Site", "Lab", "Zone"];
 
-export function HierarchyScreen() {
+export function TopologyScreen() {
   const state = useAsync(useCallback(() => fetchTopology(), []));
   const [selected, setSelected] = useState<TreeNode | null>(null);
   const [creating, setCreating] = useState<CreateKind | null>(null);
-  // The <details> "+ Add" menu — closed after a pick so it doesn't linger open.
+  // The <details> "Add" menu — closed after a pick so it doesn't linger open.
   const addMenu = useRef<HTMLDetailsElement>(null);
 
   const startCreate = (kind: CreateKind) => {
@@ -44,7 +44,7 @@ export function HierarchyScreen() {
   const [expanded, setExpanded] = useState<Set<string> | null>(null);
 
   const tree = useMemo(
-    () => (state.data ? buildHierarchyTree(state.data) : null),
+    () => (state.data ? buildTopologyTree(state.data) : null),
     [state.data],
   );
 
@@ -119,7 +119,7 @@ export function HierarchyScreen() {
                 <>
                   <ul className="tree">
                     {tree.roots.map((node) => (
-                      <HierarchyNode
+                      <TopologyNode
                         key={node.id}
                         node={node}
                         depth={0}
@@ -154,7 +154,7 @@ export function HierarchyScreen() {
           </AsyncBoundary>
         </div>
 
-        <HierarchyInspector node={selected} onClose={() => setSelected(null)} />
+        <TopologyInspector node={selected} onClose={() => setSelected(null)} />
       </div>
     </>
   );

@@ -10,7 +10,7 @@ import { Field, FieldGroup, Inspector } from "../../components/Inspector";
 import { StatusDot } from "../../components/StatusDot";
 import type { Device, Lab, Site, Station, Zone } from "../../api/types";
 import { deviceTone } from "../devices/deviceTone";
-import type { TreeNode } from "./hierarchyTree";
+import type { TreeNode } from "./topologyTree";
 
 /** Station states come from `StationSpec.state` in schemas/descriptor.py. */
 function stationTone(state: string) {
@@ -115,12 +115,12 @@ function KindFields({ node }: { node: TreeNode }) {
   }
 }
 
-interface HierarchyInspectorProps {
+interface TopologyInspectorProps {
   node: TreeNode | null;
   onClose: () => void;
 }
 
-export function HierarchyInspector({ node, onClose }: HierarchyInspectorProps) {
+export function TopologyInspector({ node, onClose }: TopologyInspectorProps) {
   if (!node) {
     return (
       <Inspector

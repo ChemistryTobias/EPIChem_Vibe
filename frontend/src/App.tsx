@@ -15,7 +15,7 @@ import { AppShell } from "./components/AppShell";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { DevicesScreen } from "./screens/devices/DevicesScreen";
 import { SamplesScreen } from "./screens/samples/SamplesScreen";
-import { HierarchyScreen } from "./screens/hierarchy/HierarchyScreen";
+import { TopologyScreen } from "./screens/topology/TopologyScreen";
 
 const LayoutScreen = lazy(() =>
   import("./screens/layout/LayoutScreen").then((m) => ({ default: m.LayoutScreen })),
@@ -31,7 +31,7 @@ export function App() {
           <LayoutScreen />
         </Suspense>
       )}
-      {route === "hierarchy" && <HierarchyScreen />}
+      {route === "hierarchy" && <TopologyScreen />}
       {route === "device-status" && <DevicesScreen />}
       {route === "samples" && <SamplesScreen />}
     </AppShell>

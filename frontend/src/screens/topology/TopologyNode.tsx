@@ -1,15 +1,15 @@
 /**
- * One row of the hierarchy tree, plus its children. Recursive: a node renders
- * itself and then renders `HierarchyNode` again for each child.
+ * One row of the topology tree, plus its children. Recursive: a node renders
+ * itself and then renders `TopologyNode` again for each child.
  *
  * Indentation is a computed inline padding rather than nested containers, so
  * every row shares one hover/selected style and one hit target regardless of
  * depth.
  */
 
-import type { TreeNode } from "./hierarchyTree";
+import type { TreeNode } from "./topologyTree";
 
-interface HierarchyNodeProps {
+interface TopologyNodeProps {
   node: TreeNode;
   depth: number;
   selectedId: string | null;
@@ -18,14 +18,14 @@ interface HierarchyNodeProps {
   onToggle: (id: string) => void;
 }
 
-export function HierarchyNode({
+export function TopologyNode({
   node,
   depth,
   selectedId,
   expanded,
   onSelect,
   onToggle,
-}: HierarchyNodeProps) {
+}: TopologyNodeProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.id);
   const isSelected = node.id === selectedId;
@@ -57,7 +57,7 @@ export function HierarchyNode({
       {hasChildren && isExpanded && (
         <ul className="tree__children">
           {node.children.map((child) => (
-            <HierarchyNode
+            <TopologyNode
               key={child.id}
               node={child}
               depth={depth + 1}
