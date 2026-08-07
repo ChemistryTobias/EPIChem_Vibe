@@ -76,8 +76,9 @@ write/import path):
   → 1 bench → 2 stations, 2 devices, 3 capability classes. Doubles as `test_cli.py`'s fixture and a
   template for a real lab's descriptor set, importable via `epichem import-dir`.
 - [x] `docker compose up` on-ramp — now the full stack (`db → migrate → seed → api → web`), not
-  just Postgres + API. Still **not exercised through Docker itself** (no daemon in this sandbox);
-  see the Delivery section below and `docs/HOST_SETUP.md` §2 for the verification checklist.
+  just Postgres + API. Exercised through Docker itself (2026-08-07): a single `docker compose up`
+  lands on a seeded console, and the seed step is idempotent on re-run. See the Delivery section
+  below and `docs/HOST_SETUP.md` §0.
 - [x] `/api/v1/health` — database-touching readiness endpoint reporting the Alembic revision the
   database is actually at, so a rolling deploy of new code against an old schema is visible to a
   probe rather than showing as healthy until the first real query fails.
@@ -114,7 +115,7 @@ Frontend (`frontend/` — React + TypeScript + plain CSS on Vite, added after th
 
 Not built (M1-adjacent, deferred):
 
-- [ ] Nothing runs in CI. There is no pipeline at all — see the Delivery section below.
+- [x] CI now runs — the GitLab pipeline is green end-to-end on `main`; see the Delivery section.
 - [ ] NetBox sync (deferred per ADR 0002)
 - [ ] Full auth/RBAC (§12.1). A shared-token gate on writes now exists (see Known gaps); real
   per-user identity, roles and SSO do not.
@@ -166,15 +167,19 @@ accepted: `substance` and `location` become foreign keys.
 
 ## Delivery — CI/CD, containers, Helm, screenshots
 
-**Status: written, not yet executed.** Outside the plan's M0–M6 numbering because it's delivery
-infrastructure rather than product scope. Full specification: `docs/MILESTONE_CI_CD.md`. Setup
-instructions for the parts that need a human: `docs/HOST_SETUP.md`.
+**Status: verified end-to-end (2026-08-07).** Outside the plan's M0–M6 numbering because it's
+delivery infrastructure rather than product scope. Full specification: `docs/MILESTONE_CI_CD.md`.
+Setup instructions for the parts that need a human: `docs/HOST_SETUP.md`.
 
-The distinction between "written" and "done" is load-bearing here. None of the following has ever
-run, because the environment it was written in has no Docker daemon and no GitLab runner. The YAML
-parses and the shell scripts pass `sh -n`; that is the entire extent of the verification.
+This section used to read "written, not yet executed" — it isn't anymore. The dev container gained
+a Docker daemon, and everything below has now actually run: `docker compose up` reaches a seeded
+console, both Dockerfiles build, and the GitLab pipeline is green end-to-end on `main`
+(#835582) — lint → test (incl. the real-Postgres `test:postgres`, now blocking) → build+push →
+`verify:stack`, which brings the production images up and drives the console in a headless browser.
+Two fixes were required to get the first green run (auth-token env leaking into the test jobs; TLS
+docker-in-docker on a shared runner) — see `docs/HOST_SETUP.md` §0 and `git log`.
 
-Built (unverified):
+Built and verified:
 
 - [x] `compose.yaml` — the full dev stack, `db -> migrate -> seed -> api -> web`, with the
   one-shot services as enforced `depends_on` conditions so `docker compose up` alone lands on a
@@ -219,12 +224,11 @@ no pagination.
   so the audit trail says *which token*, not *which person*. Reads are open. With the variable
   unset, writes are unauthenticated and the API says so at startup. §12.1's OIDC/RBAC design is
   still owed, and `api/auth.py::require_write_token` is the seam it replaces.
-- **Postgres is still unverified since the ADR 0004 rewrite.** The whole suite runs on sqlite.
-  The seam to close this now exists — `EPICHEM_TEST_DATABASE_URL` in `backend/tests/conftest.py`
-  points the same suite at a real database, and the `test:postgres` job in `.gitlab-ci.yml` uses
-  it. That job has never run, so it is `allow_failure: true` until it goes green once; expect it
-  to surface real sqlite-vs-Postgres differences first. **Flip it to blocking as soon as it
-  passes** — a permanently non-blocking test job is theatre.
+- ~~**Postgres is still unverified since the ADR 0004 rewrite.**~~ **Closed (2026-08-07).** The
+  full suite now passes against a real postgres:17 — first locally via `EPICHEM_TEST_DATABASE_URL`
+  (`backend/tests/conftest.py`), then in CI. The `test:postgres` job went green and is now a
+  **blocking** job (no longer `allow_failure: true`). No sqlite-vs-Postgres differences surfaced;
+  the ADR 0004 revision write path behaves identically on both.
 - **No observability** (§12.3 OpenTelemetry) — nothing to debug a distributed run with yet, but
   there's also no distributed run yet, so this tracks M2+, not a current regression.
 - Two small schema/spec mismatches the original reconciler build surfaced (still present — the
@@ -242,8 +246,8 @@ no pagination.
 ## How to verify current state
 
 ```bash
-# The whole stack, seeded, in one command — but see docs/HOST_SETUP.md §0:
-# this path is written, not yet verified.
+# The whole stack, seeded, in one command (verified 2026-08-07, see
+# docs/HOST_SETUP.md §0):
 docker compose up             # → http://localhost:5173
 
 # The verified path:

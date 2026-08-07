@@ -20,27 +20,31 @@ the rest of the repo.
 
 | Thing | How |
 |---|---|
-| Backend suite — 95 tests | `pytest`, on sqlite |
+| Backend suite — 95 tests | `pytest`, on sqlite **and** real postgres:17 |
 | Frontend suite — 63 tests | `vitest run` |
 | Lint / typecheck | `ruff check`, `tsc --noEmit` |
 | Every YAML and shell file added here | parsed / `sh -n` |
 | The GitLab remote after the group transfer | `git ls-remote` — see §0.1 |
 | Dev container builds and docker-in-docker starts | `docker version` inside it, see §1.1 |
 | Claude Code login persistence | migrated + confirmed live, see §1.1 |
+| `compose.yaml` — the full dev stack | `docker compose up` in the container, seeded console reached; seed idempotent on re-run; Vite `/api` proxy reaches `api:8000` |
+| `backend/Dockerfile`, `frontend/Dockerfile` | built (both `dev` and `runtime` targets) |
+| `compose.prod.yaml` + the runtime images | brought up by the CI `verify:stack` job with real Postgres, seeded, health-checked |
+| `.gitlab-ci.yml` — the whole pipeline | green end-to-end on `main` (pipeline #835582): lint → test (incl. `test:postgres`) → build+push → verify |
+| `deploy/screenshots.mjs` | drove the console in a real headless browser in `verify:stack` |
 
-**NOT verified, because there is no Docker daemon in the dev container:**
+**The first green pipeline happened (2026-08-07, #835582).** Two fixes were
+needed to get there, both now in `main`:
 
-- `compose.yaml` and `compose.prod.yaml` have never been run.
-- Neither `Dockerfile` has ever been built.
-- `.gitlab-ci.yml` has never been executed by a runner.
-- `deploy/screenshots.mjs` has never driven a real browser.
+1. The pipeline's global `variables:` set `EPICHEM_API_TOKENS` (for the
+   prod-compose `verify` stage) so it leaked into `test:backend`/`test:postgres`
+   and made every write 401. Moved it onto `verify:stack` alone, and made the
+   test suite hermetic against an ambient value (`backend/tests/conftest.py`).
+2. The `build` jobs used TLS docker-in-docker, which needs the runner to share
+   `/certs/client`; GWDG's shared runner doesn't. Switched to plaintext dind on
+   port 2375. See the `.docker` template comment for how to switch back.
 
-They are written carefully and against the real interfaces of this codebase —
-the seed script is idempotent because `epichem sample add` was checked and
-does exit 1 on a duplicate; the health endpoint the compose healthcheck calls
-was added and tested — but "carefully written" is not "working". Expect §2 to
-need a round or two of fixes, and treat the first green pipeline as the real
-milestone.
+`test:postgres` is now a **blocking** job (was `allow_failure: true`).
 
 ### §0.1 The remote after the group transfer — it works
 

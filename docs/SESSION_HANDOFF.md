@@ -29,47 +29,50 @@ The last five commits are one unit of work — making the project runnable and d
 Before that, `d4d9d05` completed M1 (the isometric lab layout) and the hardening pass
 (Alembic, shared-token auth, pagination, frontend tests).
 
-## 2. The one thing that matters most
+## 2. The one thing that matters most — now settled
 
-**The container stack and the pipeline have never been executed.** There was no Docker daemon and
-no GitLab runner in the environment they were written in.
+**Update (2026-08-07): the container stack and the pipeline have now been executed, and both
+work.** This section used to warn that none of it had ever run. It has. The dev container gained a
+Docker daemon and the whole delivery path was exercised for real.
 
 Verified, by running it:
 
-- Backend: **95 tests** pass (`backend/.venv/bin/pytest`), sqlite in-memory
+- Backend: **95 tests** pass — on sqlite in-memory **and** against a real postgres:17
 - Frontend: **63 tests** pass (`npm test`), plus `tsc --noEmit` clean
 - `ruff check epichem tests` clean
-- Every YAML added parses; every shell script passes `sh -n`
+- `docker compose up` reaches a seeded console; the seed step is idempotent on re-run; the Vite
+  `/api` proxy reaches `api:8000`
+- Both Dockerfiles build (`dev` and `runtime` targets)
+- The GitLab pipeline is **green end-to-end on `main`** (#835582): lint → test (incl. the
+  now-blocking `test:postgres`) → build+push → `verify:stack`, which brings the production images
+  up with real Postgres and drives the console in a headless browser (`deploy/screenshots.mjs`)
 - The GitLab remote authenticates and is in sync
 
-Not verified, at all:
+Two fixes were needed to get the first green pipeline — both in `main` now:
 
-- `compose.yaml`, `compose.prod.yaml` — never run
-- `backend/Dockerfile`, `frontend/Dockerfile` — never built
-- `.gitlab-ci.yml` — never executed by a runner
-- `deploy/screenshots.mjs` — has never driven a browser
+1. `EPICHEM_API_TOKENS` leaked from the pipeline's global `variables:` (meant for the prod-compose
+   `verify` stage) into the test jobs, 401-ing every write. Moved to `verify:stack`, and the test
+   suite is now hermetic against an ambient value (`backend/tests/conftest.py`).
+2. TLS docker-in-docker needs the runner to share `/certs/client`; GWDG's shared runner doesn't.
+   Switched the `build` jobs to plaintext dind on 2375.
 
-`docs/HOST_SETUP.md` §0 is the authoritative version of this ledger. Do not mark any of it done
-until it has actually run.
+`docs/HOST_SETUP.md` §0 is the authoritative version of this ledger.
 
 ## 3. The immediate next step
 
-The user was about to **rebuild the dev container** (`Dev Containers: Rebuild Container`). That
-rebuild is what gives the environment a Docker daemon — via docker-in-docker, chosen over
-docker-outside-of-docker because `compose.yaml` bind-mounts `./backend` and `./frontend`, paths
-that exist only inside the dev container.
+The delivery path is verified, so the next step is **product scope: M2 — the device plane**
+(see `PROJECT_MILESTONES.md`). Nothing infrastructural is blocking it now.
 
-After the rebuild, the work is **`docs/HOST_SETUP.md` §2**: run `docker compose up` and fix
-whatever breaks. Expected failure points, in the order to suspect them:
+Two small delivery follow-ups remain, neither urgent:
 
-1. **`seed` fails on the second `up`.** `epichem sample add` exits 1 on a duplicate code;
-   `deploy/seed.sh` guards each sample with `epichem sample list | grep`. That guard has never
-   run — if the CLI's output format doesn't match, this is where it shows.
-2. **`api` never becomes healthy** — `curl` missing from the image, or the health route
-   unreachable. `docker compose exec api curl -v localhost:8000/api/v1/health`.
-3. **Blank frontend** — the Vite proxy isn't reaching `api:8000`.
-4. **Frontend edits don't hot-reload** — the `web-node-modules` named volume is stale. It is only
-   populated once, so `docker compose down -v` is required after any `package.json` change.
+- **Production deploy (`deploy:prod`) is still unproven** — it is tag-only and manual, and needs
+  the production host's own runner registered with the `epichem-prod` tag (`docs/HOST_SETUP.md`
+  §4). Everything up to and including `verify:stack` is green; the last mile onto a real host is
+  not yet exercised.
+- The open questions in §6 (Kubernetes/Helm, managed vs. in-compose Postgres, a Python lockfile,
+  registry retention, whether a privileged CI runner is acceptable long-term) are unchanged. The
+  dind fix in §2 uses a privileged runner; if GWDG later disallows that, the two `build:` jobs
+  need Kaniko/Buildah instead.
 
 ## 4. Decisions already made — do not silently redo these
 
