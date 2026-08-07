@@ -1,6 +1,6 @@
 /** Topology endpoints (`backend/epichem/api/routers/topology.py`). */
 
-import { apiGet, apiPut } from "./client";
+import { apiGet, apiPost, apiPut } from "./client";
 import { listDevices } from "./devices";
 import type { Device, Lab, Site, Station, Zone } from "./types";
 
@@ -50,6 +50,57 @@ export async function fetchTopology(): Promise<TopologySnapshot> {
  * caller passes them; the box size, height and execution binding are read off
  * the station itself and preserved.
  */
+// ---- creation (ADR 0009) ---------------------------------------------------
+//
+// POST takes the same `apiVersion/kind/metadata/spec` descriptor envelope the
+// YAML import and the write API share (ADR 0004 §3). Only the fields the create
+// forms collect are typed here; everything else the backend spec models default
+// (schemas/descriptor.py) — a new lab's canvas geometry, a station's box, a
+// device's transport. Placement is the Lab Layout editor's job, not creation's.
+
+/** Wrap a spec in the descriptor envelope the write endpoints expect. */
+function descriptor(kind: string, code: string, name: string, spec: object) {
+  return { apiVersion: "epichem.dev/v1", kind, metadata: { code, name }, spec };
+}
+
+export interface SiteSpecBody {
+  address: string | null;
+  timezone: string | null;
+}
+
+export interface LabSpecBody {
+  site: string;
+  room_number: string | null;
+  environment_class: string;
+}
+
+export interface ZoneSpecBody {
+  lab: string;
+  atmosphere: string;
+  occupancy: string;
+}
+
+export interface StationSpecBody {
+  lab: string;
+  zone: string | null;
+  kind: string;
+  capacity: number;
+  state: string;
+  owning_group: string | null;
+}
+
+export const createSite = (code: string, name: string, spec: SiteSpecBody) =>
+  apiPost<Site>("/sites", descriptor("Site", code, name, spec));
+
+export const createLab = (code: string, name: string, spec: LabSpecBody) =>
+  apiPost<Lab>("/labs", descriptor("Lab", code, name, spec));
+
+export const createZone = (code: string, name: string, spec: ZoneSpecBody) =>
+  apiPost<Zone>("/zones", descriptor("Zone", code, name, spec));
+
+export const createStation = (code: string, name: string, spec: StationSpecBody) =>
+  apiPost<Station>("/stations", descriptor("Station", code, name, spec));
+
 export function moveStation(
   station: Station,
   labCode: string,
