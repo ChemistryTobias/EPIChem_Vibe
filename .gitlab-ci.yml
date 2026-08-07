@@ -145,10 +145,19 @@ test:postgres:
   services:
     - docker:27-dind
   variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: /certs
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: /certs/client
+    # Non-TLS dind. The TLS variant (port 2376, DOCKER_TLS_CERTDIR=/certs)
+    # requires the runner to share /certs/client as a volume between the dind
+    # service and the job container. GWDG's shared runner does not, so the job
+    # failed at `docker login` with:
+    #   unable to resolve docker endpoint: open /certs/client/ca.pem: no such
+    #   file or directory
+    # Talking to dind over plaintext on 2375 needs no shared volume and works
+    # on shared runners we don't control. The traffic stays on the runner's
+    # internal service network and never leaves the host. If GWDG later gives
+    # us a runner configured with `volumes = ["/certs/client"]`, switch back to
+    # 2376 + DOCKER_TLS_CERTDIR=/certs + DOCKER_TLS_VERIFY=1.
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   before_script:
     # Whether `docker compose` ships in the cli image has changed between
     # releases; install it if absent rather than depending on which side of
