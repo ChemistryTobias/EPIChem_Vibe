@@ -19,6 +19,10 @@ export interface Site {
   name: string;
   address: string | null;
   timezone: string | null;
+  /** The site is a metric canvas (ADR 0012): labs are boxes placed on it. */
+  width_m: number;
+  depth_m: number;
+  grid_size_m: number;
 }
 
 export interface Lab {
@@ -34,6 +38,12 @@ export interface Lab {
   width_m: number;
   depth_m: number;
   grid_size_m: number;
+  /** The lab's own box on the parent site canvas (ADR 0012), in metres —
+   * distinct from width_m/depth_m, which are the lab's own floor. */
+  site_pos_x: number;
+  site_pos_y: number;
+  site_size_x_m: number;
+  site_size_y_m: number;
 }
 
 export interface Zone {
@@ -71,6 +81,8 @@ export interface Station {
   redis_namespace: string | null;
   state: string;
   owning_group: string | null;
+  /** Soft-hide flag (ADR 0011): hidden from every layout canvas when true. */
+  virtual: boolean;
 }
 
 export interface Device {
@@ -101,12 +113,19 @@ export interface Device {
   pose_y_mm: number | null;
   pose_z_mm: number | null;
   pose_yaw_deg: number | null;
+  /** The node's footprint box within its station canvas (ADR 0012), in mm —
+   * nullable; an unplaced node renders at a standard 0.1 m. */
+  size_x_mm: number | null;
+  size_y_mm: number | null;
+  size_z_mm: number | null;
   envelope: Record<string, Record<string, unknown>>;
   safety_flags: string[];
   safety_interlocks: string[];
   safety_max_unattended_minutes: number | null;
   operational_mode: string;
   operational_calibration: Record<string, unknown> | null;
+  /** Soft-hide flag (ADR 0011): hidden from every layout canvas when true. */
+  virtual: boolean;
   /** Derived from the station FK (Device.station_code property), not a column. */
   station_code: string | null;
 }

@@ -174,6 +174,12 @@ export const labEditSpec = (row: Lab, e: LabEdit) => ({
   width_m: row.width_m,
   depth_m: row.depth_m,
   grid_size_m: row.grid_size_m,
+  // The lab's box on the site canvas (ADR 0012) — the Site-level layout editor's
+  // job, preserved here so a hierarchy rename doesn't reset it.
+  site_pos_x: row.site_pos_x,
+  site_pos_y: row.site_pos_y,
+  site_size_x_m: row.site_size_x_m,
+  site_size_y_m: row.site_size_y_m,
 });
 
 export const zoneEditSpec = (row: Zone, e: ZoneEdit) => ({
@@ -202,6 +208,8 @@ export const stationEditSpec = (row: Station, e: StationEdit) => ({
   accepted_labware_types: row.accepted_labware_types,
   queueserver_endpoint: row.queueserver_endpoint,
   redis_namespace: row.redis_namespace,
+  // Preserved — soft-hide is the canvas's affordance (ADR 0011), not this form's.
+  virtual: row.virtual,
 });
 
 const put = <T>(kind: HierarchyKind, code: string, name: string, spec: object) =>
@@ -236,6 +244,58 @@ export const resizeLabCanvas = (row: Lab, siteCode: string, canvas: LabCanvas) =
     width_m: canvas.width_m,
     depth_m: canvas.depth_m,
     grid_size_m: canvas.grid_size_m,
+    // Preserved — the lab's box on the site canvas is a different level (ADR 0012).
+    site_pos_x: row.site_pos_x,
+    site_pos_y: row.site_pos_y,
+    site_size_x_m: row.site_size_x_m,
+    site_size_y_m: row.site_size_y_m,
+  });
+
+/** The site's own metric canvas (ADR 0012), the level above the lab. */
+export interface SiteCanvas {
+  width_m: number;
+  depth_m: number;
+  grid_size_m: number;
+}
+
+/** Resize the *site* canvas from the Site-level layout editor. Full replace,
+ * preserving the site's descriptive fields off the row (mirror of resizeLabCanvas). */
+export const resizeSiteCanvas = (row: Site, canvas: SiteCanvas) =>
+  put<Site>("Site", row.code, row.name, {
+    address: row.address,
+    timezone: row.timezone,
+    width_m: canvas.width_m,
+    depth_m: canvas.depth_m,
+    grid_size_m: canvas.grid_size_m,
+  });
+
+/** A lab's box on the site canvas, in metres (ADR 0012). */
+export interface LabSiteGeometry {
+  site_pos_x: number;
+  site_pos_y: number;
+  site_size_x_m: number;
+  site_size_y_m: number;
+}
+
+/**
+ * Place/resize a lab's box on the site canvas: the site box is set, everything
+ * else (own floor, room, environment, access) is preserved off the row. Shared by
+ * the Site level's drag-move and handle-resize. `siteCode` can't be read off the
+ * lab (it carries site_id, not the code the descriptor wants), so the caller passes it.
+ */
+export const placeLabOnSite = (row: Lab, siteCode: string, geom: LabSiteGeometry) =>
+  put<Lab>("Lab", row.code, row.name, {
+    site: siteCode,
+    room_number: row.room_number,
+    environment_class: row.environment_class,
+    access_control_group: row.access_control_group,
+    width_m: row.width_m,
+    depth_m: row.depth_m,
+    grid_size_m: row.grid_size_m,
+    site_pos_x: geom.site_pos_x,
+    site_pos_y: geom.site_pos_y,
+    site_size_x_m: geom.site_size_x_m,
+    site_size_y_m: geom.site_size_y_m,
   });
 export const updateZone = (row: Zone, e: ZoneEdit) =>
   put<Zone>("Zone", row.code, e.name, zoneEditSpec(row, e));
@@ -275,6 +335,7 @@ function stationPlacementSpec(
   labCode: string,
   zoneCode: string | null,
   geom: StationGeometry,
+  virtual: boolean = station.virtual,
 ) {
   return descriptor("Station", station.code, station.name, {
     lab: labCode,
@@ -291,7 +352,34 @@ function stationPlacementSpec(
     redis_namespace: station.redis_namespace,
     state: station.state,
     owning_group: station.owning_group,
+    virtual,
   });
+}
+
+/** The station's current box, unchanged — for writes that touch only a flag. */
+const stationGeometry = (s: Station): StationGeometry => ({
+  pos_x: s.pos_x,
+  pos_y: s.pos_y,
+  size_x_m: s.size_x_m,
+  size_y_m: s.size_y_m,
+  height_m: s.height_m,
+});
+
+/**
+ * Soft-hide (or un-hide) a station from the canvas (ADR 0011): a full replace
+ * that flips `virtual` and preserves the box. This is the Lab-layout editor's
+ * "delete" — reversible from the revision history, unlike `deleteNode`.
+ */
+export function setStationVirtual(
+  station: Station,
+  labCode: string,
+  zoneCode: string | null,
+  virtual: boolean,
+) {
+  return apiPut<Station>(
+    `/stations/${encodeURIComponent(station.code)}`,
+    stationPlacementSpec(station, labCode, zoneCode, stationGeometry(station), virtual),
+  );
 }
 
 /** Move a station's box to a new metric position, keeping its footprint/height. */

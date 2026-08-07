@@ -22,6 +22,10 @@ const lab: Lab = {
   width_m: 8,
   depth_m: 5,
   grid_size_m: 0.25,
+  site_pos_x: 3,
+  site_pos_y: 4,
+  site_size_x_m: 12,
+  site_size_y_m: 9,
 };
 
 const zone: Zone = {
@@ -54,6 +58,7 @@ const station: Station = {
   redis_namespace: "st1",
   state: "active",
   owning_group: "team-pv",
+  virtual: false,
 };
 
 describe("siteEditSpec", () => {
@@ -81,6 +86,10 @@ describe("labEditSpec", () => {
       width_m: 8,
       depth_m: 5,
       grid_size_m: 0.25,
+      site_pos_x: 3,
+      site_pos_y: 4,
+      site_size_x_m: 12,
+      site_size_y_m: 9,
     });
   });
 });
@@ -122,6 +131,7 @@ describe("stationEditSpec", () => {
       accepted_labware_types: ["wafer"],
       queueserver_endpoint: "tcp://qs:60615",
       redis_namespace: "st1",
+      virtual: false,
     });
   });
 });

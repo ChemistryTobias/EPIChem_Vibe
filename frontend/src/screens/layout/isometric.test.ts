@@ -124,6 +124,10 @@ const lab: Lab = {
   width_m: 6,
   depth_m: 4,
   grid_size_m: 0.5,
+  site_pos_x: 0,
+  site_pos_y: 0,
+  site_size_x_m: 10,
+  site_size_y_m: 10,
 };
 
 function station(
@@ -151,6 +155,7 @@ function station(
     redis_namespace: null,
     state: "active",
     owning_group: null,
+    virtual: false,
   };
 }
 
@@ -180,12 +185,16 @@ function device(code: string, station_code: string | null): Device {
     pose_y_mm: null,
     pose_z_mm: null,
     pose_yaw_deg: null,
+    size_x_mm: null,
+    size_y_mm: null,
+    size_z_mm: null,
     envelope: {},
     safety_flags: [],
     safety_interlocks: [],
     safety_max_unattended_minutes: null,
     operational_mode: "read_write",
     operational_calibration: null,
+    virtual: false,
     station_code,
   };
 }
