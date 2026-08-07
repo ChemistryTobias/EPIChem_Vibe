@@ -37,7 +37,7 @@ The Canty & Abolhasani 2026 review (*Nat. Rev. Chem.*, `s41570-026-00847-2`, app
 
 ## 2. Goals
 
-**G1 — Lab as a first-class model.** A declarative, versioned description of sites, labs, cells, benches, stations, devices, network identity and physical geometry, editable in an isometric visual editor and consumable by machines.
+**G1 — Lab as a first-class model.** A declarative, versioned description of sites, labs, zones, stations, modules, devices, network identity and physical geometry, editable in an isometric visual editor and consumable by machines.
 
 **G2 — Device onboarding in under an hour.** A new instrument reaches "visible, readable, safely commandable" through a documented path with sensible defaults, without touching orchestrator internals.
 
@@ -99,11 +99,17 @@ L1  Control system   EPICS IOCs (one per instrument or instrument group)
 L0  Hardware         Instruments, robots, sensors — Ethernet-attached (see §6.2)
 ```
 
+> **Superseded terminology (ADR 0007):** "workcell" below is now spelled
+> **Station** — the schedulable, robot-served cell is a group of ≥1 device (§5.1).
+> The execution binding (one RE Manager + Worker + Redis namespace) defaults onto
+> a Station; whether it serves one station, a station group, or a cross-station
+> method is an M2 design point, not a fixed topology level.
+
 **Key architectural commitments:**
 
-- **The workcell is the unit of scaling and the unit of failure.** One workcell = one RE Manager + one RE Worker + its IOC set + its Redis namespace. Cells do not share a RunEngine. A cell going down must not stop other cells.
+- **The workcell (now: Station) is the unit of scaling and the unit of failure.** One cell = one RE Manager + one RE Worker + its IOC set + its Redis namespace. Cells do not share a RunEngine. A cell going down must not stop other cells.
 - **The control plane is stateless.** Every L4 service can be killed and rescheduled. All state is in Postgres, Redis, the MQTT broker's retained messages, or Tiled.
-- **Configuration is declarative and git-backed.** The lab description, device descriptors, capability contracts and procedure definitions live in a git repository. A reconciler compares desired state to observed state and reports drift — deliberately modelled on the Kubernetes control loop. Do *not* build a mutable-in-the-database-only config; the author explicitly wants k8s-style declarative reconciliation and it is the right call for reproducibility.
+- **Configuration is declarative and versioned.** ~~The lab description… live in a git repository. A reconciler compares desired state to observed state…~~ *Superseded by ADR 0004:* the Postgres database is the versioned source of truth (every write records a full-snapshot `Revision`), and YAML descriptors are export/import interchange, not git-desired-state. There is no git reconciler. The reproducibility goal the author wants is met by the revision log, not by a Kubernetes-style control loop.
 - **Two transports, two purposes.** HTTP for request/response, CRUD, and anything transactional. MQTT for telemetry, state broadcast and event fan-out. **MQTT is never the command path for motion or safety-relevant actuation** — those go through the control system where delivery semantics and interlocks live. (An MQTT `cmd/` tree exists for coarse orchestration verbs only; see §8.2.)
 
 ---
@@ -114,22 +120,43 @@ All identifiers are **UUIDv7** (time-ordered, index-friendly) plus a short human
 
 ### 5.1 Topology
 
+> **Current model (ADR 0007).** The six-level chain below was simplified before
+> M2 after modelling a real lab (the MPG-FKF NetBox export). `Workcell` and
+> `Bench` are removed as levels; a `Station` is now a *group of ≥1 device* rather
+> than an addressable grid slot; `Zone` is optional; below the station is one
+> recursive `Module` concept with `Device` as the controllable leaf.
+
 ```
-Region ─ Site ─ Building ─ Lab(room) ─ Zone ─ Workcell ─ Bench/Rack ─ Station ─ Device ─ Signal
+(Organisation) ─ Site ─ Lab(room) ─ Zone(optional) ─ Station ─ Module(optional, recursive) ─ Device ─ Signal
 ```
 
 | Entity | Meaning | Key fields |
 |---|---|---|
-| `Site` | Institute/campus | name, address, timezone |
-| `Lab` | Physical room | room number, environment class (ambient/glovebox/fume hood/cleanroom), access control group |
-| `Zone` | Sub-area with shared conditions | atmosphere (air/N₂/Ar), pressure, temperature class, hazard class |
-| `Workcell` | Scheduling & execution unit | queueserver endpoint, redis namespace, state, owning group |
-| `Bench` | Physical support surface / rack | isometric grid extent, height |
-| `Station` | Addressable functional position | kind, grid (col,row), stack height, capacity, accepted labware types |
-| `Device` | A controllable instrument | see §6 |
+| `Organisation` | Owning group / tenant — **auth-derived, not a manually-created topology entity** (arrives with §12.1 identity/RBAC) | name (from identity) |
+| `Site` | Institute/campus/building | name, address, timezone |
+| `Lab` | Physical room; **owns the isometric grid** | room number, environment class (ambient/glovebox/fume hood/cleanroom), access control group, grid extent + cell size (§10) |
+| `Zone` *(optional)* | Sub-area grouping stations for **safety** — chiefly a **human area vs. a robot area** — and shared conditions | atmosphere (air/N₂/Ar), pressure, temperature class, hazard class, human/robot classification |
+| `Station` | A **group of ≥1 device**; the placed, schedulable cell on the lab grid. Parent is a `Lab` *or* a `Zone`. | grid (col,row), grid footprint, box height, execution binding (queueserver endpoint, redis namespace, state, owning group — see below), accepted labware types |
+| `Module` *(optional, recursive)* | Anything below a station that is **not directly a device**: a grouping of several devices, a sub-assembly of sub-modules, or a **passive component** (a module with no driver — a manifold, rack frame, tip block) | kind, parent (station or module), pose in the station sub-layout |
+| `Device` | A controllable instrument — the leaf of the containment tree | see §6 |
 | `Signal` | A readable/settable channel | PV/attribute, dtype, units, limits, precision, kind (primary/config/normal/omitted) |
 
-`Station` and `Device` are **decoupled on purpose**: a storage rack is a station with no device; a robot arm is a device that services many stations; a multi-position hotplate is one device with several stations. The prototype conflates them (`STATIONS[].deviceId`) — fix this with a proper many-to-many `station_device_binding` carrying a role (`owns`, `services`, `observes`).
+**A `Station` is a grouping abstraction, not a slot.** A single-device station is
+just the degenerate case where the station wraps one device — so "add a device"
+and "add a station holding one device" are the same short path. The prototype's
+`STATIONS[].deviceId` conflation and M1's separate `station_device_binding` table
+are both replaced by a station-owned device subtree (`Module`/`Device` nested via
+the §6.1 containment tree). A storage rack is a station whose devices are passive
+modules; a robot arm is a device; a multi-position hotplate is one device
+exposing several positions as signals.
+
+**Execution binding (ADR 0007).** The old `Workcell` fields (queueserver
+endpoint, redis namespace, run state, owning group) default onto the `Station`.
+Scheduling, though, targets a *method* (a capability, §6.3) that may run on one
+station **or span several**, decomposing into lower-level driver subplans that
+mirror the `Module → Device` tree. Whether one RE Manager serves a station, a
+station group, or is marshalled per cross-station method is deliberately an **M2
+design decision**, not baked into the schema here.
 
 ### 5.2 Materials & samples (see §7 for full treatment)
 
@@ -147,7 +174,7 @@ Procedure ─< ProcedureVersion ─< StepNode >─ ActionType ─ (ontology IRI)
                     └─ compiles to ─> PlanArtifact ─> QueueItem[] ─> Run ─< Document
 ```
 
-`Procedure` is the named, versioned, immutable-once-published entity. `Run` is one execution against one workcell with one parameter binding and one sample set. **Never mutate a published ProcedureVersion** — a run must be reconstructible forever.
+`Procedure` is the named, versioned, immutable-once-published entity. `Run` is one execution against one cell (a `Station` or station group, ADR 0007) with one parameter binding and one sample set. **Never mutate a published ProcedureVersion** — a run must be reconstructible forever.
 
 ---
 
@@ -192,12 +219,11 @@ spec:
     primary_ip: 10.42.13.21/24
     mac: "00:1b:44:11:3a:b7"
     vlan: lab3-instruments
-  location:
+  location:                                    # ADR 0007: no more workcell/bench keys
     lab: LAB-3
-    zone: fumehood-2
-    workcell: cell-a
-    bench: bench-a2
-    station: hp1
+    zone: fumehood-2                             # optional
+    station: spinbot                             # the group this device belongs to
+    module: null                                 # optional parent module within the station
     pose: {x_mm: 1420, y_mm: 300, z_mm: 900, yaw_deg: 0}
   capabilities:                                # what this device promises — see 6.3
     - heat
@@ -272,13 +298,23 @@ Devices declare `capabilities: [heat, stir]` and the compiler resolves an abstra
 
 ### 6.4 NetBox integration (IPAM/DCIM)
 
+> **Superseded by ADR 0008.** NetBox is **not** an authoritative upstream and
+> there is **no live sync**. EPIChem is fully authoritative (ADR 0004); NetBox is
+> an **optional import connector** — pull an inventory in (via its API or a CSV
+> export) as a starting point, then edit everything in EPIChem, where edits stick.
+> The mapping table below is still the correct shape *for that import*; the
+> "Integration mode" paragraph's one-way-authoritative-sync claim is the part
+> that's superseded. Note the row mapping updates for ADR 0007: NetBox's
+> `Location → Rack → Device` maps to EPIChem's `Lab → Station → Device` (a rack
+> like `SpinBot` imports as a **Station** grouping its devices).
+
 Do not build an IPAM. Map onto NetBox's model, which fits the lab domain almost perfectly:
 
 | NetBox object | EPIChem meaning |
 |---|---|
 | Region → Site | Campus → Institute building |
 | Location (nestable) | Lab room → zone |
-| Rack / Rack Role | Bench, enclosure, glovebox, instrument rack |
+| Rack / Rack Role | **Station** (ADR 0007) — enclosure, glovebox, instrument rack, robot cell |
 | Manufacturer / Device Type | Vendor / instrument model (reusable template) |
 | Device Role | Functional class (`liquid-handler`, `thermal`, `transport`, `analytical`, `ioc-host`) |
 | Platform | Firmware / driver / IOC version |
@@ -288,13 +324,17 @@ Do not build an IPAM. Map onto NetBox's model, which fits the lab domain almost 
 | Custom fields | `epichem_device_id`, `epichem_class`, `epichem_ioc_prefix`, `epichem_capabilities` |
 | Webhooks | Push change notifications into EPIChem's event bridge |
 
-**Integration mode:** NetBox is authoritative for network + physical asset facts; EPIChem is authoritative for capability, envelope, calibration and operational state. Sync is one-way (NetBox → EPIChem) on a schedule plus webhook, with a reconciliation report for conflicts.
+**Integration mode (ADR 0008):** ~~NetBox is authoritative… sync is one-way on a schedule plus webhook.~~ EPIChem is authoritative for everything it stores. NetBox is an **optional, one-directional import connector**: an idempotent upsert (through `registry.py`, so imported rows are revisioned and then editable like any other) that reads a NetBox instance's API or a flat CSV/API export. **Live sync is deferred, not designed away** — the `Device` network fields stay NetBox-shaped and a nullable `netbox_device_id` remains, so a future sync job needs no schema migration. EPIChem's own HTTP API is the integration surface; nothing here requires running NetBox.
 
-**Decision required (ask FHI IT first):** if the institute already runs NetBox, use it. If not, weigh whether to run an instance or to implement the same schema internally with an optional NetBox sync plug-in. Running NetBox adds an operational dependency (Postgres, Redis, workers) that a two-person lab may not want — but the schema should be NetBox-shaped either way so the migration path stays open.
+**Decision (ADR 0002 + ADR 0008):** no NetBox dependency ships. The schema is NetBox-shaped so the import path (and, later, an optional sync plug-in) stays open, but a fresh deployment needs zero NetBox infrastructure. Revisit only if an institutional NetBox instance is later designated the master — which would need a new ADR superseding ADR 0008.
 
 ### 6.5 Modular device addition — the horizontal-scale story
 
-Adding capability must never require touching the control plane. The path:
+Adding capability must never require touching the control plane. The path
+(steps 1 and 5 below are superseded — **ADR 0004**: descriptors are imported
+into / created through the registry, which is the source of truth; there is no
+git-desired-state reconciler, so read "commit + reconciler detects" as "import or
+POST → the registry records a `Revision`"):
 
 ```
 1. Write device descriptor YAML  ─────────────►  git commit
@@ -313,7 +353,7 @@ Time budget for step 1–2 with an existing driver: **< 1 hour**. Make this a tr
 | Dimension | Mechanism |
 |---|---|
 | More devices in a cell | Add IOCs; a cell's queueserver worker namespace grows. Bounded by the cell's serial execution. |
-| More throughput | Add workcells. Each has its own RE Manager + Redis namespace. The scheduler shards across them. |
+| More throughput | Add cells (Stations, ADR 0007). Each has its own RE Manager + Redis namespace. The scheduler shards across them. |
 | More users / UI load | Scale the stateless gateway + read replicas. UI reads go to the registry/event cache, never to a queueserver directly. |
 | More labs / sites | Federate: each site runs its own control plane; a thin federation service exchanges capability catalogues and cross-lab requests. **Defer to phase 6** — do not let federation complicate v1, but do not design anything that forbids it (no global auto-increment IDs, no assumption of one lab per deployment). |
 | More telemetry | MQTT 5 shared subscriptions; broker cluster (EMQX or NanoMQ); downsampling at the edge. |
@@ -335,7 +375,7 @@ This is the part the prototype gets most wrong. `{id, vialNo, composition, volum
 | `Labware` | A carrier holding containers in a fixed geometry | type (24-vial rack, SBS 96-well plate, tip rack, wafer cassette), `SlotLayout` (rows/cols/naming scheme/pitch/depth) |
 | `Slot` | An addressable position in labware | address (`A3`, `12`, `r2c4`), occupancy, allowed container types |
 | `Consumable` | Non-sample material consumed by actions | tips, filters, cartridges, gas, solvent from a bulk reservoir. Tracked so the scheduler can block on stock-out. |
-| `Location` | Where something is, hierarchically | `site/lab/zone/workcell/bench/station/labware/slot` + optional cartesian pose |
+| `Location` | Where something is, hierarchically | `site/lab/zone/station/module/labware/slot` (ADR 0007) + optional cartesian pose |
 
 **The generalization principle:** an action never says "vial 10 in rack 1". It says "the container currently holding `Sample<uuid>`" and the resolver produces the physical address at compile or dispatch time. This is what makes a procedure portable and what the author's `xyz|loc` note is reaching for.
 
@@ -398,8 +438,8 @@ Samples form a **DAG** via typed `DerivationEdge`s: `split`, `aliquot`, `mix`, `
 FastAPI, **OpenAPI 3.1**, JSON, cursor pagination, `ETag`/`If-Match` optimistic concurrency, RFC 9457 problem details for errors, OIDC (Keycloak) bearer tokens, RBAC.
 
 ```
-# Topology & devices
-GET    /api/v1/sites | labs | zones | workcells | benches | stations
+# Topology & devices (ADR 0007: no workcells/benches; modules below stations)
+GET    /api/v1/sites | labs | zones | stations | modules | devices
 GET    /api/v1/devices?lab=&class=&capability=&state=
 GET    /api/v1/devices/{id}                     # descriptor + live state + health
 GET    /api/v1/devices/{id}/signals             # signal tree with values, units, limits
@@ -490,7 +530,7 @@ Items are added with `queue_item_add` / `queue_item_add_batch`, executed by the 
 
 ### 9.2 The palette comes from introspection
 
-Call `plans_allowed` and `devices_allowed` on each workcell's RE Manager. The plan representations — built from `existing_plans_and_devices.yaml`, generated by `qserver-list-plans-devices` — contain everything a UI needs:
+Call `plans_allowed` and `devices_allowed` on each cell's (Station's, ADR 0007) RE Manager. The plan representations — built from `existing_plans_and_devices.yaml`, generated by `qserver-list-plans-devices` — contain everything a UI needs:
 
 - plan description and per-parameter descriptions (from NumPy-style docstrings)
 - parameter type annotations (native types, `typing` generics, and bluesky protocol types `Readable`/`Movable`/`Flyable` mapped to `__READABLE__`/`__MOVABLE__`/`__FLYABLE__`)
@@ -552,7 +592,18 @@ Per the Canty/Abolhasani recommendation: fix verbs once, globally. `Inject` = ad
 
 ### 10.1 Purpose
 
-An isometric, game-like view of the physical lab that is simultaneously (a) a legible operational dashboard, (b) the editor for the topology model, and (c) the click-through to any device. The reference feel is a rack-management tool or Factorio — dense, readable, spatially truthful.
+An isometric, game-like view of the physical lab that is simultaneously (a) a legible operational dashboard, (b) the editor for the topology model, and (c) the click-through to any device. The reference feel is a rack-management tool or Factorio — dense, readable, spatially truthful. It is one of the three subsections of **Device Management** (ADR 0009), alongside the nested Hierarchy list and Device Status, and the three reflect each other's edits.
+
+**Three zoom levels, one continuous editor** (ADR 0007's `Site → Lab → Station` nesting made spatial):
+
+1. **Site map.** A 2-D plan of the site in **MPG brand colours** (DESIGN.md — MPG green family, flat/geometric, no gloss). A site may carry an uploaded **floorplan image** (with a real-world ratio/scale); labs are then drawn on top of it. Reference for the *feel*, not to copy: the `netbox-map` project (`github.com/DenDanskeMine/netbox-map`) — we want that "inventory pinned onto a real plan" legibility, rendered in MPG's design language rather than its.
+2. **Lab isometric.** Enter a lab and it becomes the isometric floor (§10.3): a configurable grid onto which stations and zones are placed.
+3. **Station sub-layout.** Enter a station and it becomes its own small canvas onto which its **modules and devices** are placed as simple shapes (squares for modules/composite parts, circles for leaf devices).
+
+**Two ways to add a lab** (both first-class, ADR 0009's low-ceremony creation):
+
+- **Draw it on the floorplan.** With a site floorplan uploaded, drag a rectangle over a room and a `Lab` is created from that footprint (position + size derived from the plan's ratio).
+- **Declare its dimensions.** Create a `Lab` by typing its size and grid, no floorplan needed. The floorplan is an enhancement, never a prerequisite.
 
 ### 10.2 JointJS — and a licensing decision you must make now
 
@@ -578,13 +629,15 @@ screen.y = origin.y + (col + row) * (tileH / 2) - stackHeight
 depth    = col + row            // painter's algorithm: render ascending
 ```
 
-Prototype values (`W2=50, H2=29, TW=100, TH=58`, per-kind default heights) are a good starting scale; make them configurable per lab. Grid dimensions come from the lab model, not constants.
+Prototype values (`W2=50, H2=29, TW=100, TH=58`, per-kind default heights) are a good starting scale. **Grid extent, cell size and per-tile box height are all editable and live on the `Lab`/`Station` model, not as constants** (ADR 0007: the grid moved from `Bench` up to `Lab`). Box height is a first-class, user-editable property of a tile — the isometric depth is meaningful, not decorative (this is the one thing worth borrowing from the `netbox-map` isometric mode: adjustable box heights).
 
-**Data binding:** the canvas is a *view over the topology model*. A tile is a `Station`; its badge state comes from the bound `Device`'s live MQTT state; moving a tile issues a `PATCH /stations/{id}` with grid coords; adding a tile opens a station-creation form. Never let the canvas hold authoritative state — reload it from the model and it must render identically.
+**Data binding:** the canvas is a *view over the topology model*. A tile is a `Station` (a group of ≥1 device, ADR 0007); its badge state comes from its devices' live MQTT state; moving a tile issues a `PATCH /stations/{id}` with grid coords + height; adding a tile opens the station/device creation flow (ADR 0009). Enter a station and the canvas becomes its **sub-layout**: its modules and devices as squares (modules/composite) and circles (leaf devices), placed on the station's own small grid. Never let the canvas hold authoritative state — reload it from the model and it must render identically.
 
-**Layers (toggleable):** benches/furniture · stations · devices · live status · sample positions (heat-map of occupancy) · transport routes (robot reachability) · hazard zones · network (colour by VLAN/IOC host) · utilisation heat-map.
+**Snap, but not bound.** Tiles **snap to the grid as a guide, not a hard constraint** — like a square tool in a vector editor: they gravitate to cells but can be nudged off them, so a real bench that doesn't sit on a clean raster can still be represented truthfully.
 
-**Editor affordances:** grid snap, multi-select, align/distribute, copy-paste of station groups, undo/redo (command pattern, server-side conflict detection via ETag), zone drawing, a station-type palette, minimap for large rooms, and a read-only "operations" mode that is the default for non-admins.
+**Layers (toggleable):** stations · zones (incl. human vs. robot areas) · devices · live status · sample positions (heat-map of occupancy) · transport routes (robot reachability) · hazard zones · network (colour by VLAN/IOC host) · utilisation heat-map.
+
+**Editor affordances:** grid snap (soft, see above), configurable grid + box-height editing, multi-select, align/distribute, copy-paste of station groups, undo/redo (command pattern, server-side conflict detection via ETag), **zone drawing** (drag a rectangle to create a safety/condition zone and drop stations into it), a station-type palette, drill-in station sub-layout editing, minimap for large rooms, and a read-only "operations" mode that is the default for non-admins.
 
 ### 10.4 Procedure canvas (separate paper, shared design language)
 
@@ -603,7 +656,7 @@ Node visual: kind colour bar (reuse `KINDS` from the prototype), action name, bo
 
 ### 11.1 Scope
 
-**In scope:** deciding which procedure runs on which workcell and when; reserving devices, stations, labware and consumables; preventing deadlock; estimating durations; reordering independent work; priority handling.
+**In scope:** deciding which procedure runs on which cell — a `Station` or station group (ADR 0007) — and when; reserving devices, labware and consumables; preventing deadlock; estimating durations; reordering independent work; priority handling.
 
 **Out of scope:** step-by-step execution within a run (RunEngine), motion timing (control system), and real-time guarantees (there are none — this is a best-effort scheduler over a soft-real-time system, and the docs must say so).
 
@@ -635,6 +688,7 @@ The requirement from the earlier concept — *"AI-generated high-confidence expe
 
 - Hazard flags on substances (GHS), propagated to samples and to any step touching them: air-sensitive, pyrophoric, explosive, toxic, corrosive, cryogenic, high-pressure, incompatible-pair.
 - Zone requirements: a step requiring inert atmosphere cannot bind to an ambient zone. Compile-time error.
+- **Human vs. robot zones** (ADR 0007): a `Zone` optionally classifies an area as human-occupied or robot-operated. This is a safety boundary — e.g. autonomous motion is refused, or gated on an interlock, in a human-classified zone — and a first-class reason zones exist, not just shared atmosphere. Software is not the interlock (see below); the classification drives *policy and UI warnings*, with hardware presence-sensing owning the actual guarantee.
 - Unattended-operation policy per device and per procedure (max duration, required watchdog, out-of-hours restrictions).
 - Watchdogs: signal staleness, envelope excursion, expected-progress timeouts — each with a declared action (warn / pause / abort / safe-state).
 - **Explicitly document what EPIChem cannot protect against.** Software cannot be the interlock. Hard-wired E-stop, sash sensors, thermal cutouts and gas detection are hardware responsibilities. Overclaiming here is dangerous.
@@ -690,19 +744,22 @@ Scope it narrowly and honestly:
 
 Keep the shell: dark left rail (`CONTROL` nav + `RUNTIME` status), 72px header with title/subtitle and right-aligned outline actions, white content area. Replace the screens.
 
-**Nav: `OVERVIEW · LAB LAYOUT · DEVICES · SAMPLES · PROCEDURES · QUEUE · RUNS · DATA · ADMIN`**
+**Nav: `OVERVIEW · DEVICE MANAGEMENT · SAMPLES · PROCEDURES · QUEUE · RUNS · DATA · ADMIN`**
+
+**Device Management** (ADR 0009) is the top section for the physical plant, with three mutually-influencing subsections — **Hierarchy** (the nested `Site → Lab → Zone → Station → Module → Device` list, kept from M1), **Device Status** (live operational state), and **Lab Layout** (the isometric editor, §10). It carries the **New-Device-first** creation flow: a prominent one-click `New Device`, a single `+` for everything else (one click to common targets, ≤2 for rarely-created ones like Site), and blank-slate guidance that walks an empty install through Site → Lab → Station before the device. Organisation never appears here — it is auth-derived (§12.1).
 
 | Screen | Content | Replaces / fixes |
 |---|---|---|
 | **Overview** | Fleet health, cells and their queue depth, active runs, alerts, recent contract violations, utilisation sparklines | New |
-| **Lab Layout** | Isometric canvas (§10), layer toggles, hierarchy tree (Site→Lab→Zone→Cell→Bench→Station), inspector with device metadata incl. IP/MAC/VLAN/IOC host/location/calibration, edit vs operate modes | Prototype's Lab Layout Designer — currently a decorative grid with no model behind it |
-| **Devices** | Hierarchical device tree (not a flat list), per-device signal panel with live values/units/limits, health, mode switch, capability + contract view, envelope, history, manual action buttons (RBAC-gated), network tab | Prototype's Device Control — currently flat, no hierarchy, no network identity, no contracts |
+| **Device Management · Hierarchy** | The nested containment list (`Site → Lab → Zone → Station → Module → Device`, ADR 0007) with a per-node inspector — device metadata incl. IP/MAC/VLAN/IOC host/location/calibration; the New-Device/`+` creation flow lives here | Kept and extended from M1's Topology screen |
+| **Device Management · Device Status** | Per-device live state: signal panel with live values/units/limits, health, mode switch, capability + contract view, envelope, history, manual action buttons (RBAC-gated), network tab | Prototype's Device Control — currently flat, no hierarchy, no network identity, no contracts |
+| **Device Management · Lab Layout** | Site map (floorplan, MPG colours) → lab isometric canvas (§10) → station sub-layout; layer toggles, box-height editing, zone drawing, edit vs operate modes | Prototype's Lab Layout Designer — currently a decorative grid with no model behind it |
 | **Samples** | Substances/batches/containers/labware tabs, sample table with faceted filters, bulk register from CSV/XLSX, **lineage DAG viewer**, location history timeline, barcode scan, labware layout viewer (plate/rack maps) | Prototype's Sample Management — currently a spin-coating-specific flat table. Full rewrite. |
 | **Procedures** | Library with versions and diffs, DAG designer (§10.4), auto-generated inspector, Validate → diagnostics keyed to nodes, **Compile preview showing the actual queue items / generated Python**, dry-run, publish | Prototype's Workflow Designer — nodes currently map to nothing executable |
 | **Queue** | Per-cell queues, drag-reorder, priority, item detail, batch enqueue, pause/stop, scheduler decisions with rationale | New — the prototype has no queue concept |
 | **Runs** | Live monitor: step Gantt against estimates, live plots from the document stream, log, sample positions, **intervene panel** (pause/resume/stop/abort/halt/manual override), post-run summary | Prototype's Run Monitor — currently cosmetic |
 | **Data** | Run browser over Tiled, quick plots, export (RO-Crate/CSV/HDF5), ELN push status | New |
-| **Admin** | Users/roles, capability classes and contracts, ontology term registry, git config status and drift report, audit log, NetBox sync status | New |
+| **Admin** | Users/roles, capability classes and contracts, ontology term registry, revision/audit log (ADR 0004), NetBox/CSV import status (last import, row counts, conflicts — ADR 0008) | New |
 
 **UI principles:** every live value shows its timestamp and staleness; every action that touches hardware shows what it will do before it does it; every error message names the node/device/contract that failed; nothing that can be derived is editable; keyboard-navigable throughout; responsive to tablet (bench use) with the isometric canvas gracefully degrading to a list.
 
@@ -716,7 +773,7 @@ Each milestone ends with a demo against the virtual lab and a written decision r
 |---|---|---|---|
 | **M0** | Decisions & spec (4 wks) | JointJS licensing decision; NetBox vs internal registry; ELN target; IR JSON-Schema v0; capability class schema; nomenclature vocabulary v0; ADR log started | All §17 open questions closed or explicitly deferred with an owner |
 | **M1** | Topology & registry (6 wks) | Postgres schema; registry service; descriptor ingest + reconciler; OpenAPI v1 for topology; **isometric layout viewer (read-only)** | A real lab room is modelled in git and renders correctly |
-| **M2** | Device plane (8 wks) | Two real devices behind IOCs + ophyd classes; queueserver per cell; introspection service (`plans_allowed`/`devices_allowed` → palette schema); MQTT state tree; Devices screen; layout editor | A device's live state is visible in the UI within 500 ms of change; a new device is onboarded end-to-end in under an hour and the time is measured |
+| **M2** | Device plane (8 wks) | **Topology rework (ADR 0007): Station-as-device-group, optional Zone, recursive Module, schema migration**; **Device Management shell + New-Device creation flow + NetBox/CSV import (ADR 0008/0009)**; two real devices behind IOCs + ophyd classes; queueserver per cell; introspection service (`plans_allowed`/`devices_allowed` → palette schema); MQTT state tree; Device Status screen; layout editor upgrades (§10) | A device's live state is visible in the UI within 500 ms of change; a new device is onboarded end-to-end in under an hour and the time is measured |
 | **M3** | Procedure designer, linear (10 wks) | IR + JSON-Schema; DAG canvas; auto-generated inspector; validator tiers 1–2; `qserver` compiler backend; compile preview; submit; Queue + Runs screens | A chemist builds a 15-step procedure in the GUI and it executes on hardware without anyone writing Python |
 | **M4** | Samples & provenance (8 wks) | Full sample model; lineage DAG + viewer; material ports in the designer; provenance injection into `start.md`; Tiled wiring; RO-Crate export; first ELN adapter | Every run's outputs are traceable to inputs, device state and procedure version, with no manual bookkeeping |
 | **M5** | Scheduler & scale (8 wks) | Reservation engine; deadlock avoidance; multi-cell dispatch; duration learning; validator tiers 3–4; safety policies; Helm chart; k8s deployment | Two cells run independent campaigns concurrently; deliberate deadlock scenarios are refused at validation, and a killed cell doesn't stop the other |
@@ -762,9 +819,9 @@ Each milestone ends with a demo against the virtual lab and a written decision r
 ## 17. Open questions requiring a decision at M0
 
 1. **JointJS+ or `@joint/core`-only?** Blocks all frontend work. (§10.2)
-2. **NetBox: institutional instance, own instance, or internal registry with NetBox-shaped schema?** Ask FHI IT. (§6.4)
+2. **NetBox: institutional instance, own instance, or internal registry with NetBox-shaped schema?** ~~Ask FHI IT.~~ **Answered — ADR 0002 + ADR 0008:** internal NetBox-shaped registry, EPIChem authoritative; NetBox is an optional import connector, no live sync, no runtime dependency. (§6.4)
 3. **ELN target: Chemotion, Kadi4Mat, or both?** Determines the metadata mapping effort. (§7.6)
-4. **Workcell granularity:** is a workcell a robot-served island, a room, or a logical group? This defines the scaling unit and the scheduler's search space.
+4. **Workcell granularity:** is a workcell a robot-served island, a room, or a logical group? ~~This defines the scaling unit…~~ **Answered — ADR 0003 + ADR 0007:** the robot-served island is now the **Station** (a group of ≥1 device); `Workcell` is removed as a topology level and its execution fields default onto the Station. Cross-station scheduling scope is deliberately an M2 design point.
 5. **EPICS-only, or EPICS + Tango + direct-REST devices from day one?** ophyd-async supports all three; supporting all three from the start triples the integration test matrix.
 6. **Is the reconciler a real Kubernetes operator with CRDs, or an in-application control loop?** CRDs give free tooling and RBAC but hard-require k8s, which conflicts with the `docker compose` on-ramp. A well-defined in-app reconciler with the same semantics is probably right.
 7. **How much xDL?** Full xDL compatibility, IR-with-xDL-mapping, or ignore for v1?
