@@ -9,13 +9,15 @@
  * would.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { fetchTopology } from "../../api/topology";
 import { AsyncBoundary } from "../../components/AsyncBoundary";
 import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
+import { CreatePanel } from "./create/CreatePanel";
+import type { CreateKind } from "./create/nodeCreate";
 import { TopologyInspector } from "./TopologyInspector";
 import { TopologyNode } from "./TopologyNode";
 import { buildTopologyTree, collectNodeIds, countByKind } from "./topologyTree";
@@ -23,9 +25,20 @@ import type { TreeNode } from "./topologyTree";
 
 import "./TopologyScreen.css";
 
+/** The "+ Add" menu, in order: the common targets first, the rare ones last. */
+const ADD_KINDS: CreateKind[] = ["Station", "Site", "Lab", "Zone"];
+
 export function TopologyScreen() {
   const state = useAsync(useCallback(() => fetchTopology(), []));
   const [selected, setSelected] = useState<TreeNode | null>(null);
+  const [creating, setCreating] = useState<CreateKind | null>(null);
+  // The <details> "+ Add" menu — closed after a pick so it doesn't linger open.
+  const addMenu = useRef<HTMLDetailsElement>(null);
+
+  const startCreate = (kind: CreateKind) => {
+    setCreating(kind);
+    if (addMenu.current) addMenu.current.open = false;
+  };
   // null = "not touched yet", which means "expanded", so a freshly loaded
   // tree shows itself instead of six collapsed site rows.
   const [expanded, setExpanded] = useState<Set<string> | null>(null);
@@ -58,23 +71,48 @@ export function TopologyScreen() {
         subtitle={subtitle}
         actions={
           <>
+            <Button variant="primary" onClick={() => startCreate("Device")}>
+              New device
+            </Button>
+            <details className="add-menu" ref={addMenu}>
+              <summary className="add-menu__summary">+ Add</summary>
+              <div className="add-menu__list">
+                {ADD_KINDS.map((kind) => (
+                  <button
+                    key={kind}
+                    className="add-menu__item"
+                    onClick={() => startCreate(kind)}
+                  >
+                    {kind}
+                  </button>
+                ))}
+              </div>
+            </details>
             <Button onClick={() => setExpanded(new Set(allIds))}>Expand all</Button>
             <Button onClick={() => setExpanded(new Set())}>Collapse all</Button>
-            <Button variant="primary" onClick={state.reload}>
-              Refresh
-            </Button>
+            <Button onClick={state.reload}>Refresh</Button>
           </>
         }
       />
 
       <div className="screen">
         <div className="screen__content">
+          {creating && state.data && (
+            <CreatePanel
+              target={creating}
+              snapshot={state.data}
+              onCreated={state.reload}
+              onClose={() => setCreating(null)}
+            />
+          )}
+
           <AsyncBoundary
             state={state}
             isEmpty={(data) => data.sites.length === 0}
             empty={
               <p>
-                No sites registered. Import the example lab with{" "}
+                Nothing registered yet. Use <strong>New device</strong> above — it walks you
+                through the site, lab and station it needs — or import the example lab with{" "}
                 <code className="mono">epichem import-dir --descriptors-dir ./descriptors</code>.
               </p>
             }
