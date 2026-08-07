@@ -106,21 +106,27 @@
   position: relative;
 }
 
+/* Mirrors .btn's box model (Button.css) so "Add" sits at exactly the same
+   height as the "New device" button beside it — a secondary-styled control. */
 .add-menu__summary {
   display: inline-flex;
   align-items: center;
-  height: 100%;
-  padding: 7px var(--space-3);
-  border: 1px solid var(--color-border);
+  padding: 9px 20px;
+  border: 1px solid var(--color-primary);
   border-radius: var(--radius);
-  background: var(--color-bg);
+  background: transparent;
+  color: var(--color-primary);
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-button);
   cursor: pointer;
   list-style: none;
+}
+
+.add-menu__summary:hover {
+  background: var(--color-surface-muted);
 }
 
 .add-menu__summary::-webkit-details-marker {

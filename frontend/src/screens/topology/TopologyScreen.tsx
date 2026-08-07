@@ -25,8 +25,8 @@ import type { TreeNode } from "./topologyTree";
 
 import "./TopologyScreen.css";
 
-/** The "Add" menu, in order: the common targets first, the rare ones last. */
-const ADD_KINDS: CreateKind[] = ["Station", "Site", "Lab", "Zone"];
+/** The "Add" menu, in containment order (outermost to innermost). */
+const ADD_KINDS: CreateKind[] = ["Site", "Lab", "Zone", "Station"];
 
 export function TopologyScreen() {
   const state = useAsync(useCallback(() => fetchTopology(), []));

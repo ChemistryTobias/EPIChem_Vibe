@@ -299,7 +299,10 @@ function SiteForm({
 // ---- Lab --------------------------------------------------------------------
 
 function LabForm({ snapshot, locked, onCreated, onCancel }: FormChildProps) {
-  const [site, setSite] = useState("");
+  // Preselect the first existing parent: a required <select> that starts empty
+  // still *shows* its first option, so a user who doesn't touch it would submit
+  // an empty parent and orphan the row. Ignored when the parent is locked.
+  const [site, setSite] = useState(() => snapshot.sites[0]?.code ?? "");
   const [room, setRoom] = useState("");
   const [envClass, setEnvClass] = useState<string>(ENVIRONMENT_CLASSES[0]);
   const form = useCreateForm(
@@ -342,7 +345,7 @@ function LabForm({ snapshot, locked, onCreated, onCancel }: FormChildProps) {
 // ---- Zone -------------------------------------------------------------------
 
 function ZoneForm({ snapshot, locked, onCreated, onCancel }: FormChildProps) {
-  const [lab, setLab] = useState("");
+  const [lab, setLab] = useState(() => snapshot.labs[0]?.code ?? "");
   const [atmosphere, setAtmosphere] = useState<string>(ATMOSPHERES[0]);
   const [occupancy, setOccupancy] = useState<string>("shared");
   const form = useCreateForm(
@@ -391,7 +394,7 @@ function ZoneForm({ snapshot, locked, onCreated, onCancel }: FormChildProps) {
 // ---- Station ----------------------------------------------------------------
 
 function StationForm({ snapshot, locked, onCreated, onCancel }: FormChildProps) {
-  const [lab, setLab] = useState("");
+  const [lab, setLab] = useState(() => snapshot.labs[0]?.code ?? "");
   const [zone, setZone] = useState("");
   const [kind, setKind] = useState("generic");
   const [capacity, setCapacity] = useState("1");
@@ -459,7 +462,7 @@ function StationForm({ snapshot, locked, onCreated, onCancel }: FormChildProps) 
 // ---- Device -----------------------------------------------------------------
 
 function DeviceForm({ snapshot, locked, onCreated, onCancel }: FormChildProps) {
-  const [station, setStation] = useState("");
+  const [station, setStation] = useState(() => snapshot.stations[0]?.code ?? "");
   const [nodeKind, setNodeKind] = useState<string>("device");
   const [capabilityClass, setCapabilityClass] = useState("");
   const [mode, setMode] = useState<string>("read_write");
