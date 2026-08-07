@@ -1,5 +1,11 @@
 # EPIChem — repo notes for Claude Code
 
+> **Start here if you have no memory of the previous sessions:**
+> `docs/SESSION_HANDOFF.md` — where work stopped, what is verified vs. merely written, and the
+> immediate next step. The short version: the container stack and the CI pipeline **exist as
+> files but have never been executed**, so don't claim any of it works. The test suites, lint and
+> typecheck are green and genuinely verified.
+
 Full spec: `project_plan/EPIChem_Project_Plan.md` (68K, read it before touching architecture —
 §3 Non-Goals is binding: don't let this project grow an execution engine, a device driver layer,
 an ELN, or a raw-data store; those are explicitly delegated elsewhere). Design/brand reference:
