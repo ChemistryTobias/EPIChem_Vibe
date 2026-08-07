@@ -1,0 +1,285 @@
+# EPIChem CI/CD — gitlab.gwdg.de
+#
+# Implements docs/MILESTONE_CI_CD.md §3. Read docs/HOST_SETUP.md before the
+# first run: this pipeline needs the container registry enabled, a runner that
+# can build images, and two CI/CD variables that only a project maintainer can
+# set.
+#
+#     lint -> test -> build -> verify -> deploy
+#
+# `verify` is the stage that earns the rest. Anyone can build an image that
+# pushes successfully; this brings the ACTUAL PRODUCTION IMAGES up together
+# with a real Postgres, waits for health, and drives the console in a real
+# browser. A green build with a broken stack is the failure mode this exists
+# to catch.
+
+stages:
+  - lint
+  - test
+  - build
+  - verify
+  - deploy
+
+variables:
+  # Pin once, use everywhere. The npm package and the browser binaries baked
+  # into the image must be the same version or Playwright refuses to launch,
+  # so these two are deliberately driven by one variable.
+  PLAYWRIGHT_VERSION: "1.49.0"
+  BACKEND_IMAGE: $CI_REGISTRY_IMAGE/backend
+  FRONTEND_IMAGE: $CI_REGISTRY_IMAGE/frontend
+  PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+  npm_config_cache: $CI_PROJECT_DIR/.cache/npm
+  # Compose reads these; see compose.prod.yaml. Values are throwaway because
+  # the stack is destroyed at the end of the job.
+  POSTGRES_PASSWORD: ci-throwaway-password
+  EPICHEM_API_TOKENS: ci:ci-throwaway-token
+
+# If you register the dedicated project runner with a tag, uncomment this so
+# jobs only ever land on it. Leave it commented to use whatever runner the
+# project has available, including GWDG's shared runners.
+# default:
+#   tags:
+#     - epichem
+
+workflow:
+  rules:
+    # Don't run the branch pipeline and the MR pipeline for the same commit.
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# ---------------------------------------------------------------- templates
+.python:
+  image: python:3.13-slim
+  before_script:
+    - pip install --quiet -e "./backend[dev]"
+  cache:
+    key:
+      files:
+        - backend/pyproject.toml
+    paths:
+      - .cache/pip
+
+.node:
+  image: node:20-alpine
+  before_script:
+    - cd frontend && npm ci --prefer-offline
+  cache:
+    key:
+      files:
+        - frontend/package-lock.json
+    paths:
+      - .cache/npm
+
+# -------------------------------------------------------------------- lint
+lint:backend:
+  extends: .python
+  stage: lint
+  script:
+    - cd backend && ruff check epichem tests
+
+lint:frontend:
+  extends: .node
+  stage: lint
+  script:
+    - npm run typecheck
+
+# -------------------------------------------------------------------- test
+test:backend:
+  extends: .python
+  stage: test
+  script:
+    - cd backend && pytest -q --junitxml=../junit-backend.xml
+  artifacts:
+    when: always
+    reports:
+      junit: junit-backend.xml
+
+test:frontend:
+  extends: .node
+  stage: test
+  script:
+    - npx vitest run --reporter=junit --outputFile=../junit-frontend.xml
+  artifacts:
+    when: always
+    reports:
+      junit: junit-frontend.xml
+
+# The suite has only ever run on sqlite. PROJECT_MILESTONES.md flags ADR 0004's
+# revision write path as never re-verified against Postgres, and sqlite and
+# Postgres genuinely disagree about JSON columns, type affinity and
+# transactional DDL. EPICHEM_TEST_DATABASE_URL (backend/tests/conftest.py)
+# points the same suite at the real thing.
+test:postgres:
+  extends: .python
+  stage: test
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: epichem
+    POSTGRES_PASSWORD: epichem
+    POSTGRES_DB: epichem_test
+    EPICHEM_TEST_DATABASE_URL: postgresql+psycopg://epichem:epichem@postgres:5432/epichem_test
+  script:
+    - cd backend && pytest -q --junitxml=../junit-postgres.xml
+  artifacts:
+    when: always
+    reports:
+      junit: junit-postgres.xml
+  # TEMPORARY. This path has never executed — there was no Postgres available
+  # in the environment it was written in — so the first few runs are expected
+  # to surface real sqlite-vs-Postgres differences. Flip to `false` the moment
+  # it goes green once, and treat it as a blocking job from then on. Leaving
+  # this at `true` permanently would defeat the entire point of the job.
+  allow_failure: true
+
+# ------------------------------------------------------------------- build
+.docker:
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_TLS_VERIFY: 1
+    DOCKER_CERT_PATH: /certs/client
+  before_script:
+    # Whether `docker compose` ships in the cli image has changed between
+    # releases; install it if absent rather than depending on which side of
+    # that change the pinned tag falls on.
+    - docker compose version >/dev/null 2>&1 || apk add --no-cache docker-cli-compose
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+
+build:backend:
+  extends: .docker
+  stage: build
+  script:
+    # Two tags on one build: the SHA is what `verify` and `deploy` reference
+    # (exact and immutable), `latest` is the convenience pointer for humans.
+    - docker build --target runtime
+        --cache-from "$BACKEND_IMAGE:latest"
+        --build-arg BUILDKIT_INLINE_CACHE=1
+        -t "$BACKEND_IMAGE:$CI_COMMIT_SHA"
+        -t "$BACKEND_IMAGE:latest"
+        ./backend
+    - docker push "$BACKEND_IMAGE:$CI_COMMIT_SHA"
+    - if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then docker push "$BACKEND_IMAGE:latest"; fi
+    - if [ -n "$CI_COMMIT_TAG" ]; then
+        docker tag "$BACKEND_IMAGE:$CI_COMMIT_SHA" "$BACKEND_IMAGE:$CI_COMMIT_TAG";
+        docker push "$BACKEND_IMAGE:$CI_COMMIT_TAG";
+      fi
+
+build:frontend:
+  extends: .docker
+  stage: build
+  script:
+    - docker build --target runtime
+        --cache-from "$FRONTEND_IMAGE:latest"
+        --build-arg BUILDKIT_INLINE_CACHE=1
+        -t "$FRONTEND_IMAGE:$CI_COMMIT_SHA"
+        -t "$FRONTEND_IMAGE:latest"
+        ./frontend
+    - docker push "$FRONTEND_IMAGE:$CI_COMMIT_SHA"
+    - if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then docker push "$FRONTEND_IMAGE:latest"; fi
+    - if [ -n "$CI_COMMIT_TAG" ]; then
+        docker tag "$FRONTEND_IMAGE:$CI_COMMIT_SHA" "$FRONTEND_IMAGE:$CI_COMMIT_TAG";
+        docker push "$FRONTEND_IMAGE:$CI_COMMIT_TAG";
+      fi
+
+# ------------------------------------------------------------------ verify
+# Brings the production stack up from the images just built and drives it in a
+# real browser. The screenshots are a deliverable (docs/MILESTONE_CI_CD.md §5)
+# but they are also the assertion: screenshots.mjs fails the job on any
+# uncaught page error, so this is a smoke test that happens to produce
+# documentation.
+verify:stack:
+  extends: .docker
+  stage: verify
+  script:
+    - export EPICHEM_REGISTRY="$CI_REGISTRY_IMAGE" EPICHEM_VERSION="$CI_COMMIT_SHA"
+    - docker compose -f compose.prod.yaml pull --quiet
+    - docker compose -f compose.prod.yaml up -d
+    - docker compose -f compose.prod.yaml --profile seed run --rm seed
+    # Wait on the API's own readiness endpoint rather than on a fixed sleep.
+    - |
+      echo "waiting for the stack to become healthy"
+      for i in $(seq 1 60); do
+        if docker compose -f compose.prod.yaml exec -T api \
+             curl -fsS http://localhost:8000/api/v1/health >/dev/null 2>&1; then
+          echo "healthy after ${i}s"; break
+        fi
+        if [ "$i" = "60" ]; then
+          echo "STACK NEVER BECAME HEALTHY"
+          docker compose -f compose.prod.yaml logs
+          exit 1
+        fi
+        sleep 1
+      done
+    # Playwright runs as a container ON the compose network, so it reaches the
+    # console at its service name. No published ports, and no guessing about
+    # how dind exposes them to the job container.
+    - |
+      docker run --rm \
+        --network epichem-prod_default \
+        -v "$CI_PROJECT_DIR:/work" -w /work/deploy \
+        -e EPICHEM_BASE_URL=http://web:8080 \
+        -e EPICHEM_SCREENSHOT_DIR=/work/docs/screenshots \
+        "mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-jammy" \
+        sh -c "npm install --no-audit --no-fund && node screenshots.mjs"
+  after_script:
+    # Always collect logs — a failed verify job is useless without them.
+    - docker compose -f compose.prod.yaml logs --no-color > compose-logs.txt 2>&1 || true
+    - docker compose -f compose.prod.yaml down -v || true
+  artifacts:
+    when: always
+    paths:
+      - docs/screenshots/
+      - compose-logs.txt
+    expire_in: 30 days
+
+# ------------------------------------------------------------------ deploy
+# Deploys by pulling the images onto the dedicated production runner and
+# restarting the compose stack there. This matches how the institute intends
+# to run EPIChem today: one host, one `docker compose`, images from this
+# registry.
+#
+# Kubernetes/Helm (docs/MILESTONE_CI_CD.md §4) is NOT wired up, because open
+# question 1 in that document — GitLab Kubernetes agent, or a runner with a
+# kubeconfig? — has not been answered by FHI IT yet. Building a deploy job
+# against a guess would be worse than not having one.
+deploy:prod:
+  stage: deploy
+  # MUST run on the production host's own runner, not a shared one. See
+  # docs/HOST_SETUP.md §4 for registering it with this tag.
+  tags:
+    - epichem-prod
+  # No `image:` on purpose. This job must run with the SHELL executor, directly
+  # on the production host, because it operates on a checkout and a compose
+  # stack that live on that host's filesystem. Run it in a container and
+  # $EPICHEM_PROD_DIR would resolve inside the container, where the deployment
+  # does not exist, and `up -d` would start a second stack that vanishes with
+  # the job. See docs/HOST_SETUP.md §4.
+  variables:
+    # The compose stack on the production host owns its own .env with the real
+    # password and tokens; do not inherit this pipeline's throwaway values.
+    POSTGRES_PASSWORD: ""
+    EPICHEM_API_TOKENS: ""
+  environment:
+    name: production
+    url: $EPICHEM_PROD_URL
+  rules:
+    # Tags only, manual only. A production deploy should be a decision.
+    - if: $CI_COMMIT_TAG
+      when: manual
+  script:
+    - cd "$EPICHEM_PROD_DIR"
+    - export EPICHEM_REGISTRY="$CI_REGISTRY_IMAGE" EPICHEM_VERSION="$CI_COMMIT_TAG"
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker compose -f compose.prod.yaml pull
+    # `up -d` re-runs the one-shot migrate service first; Alembic is a no-op
+    # when the schema is already at head, so this is safe on every deploy.
+    - docker compose -f compose.prod.yaml up -d
+    - docker compose -f compose.prod.yaml ps
