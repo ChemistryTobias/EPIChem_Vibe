@@ -1,0 +1,61 @@
+/* The revision-history list in the inspector (ADR 0004 version-control view):
+   one compact line per write, newest first. */
+
+.rev {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.rev__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 12px;
+}
+
+.rev__action {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+}
+
+.rev--create {
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  color: var(--color-primary);
+}
+.rev--update {
+  background: color-mix(in srgb, var(--color-accent-blue) 16%, transparent);
+  color: var(--color-accent-blue);
+}
+.rev--delete {
+  background: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  color: var(--color-danger);
+}
+
+.rev__num {
+  flex: none;
+  color: var(--color-text-secondary);
+}
+
+.rev__meta {
+  color: var(--color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rev__note {
+  margin: 0;
+  font-size: 12px;
+}

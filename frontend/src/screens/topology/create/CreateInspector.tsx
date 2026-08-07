@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 
 import { createDevice, listCapabilityClasses } from "../../../api/devices";
 import { createLab, createSite, createStation, createZone } from "../../../api/topology";
@@ -23,6 +23,7 @@ import type { TopologySnapshot } from "../../../api/topology";
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
 import { useAsync } from "../../../hooks/useAsync";
+import { ParentSelect, SelectField, TextField } from "../formFields";
 import type { DraftNode } from "../topologyTree";
 import {
   ATMOSPHERES,
@@ -35,8 +36,6 @@ import {
   STATION_STATES,
 } from "./nodeCreate";
 import type { CreateKind } from "./nodeCreate";
-
-import "./CreateInspector.css";
 
 interface CreateInspectorProps {
   kind: CreateKind;
@@ -295,96 +294,5 @@ function PrereqNotice({
         <Button onClick={onCancel}>Cancel</Button>
       </div>
     </div>
-  );
-}
-
-// ---- small field primitives -------------------------------------------------
-
-function TextField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  required,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  required?: boolean;
-  type?: string;
-}) {
-  return (
-    <label className="create-form__field">
-      <span className="label">
-        {label}
-        {required ? " *" : ""}
-      </span>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        required={required}
-      />
-    </label>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: readonly string[];
-}) {
-  return (
-    <label className="create-form__field">
-      <span className="label">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-/** A required parent picker (or optional, with a "— none —" choice). */
-function ParentSelect({
-  label,
-  options,
-  value,
-  onChange,
-  optional,
-}: {
-  label: string;
-  options: { id: string; code: string; name: string }[];
-  value: string;
-  onChange: (v: string) => void;
-  optional?: boolean;
-}): ReactNode {
-  return (
-    <label className="create-form__field">
-      <span className="label">
-        {label}
-        {optional ? "" : " *"}
-      </span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} required={!optional}>
-        {optional && <option value="">— none —</option>}
-        {options.map((o) => (
-          <option key={o.id} value={o.code}>
-            {o.code} — {o.name}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }

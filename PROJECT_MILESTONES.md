@@ -175,8 +175,20 @@ import is explicitly deferred to a late stage (see M6).
   in the tree** at its future position (`injectDraft` in `topologyTree.ts`, unit-tested), written
   only on Create. A kind whose required parent doesn't exist yet points you at creating that parent
   first (`REQUIRED_PARENT`) rather than a multi-step wizard. Frontend gained the write API it was
-  missing (`createSite/Lab/Zone/Station`, `createDevice`). Still to come on the *other* subsections:
-  the creation affordances on Device Status / Lab Layout, and delete/edit from the inspector.
+  missing (`createSite/Lab/Zone/Station`, `createDevice`).
+- [x] **Edit / delete / version history from the Hierarchy inspector (ADRs 0004, 0009)** — the
+  inspector for a selected node now carries an **Edit** and a **Delete** action plus a **History**
+  section. *Edit* (Site/Lab/Zone/Station) is a prefilled per-kind form saved with a full-replace
+  PUT; the `*EditSpec` builders in `api/topology.ts` fold the edited fields over the rest of the
+  row so canvas geometry and a station's box aren't reset to defaults on save (unit-tested against
+  silent data loss). *Delete* is a two-step inline confirm that surfaces the 409 when a node is
+  still referenced. *History* lists every `Revision` recorded for the node (ADR 0004), newest
+  first — the read-only "version control" surface over the write history the backend already keeps.
+  Device is deletable + historied but **not yet editable** here: its full-replace spec carries
+  transport/ophyd/network/module-parent config whose faithful reconstruction belongs with the
+  Device Status screen. Restoring a past revision (forward-revert) is a later capability and will
+  get its own ADR. Still to come on the *other* subsections: the creation affordances on Device
+  Status / Lab Layout.
 - [ ] **Lab-layout editor (ADRs 0009, 0010)** — the metric floor renders and a station's box drags
   with grid snap; still to build are editing the lab canvas/grid size from the UI, creating
   stations/zones by dragging a square, drag-to-resize footprints, box-height handles, zone

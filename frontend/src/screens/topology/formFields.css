@@ -1,6 +1,7 @@
-/* The Create form as it sits inside the right-hand inspector (ADR 0009):
+/* The Create/Edit form as it sits inside the right-hand inspector (ADR 0009):
    a single vertical column of labelled fields, matching the inspector's own
-   spacing. */
+   spacing. Shared by CreateInspector and EditInspector (and the formFields
+   primitives), so it lives beside `formFields.tsx` rather than either screen. */
 
 .create-form {
   display: flex;

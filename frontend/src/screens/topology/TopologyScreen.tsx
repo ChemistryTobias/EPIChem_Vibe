@@ -18,6 +18,7 @@ import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
 import { CreateInspector } from "./create/CreateInspector";
 import type { CreateKind } from "./create/nodeCreate";
+import { EditInspector } from "./EditInspector";
 import { TopologyInspector } from "./TopologyInspector";
 import { TopologyNode } from "./TopologyNode";
 import {
@@ -26,6 +27,7 @@ import {
   buildTopologyTree,
   collectNodeIds,
   countByKind,
+  findNode,
   injectDraft,
 } from "./topologyTree";
 import type { DraftNode, TreeNode } from "./topologyTree";
@@ -37,16 +39,26 @@ const ADD_KINDS: CreateKind[] = ["Site", "Lab", "Zone", "Station"];
 
 export function TopologyScreen() {
   const state = useAsync(useCallback(() => fetchTopology(), []));
-  const [selected, setSelected] = useState<TreeNode | null>(null);
+  // Store the selected node by id, not by object: the tree is rebuilt on every
+  // write, so a stored TreeNode would go stale — deriving it from the fresh tree
+  // keeps the inspector showing current data after an edit.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState<CreateKind | null>(null);
+  const [editing, setEditing] = useState(false);
   // The live draft the Create inspector is typing, previewed in the tree.
   const [preview, setPreview] = useState<DraftNode | null>(null);
   const onPreview = useCallback((draft: DraftNode | null) => setPreview(draft), []);
   // The <details> "Add" menu — closed after a pick so it doesn't linger open.
   const addMenu = useRef<HTMLDetailsElement>(null);
 
+  const selectNode = (node: TreeNode) => {
+    setSelectedId(node.id);
+    setEditing(false); // picking another row leaves any in-progress edit
+  };
+
   const startCreate = (kind: CreateKind) => {
     setCreating(kind);
+    setEditing(false);
     if (addMenu.current) addMenu.current.open = false;
   };
   const stopCreate = () => setCreating(null);
@@ -58,6 +70,12 @@ export function TopologyScreen() {
   const tree = useMemo(
     () => (state.data ? injectDraft(buildTopologyTree(state.data), preview) : null),
     [state.data, preview],
+  );
+
+  // Derived from the fresh tree, so it re-reads current row data after a write.
+  const selected = useMemo(
+    () => (tree && selectedId ? findNode(tree.roots, selectedId) : null),
+    [tree, selectedId],
   );
 
   const allIds = useMemo(() => (tree ? collectNodeIds(tree.roots) : []), [tree]);
@@ -140,7 +158,7 @@ export function TopologyScreen() {
                         depth={0}
                         selectedId={selected?.id ?? null}
                         expanded={effectiveExpanded}
-                        onSelect={setSelected}
+                        onSelect={selectNode}
                         onToggle={toggle}
                       />
                     ))}
@@ -182,8 +200,27 @@ export function TopologyScreen() {
             onCancel={stopCreate}
             onSwitchKind={setCreating}
           />
+        ) : editing && selected && selected.kind !== "Device" && state.data ? (
+          <EditInspector
+            key={selected.id}
+            node={selected as TreeNode & { kind: "Site" | "Lab" | "Zone" | "Station" }}
+            snapshot={state.data}
+            onSaved={() => {
+              setEditing(false);
+              state.reload();
+            }}
+            onCancel={() => setEditing(false)}
+          />
         ) : (
-          <TopologyInspector node={selected} onClose={() => setSelected(null)} />
+          <TopologyInspector
+            node={selected}
+            onClose={() => setSelectedId(null)}
+            onEdit={() => setEditing(true)}
+            onDeleted={() => {
+              setSelectedId(null);
+              state.reload();
+            }}
+          />
         )}
       </div>
     </>

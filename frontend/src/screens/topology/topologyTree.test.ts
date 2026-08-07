@@ -16,6 +16,7 @@ import {
   buildTopologyTree,
   collectNodeIds,
   countByKind,
+  findNode,
   injectDraft,
 } from "./topologyTree";
 
@@ -228,6 +229,19 @@ describe("collectNodeIds", () => {
 
   test("is empty for an empty tree", () => {
     expect(collectNodeIds([])).toEqual([]);
+  });
+});
+
+describe("findNode", () => {
+  test("finds a deeply nested node by id", () => {
+    const { roots } = buildTopologyTree(fullChain);
+    expect(findNode(roots, "st1")?.code).toBe("ST-1");
+    expect(findNode(roots, "d1")?.kind).toBe("Device");
+  });
+
+  test("returns null when the id isn't in the tree", () => {
+    const { roots } = buildTopologyTree(fullChain);
+    expect(findNode(roots, "ghost")).toBeNull();
   });
 });
 

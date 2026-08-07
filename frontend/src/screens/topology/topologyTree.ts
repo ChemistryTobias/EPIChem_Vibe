@@ -152,6 +152,17 @@ export function collectNodeIds(nodes: TreeNode[]): string[] {
   return nodes.flatMap((n) => [n.id, ...collectNodeIds(n.children)]);
 }
 
+/** Depth-first search for the node with a given id, or null. Used to re-derive
+ * the selected node from a freshly rebuilt tree after a write. */
+export function findNode(nodes: TreeNode[], id: string): TreeNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    const hit = findNode(n.children, id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 // ---- live draft preview (ADR 0009) -----------------------------------------
 
 /** The synthetic id the in-progress row carries; there is only ever one. */

@@ -111,6 +111,22 @@ export interface Device {
   station_code: string | null;
 }
 
+/**
+ * One entry in a registry row's write history (ADR 0004): a full JSON snapshot
+ * recorded on every create/update/delete. Mirrors `api/schemas.py::RevisionOut`.
+ */
+export interface Revision {
+  id: string;
+  revision_number: number;
+  /** "create" | "update" | "delete". */
+  action: string;
+  created_at: string;
+  /** The write token's label, or null when writes are unauthenticated. */
+  created_by: string | null;
+  /** The row as it stood after this write (before, for a delete). */
+  snapshot: Record<string, unknown>;
+}
+
 export interface CapabilityClass {
   id: string;
   name: string;

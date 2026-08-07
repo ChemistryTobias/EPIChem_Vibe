@@ -1,6 +1,6 @@
 /** Device and capability-class endpoints (`api/routers/devices.py`). */
 
-import { apiGet, apiGetPage, apiPost, query } from "./client";
+import { apiDelete, apiGet, apiGetPage, apiPost, query } from "./client";
 import type { CapabilityClass, Device } from "./types";
 
 export interface DeviceFilters {
@@ -51,3 +51,11 @@ export const createDevice = (body: DeviceCreate) => {
     spec,
   });
 };
+
+/**
+ * Hard-delete a device by code. Its pre-delete snapshot survives in the device's
+ * Revision history (ADR 0004). Device *editing* isn't here yet — a device's
+ * full-replace spec carries transport/ophyd/network/module-parent config whose
+ * faithful reconstruction belongs with the Device Status screen (M2).
+ */
+export const deleteDevice = (code: string) => apiDelete(`/devices/${encodeURIComponent(code)}`);

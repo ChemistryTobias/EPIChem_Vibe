@@ -1,8 +1,19 @@
 /** Topology endpoints (`backend/epichem/api/routers/topology.py`). */
 
-import { apiGet, apiPost, apiPut } from "./client";
+import { apiDelete, apiGet, apiPost, apiPut } from "./client";
 import { listDevices } from "./devices";
-import type { Device, Lab, Site, Station, Zone } from "./types";
+import type { Device, Lab, Revision, Site, Station, Zone } from "./types";
+
+/** The five hierarchy kinds, and the URL segment each writes/reads through. */
+export type HierarchyKind = "Site" | "Lab" | "Zone" | "Station" | "Device";
+
+const PLURAL: Record<HierarchyKind, string> = {
+  Site: "sites",
+  Lab: "labs",
+  Zone: "zones",
+  Station: "stations",
+  Device: "devices",
+};
 
 export const listSites = () => apiGet<Site[]>("/sites");
 export const listLabs = () => apiGet<Lab[]>("/labs");
@@ -100,6 +111,116 @@ export const createZone = (code: string, name: string, spec: ZoneSpecBody) =>
 
 export const createStation = (code: string, name: string, spec: StationSpecBody) =>
   apiPost<Station>("/stations", descriptor("Station", code, name, spec));
+
+// ---- editing (full-replace PUT) --------------------------------------------
+//
+// PUT is a *full replace* (ADR 0004 §3): every spec field has to be sent or the
+// backend resets it to its default. The edit forms only collect a handful of
+// fields, so the spec builders below fold the edited fields over the rest read
+// straight off the current row — canvas geometry (edited on the Lab Layout
+// screen), a station's box, a zone's hazard flags. They're pure and exported so
+// the preservation can be unit-tested without a network round-trip: a dropped
+// field here is silent data loss on save.
+
+export interface SiteEdit {
+  name: string;
+  address: string | null;
+  timezone: string | null;
+}
+
+export interface LabEdit {
+  name: string;
+  site: string; // Site.code — allows re-parenting
+  room_number: string | null;
+  environment_class: string;
+}
+
+export interface ZoneEdit {
+  name: string;
+  lab: string; // Lab.code
+  atmosphere: string;
+  occupancy: string;
+}
+
+export interface StationEdit {
+  name: string;
+  lab: string; // Lab.code
+  zone: string | null; // Zone.code, or null for none
+  kind: string;
+  capacity: number;
+  state: string;
+  owning_group: string | null;
+}
+
+export const siteEditSpec = (e: SiteEdit) => ({
+  address: e.address,
+  timezone: e.timezone,
+});
+
+export const labEditSpec = (row: Lab, e: LabEdit) => ({
+  site: e.site,
+  room_number: e.room_number,
+  environment_class: e.environment_class,
+  // Preserved off the row — not in the edit form:
+  access_control_group: row.access_control_group,
+  width_m: row.width_m,
+  depth_m: row.depth_m,
+  grid_size_m: row.grid_size_m,
+});
+
+export const zoneEditSpec = (row: Zone, e: ZoneEdit) => ({
+  lab: e.lab,
+  atmosphere: e.atmosphere,
+  occupancy: e.occupancy,
+  // Preserved:
+  pressure: row.pressure,
+  temperature_class: row.temperature_class,
+  hazard_class: row.hazard_class,
+});
+
+export const stationEditSpec = (row: Station, e: StationEdit) => ({
+  lab: e.lab,
+  zone: e.zone,
+  kind: e.kind,
+  capacity: e.capacity,
+  state: e.state,
+  owning_group: e.owning_group,
+  // Preserved — the station's placement is the Lab Layout editor's job (ADR 0010):
+  pos_x: row.pos_x,
+  pos_y: row.pos_y,
+  size_x_m: row.size_x_m,
+  size_y_m: row.size_y_m,
+  height_m: row.height_m,
+  accepted_labware_types: row.accepted_labware_types,
+  queueserver_endpoint: row.queueserver_endpoint,
+  redis_namespace: row.redis_namespace,
+});
+
+const put = <T>(kind: HierarchyKind, code: string, name: string, spec: object) =>
+  apiPut<T>(`/${PLURAL[kind]}/${encodeURIComponent(code)}`, descriptor(kind, code, name, spec));
+
+// The code is the stable identity and isn't editable here; a rename changes the
+// human-readable name only.
+export const updateSite = (row: Site, e: SiteEdit) =>
+  put<Site>("Site", row.code, e.name, siteEditSpec(e));
+export const updateLab = (row: Lab, e: LabEdit) =>
+  put<Lab>("Lab", row.code, e.name, labEditSpec(row, e));
+export const updateZone = (row: Zone, e: ZoneEdit) =>
+  put<Zone>("Zone", row.code, e.name, zoneEditSpec(row, e));
+export const updateStation = (row: Station, e: StationEdit) =>
+  put<Station>("Station", row.code, e.name, stationEditSpec(row, e));
+
+// ---- delete + revision history (ADR 0004) ----------------------------------
+
+/** Hard-delete a node by code. The pre-delete snapshot is kept in its Revision
+ * history regardless (ADR 0004). A 409 comes back if other rows still reference it. */
+export const deleteNode = (kind: HierarchyKind, code: string) =>
+  apiDelete(`/${PLURAL[kind]}/${encodeURIComponent(code)}`);
+
+/** The write history of one node, in write order (oldest first, per the API) —
+ * the "version control" surface. The history view reverses it for display. */
+export const fetchRevisions = (kind: HierarchyKind, code: string) =>
+  apiGet<Revision[]>(`/${PLURAL[kind]}/${encodeURIComponent(code)}/revisions`);
 
 export function moveStation(
   station: Station,
