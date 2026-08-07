@@ -147,8 +147,8 @@ Hardening done in a later pass (see `git log`):
 **Status: in progress. Scope reshaped 2026-08-07 (ADRs 0007–0010)** — before the device-plane work
 proper, M2 began with a topology rework and UI re-section agreed with the user. The topology
 flatten, the metric lab canvas and the Device-Management shell (nav re-section + Device Status
-stub) are built and green; the New-Device-first creation flow is next. NetBox/CSV import is
-explicitly deferred to a late stage (see M6).
+stub) and the New-Device-first creation flow on the Hierarchy page are built and green. NetBox/CSV
+import is explicitly deferred to a late stage (see M6).
 
 **M2 front-load (the agreed first buildable slice, ADR 0009):**
 
@@ -162,15 +162,21 @@ explicitly deferred to a late stage (see M6).
   corrected to ADR 0007 (the hotplate/stirrer are devices under one `SPINBOT` station, not stations
   of their own). `descriptors/`, the pydantic schemas, `importer.py`/`exporter.py`, the migration
   and the test fixtures all moved with it.
-- [~] **Device Management shell (ADR 0009)** — *nav re-section + Device Status stub done; the
-  creation flow is the remaining piece.* The sidebar's flat `Topology` entry is now a
+- [x] **Device Management shell (ADR 0009)** — nav re-section, Device Status stub, and the
+  New-Device-first creation flow on Hierarchy. The sidebar's flat `Topology` entry is now a
   **Device Management** group that, when active, expands to its three subsections
   (**Hierarchy** — the M1 nested list, kept; **Device Status**; **Lab Layout**), rendered smaller
   with the current one bold; collapsed it reads like the old flat rail. **Device Status** renders
   the static registry state and says live MQTT state is M2 (reusing the M1 device list). Routes
   renamed `topology/devices/layout → hierarchy/device-status/lab-layout`, default now Hierarchy.
-  Still to build: the **New-Device-first** creation flow — a prominent one-click `New Device`, a
-  single `+` for everything else, blank-slate guidance Site → Lab → Station → Device.
+  The **creation flow** (`8597db6`, `0740e98`) lives on Hierarchy: a prominent `New device`
+  primary action plus a single `+ Add` menu for Station/Site/Lab/Zone. `buildCreateFlow`
+  (`create/nodeCreate.ts`, unit-tested) turns "New X" into the ordered walk of missing
+  prerequisites (Site → Lab → Station → Device, ADR 0007), locking each created thing as the next
+  step's parent, and collapses to one step (a picker) once the scaffolding exists; Zone stays
+  optional. Frontend gained the write API it was missing (`createSite/Lab/Zone/Station`,
+  `createDevice`). Still to come on the *other* subsections: the creation affordances on Device
+  Status / Lab Layout, and delete/edit from the Hierarchy inspector.
 - [ ] **Lab-layout editor (ADRs 0009, 0010)** — the metric floor renders and a station's box drags
   with grid snap; still to build are editing the lab canvas/grid size from the UI, creating
   stations/zones by dragging a square, drag-to-resize footprints, box-height handles, zone
