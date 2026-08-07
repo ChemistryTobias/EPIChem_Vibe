@@ -51,12 +51,19 @@ implemented in M1; the `Run`/provenance push design in §7.6 stays a design
 note until an institutional decision is made. Owner: the author, before M4
 starts.
 
-**Q4 — Workcell granularity.**
+**Q4 — Workcell granularity.** *(Revised by ADR 0007, 2026-08-07 — see below.)*
 Decided: a workcell is **a robot-served island** (§4's own definition — "one
 workcell = one RE Manager + one RE Worker + its IOC set"), not a room or a
 logical group. This is really already decided by §4's architectural
 commitment, not an open question; Q4 in §17 is asking the *scheduler* to
 confirm it, which it does by scoping reservations to a workcell's device set.
+
+*Update (ADR 0007, 2026-08-07):* `Workcell` is no longer a topology level. The
+"robot-served island" is now the **Station** (a group of ≥1 device), which
+carries the execution fields by default; whether one RE Manager serves a station,
+a station group, or a cross-station method is deliberately left as an M2 design
+point. The scheduler still scopes reservations to a cell's device set — the cell
+is just spelled "station" now.
 
 **Q5 — EPICS-only, or EPICS + Tango + direct-REST from day one?**
 Decided: EPICS-only (`ca://`) for M1–M2. The `Device.spec.transport.protocol`

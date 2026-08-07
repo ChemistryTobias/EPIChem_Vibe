@@ -2,7 +2,10 @@
 
 **Answers plan §17 Q2.**
 
-**Status:** Accepted (default — revisit once FHI IT is consulted)
+**Status:** Accepted (default — revisit once FHI IT is consulted). **Narrowed by
+ADR 0008 (2026-08-07):** the schema-shaping guidance below still stands, but the
+forward plan of an *authoritative* NetBox with one-way sync is superseded —
+NetBox is now an optional import connector and EPIChem is authoritative.
 
 ## Context
 
