@@ -15,10 +15,12 @@ echo "==> EPIChem post-create"
 npm install -g @anthropic-ai/claude-code
 
 # ------------------------------------------------------------------- history
-# HISTFILE points at the volume; make sure the file exists and is writable.
+# HISTFILE points at the volume. Docker creates a new named volume's mount
+# point owned by root, so chown must run BEFORE mkdir/touch — the node user
+# has no write permission there until it does.
+sudo chown -R node:node /commandhistory
 mkdir -p /commandhistory
 touch /commandhistory/.bash_history
-sudo chown -R node:node /commandhistory 2>/dev/null || true
 
 # ----------------------------------------------------------------------- git
 # The repo used to carry a local core.sshCommand pinning a key file
