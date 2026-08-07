@@ -70,6 +70,16 @@
   color: #ffffff;
 }
 
+/* A selected section keeps its primary-green base on hover, lightened by the
+   same 8% white overlay a subcategory gets — so DEVICE MANAGEMENT / SAMPLES
+   hover exactly like the subitems instead of losing the green. Placed after
+   `.sidebar__item:hover` so it wins the equal-specificity tie. */
+.sidebar__item--active:hover {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)),
+    var(--color-primary);
+}
+
 /* Subsections of the active section: smaller and quieter than the section
    label above them (matching the "Registry" label's scale), indented under
    it. The active one is bold; the others sit back. */
