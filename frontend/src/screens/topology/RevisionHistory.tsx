@@ -16,10 +16,11 @@ import { useAsync } from "../../hooks/useAsync";
 
 import "./RevisionHistory.css";
 
+// Backend actions are past tense (registry.py: "created"/"updated"/"deleted").
 const ACTION_TONE: Record<string, string> = {
-  create: "rev--create",
-  update: "rev--update",
-  delete: "rev--delete",
+  created: "rev--create",
+  updated: "rev--update",
+  deleted: "rev--delete",
 };
 
 function when(iso: string): string {

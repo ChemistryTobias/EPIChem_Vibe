@@ -118,7 +118,7 @@ export interface Device {
 export interface Revision {
   id: string;
   revision_number: number;
-  /** "create" | "update" | "delete". */
+  /** "created" | "updated" | "deleted" (registry.py). */
   action: string;
   created_at: string;
   /** The write token's label, or null when writes are unauthenticated. */
