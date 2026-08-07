@@ -1,10 +1,13 @@
 # EPIChem — repo notes for Claude Code
 
 > **Start here if you have no memory of the previous sessions:**
-> `docs/SESSION_HANDOFF.md` — where work stopped, what is verified vs. merely written, and the
-> immediate next step. The short version: the container stack and the CI pipeline **exist as
-> files but have never been executed**, so don't claim any of it works. The test suites, lint and
-> typecheck are green and genuinely verified.
+> `PROJECT_MILESTONES.md` — the honest record of what's actually built vs. what the plan
+> describes. The delivery path (container stack + GitLab CI) has been executed end-to-end and is
+> green; the test suites, lint and typecheck are verified. Current work is **M2 — Device plane**:
+> the topology flatten and metric lab canvas are built (ADRs 0007–0010); the Device-Management
+> shell (Device Status + New-Device-first creation flow) and NetBox/CSV import are next.
+> (The old `docs/SESSION_HANDOFF.md` was deleted 2026-08-07 — it had gone stale, pinned to a
+> commit six commits behind `main`.)
 
 Full spec: `project_plan/EPIChem_Project_Plan.md` (68K, read it before touching architecture —
 §3 Non-Goals is binding: don't let this project grow an execution engine, a device driver layer,
