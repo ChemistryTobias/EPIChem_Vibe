@@ -144,23 +144,31 @@ Hardening done in a later pass (see `git log`):
 
 ## M2 — Device plane
 
-**Status: not started. Scope reshaped 2026-08-07 (ADRs 0007–0009)** — before the device-plane work
-proper, M2 now begins with a topology rework and UI re-section agreed with the user. Documentation
-for all of it is landed (this pass); no code is written yet.
+**Status: in progress. Scope reshaped 2026-08-07 (ADRs 0007–0010)** — before the device-plane work
+proper, M2 began with a topology rework and UI re-section agreed with the user. The topology
+flatten and the metric lab canvas are built and green; the Device-Management creation flow and
+NetBox/CSV import are next.
 
 **M2 front-load (the agreed first buildable slice, ADR 0009):**
 
-- [ ] **Topology migration (ADR 0007)** — flatten to `Site → Lab → Zone(optional) → Station →
-  Module → Device`. Drop the `workcells`/`benches` tables; move grid geometry onto `Lab` and the
-  execution fields (queueserver endpoint, redis namespace, state, owning group) onto `Station`;
-  make `Station` a group of ≥1 device; fold `Module` into the existing `Device` containment tree
-  via a `kind`/`role` discriminator; remove `StationDeviceBinding`. Update `descriptors/`, the
-  pydantic schemas, `importer.py`/`exporter.py`, and `test_cli.py`'s fixture accordingly.
-- [ ] **Device Management shell (ADR 0009)** — rename the Topology screen's section to *Device
-  Management* with three subsections: **Hierarchy** (the M1 nested list, *kept*), **Device Status**
-  (registry state now, live MQTT state at the device-plane step), **Lab Layout**. Add the
-  **New-Device-first** creation flow: a prominent one-click `New Device`, a single `+` for
-  everything else, and blank-slate guidance (Site → Lab → Station → Device).
+- [x] **Topology migration (ADRs 0007, 0010)** — flattened to `Site → Lab → Zone(optional) →
+  Station → Module → Device` (backend `0d3ae26`, frontend `3044a2c`). Dropped the
+  `workcells`/`benches` tables; `Station` is a group of ≥1 device; `Module` folds into the `Device`
+  containment tree via `node_kind`; `StationDeviceBinding` removed in favour of a station FK. The
+  layout geometry landed **metric** rather than grid-cell (ADR 0010, `2921a41`): `Lab` is a
+  `width_m × depth_m` canvas with a `grid_size_m` raster; `Station` is a box at `pos_x`/`pos_y`
+  metres with a `size_x_m × size_y_m` footprint and `height_m` height. Example descriptors
+  corrected to ADR 0007 (the hotplate/stirrer are devices under one `SPINBOT` station, not stations
+  of their own). `descriptors/`, the pydantic schemas, `importer.py`/`exporter.py`, the migration
+  and the test fixtures all moved with it.
+- [ ] **Device Management shell (ADR 0009)** — the section is renamed *Device Management* with
+  **Hierarchy** (the M1 nested list, kept) and **Lab Layout** in place; **Device Status** and the
+  **New-Device-first** creation flow (a prominent one-click `New Device`, a single `+` for
+  everything else, blank-slate guidance Site → Lab → Station → Device) are still to build.
+- [ ] **Lab-layout editor (ADRs 0009, 0010)** — the metric floor renders and a station's box drags
+  with grid snap; still to build are editing the lab canvas/grid size from the UI, creating
+  stations/zones by dragging a square, drag-to-resize footprints, box-height handles, zone
+  rectangles, and the per-station device/module sub-layout (squares/circles).
 - [ ] **NetBox / CSV import (ADR 0008)** — an idempotent upsert through `registry.py` that reads a
   NetBox API or CSV export (a rack imports as a Station grouping its devices). EPIChem stays
   authoritative; no live sync.
