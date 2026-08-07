@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from epichem.api.auth import TOKENS_ENV, warn_if_open
 from epichem.api.errors import install_error_handlers
-from epichem.api.routers import devices, samples, topology
+from epichem.api.routers import devices, health, samples, topology
 
 #: Comma-separated list of browser origins allowed to call this API
 #: cross-origin. Empty (the default) installs no CORS middleware at all.
@@ -49,6 +49,7 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
+    app.include_router(health.router)
     app.include_router(topology.router)
     app.include_router(devices.router)
     app.include_router(samples.router)
