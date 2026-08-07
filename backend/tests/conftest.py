@@ -25,6 +25,25 @@ EXAMPLE_DESCRIPTORS_DIR = REPO_ROOT / "descriptors"
 TEST_DATABASE_URL_ENV = "EPICHEM_TEST_DATABASE_URL"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_auth_env(monkeypatch):
+    """Pin write-auth OFF by default so the suite is hermetic against an ambient
+    ``EPICHEM_API_TOKENS``.
+
+    ``epichem.api.auth.configured_tokens`` reads that variable live from the
+    environment, so if it is set in the shell (or as a GitLab CI/CD variable —
+    which is exactly what happened: the pipeline's global ``variables:`` set it
+    for the prod-compose ``verify`` stage and it leaked into ``test:backend``),
+    every write endpoint returns 401 and the write/list/pagination tests fail
+    with results that look nothing like an auth problem.
+
+    Tests that exercise the auth path (``test_auth.py``, ``test_api_health.py``)
+    set the variable themselves via ``monkeypatch``; that runs after this
+    autouse fixture, so it still wins.
+    """
+    monkeypatch.delenv("EPICHEM_API_TOKENS", raising=False)
+
+
 @pytest.fixture
 def engine():
     url = os.environ.get(TEST_DATABASE_URL_ENV)

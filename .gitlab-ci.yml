@@ -29,10 +29,13 @@ variables:
   FRONTEND_IMAGE: $CI_REGISTRY_IMAGE/frontend
   PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
   npm_config_cache: $CI_PROJECT_DIR/.cache/npm
-  # Compose reads these; see compose.prod.yaml. Values are throwaway because
-  # the stack is destroyed at the end of the job.
-  POSTGRES_PASSWORD: ci-throwaway-password
-  EPICHEM_API_TOKENS: ci:ci-throwaway-token
+  # NOTE: POSTGRES_PASSWORD and EPICHEM_API_TOKENS are intentionally NOT set
+  # here. They are only needed by the prod-compose `verify:stack` job, and set
+  # globally they leaked into `test:backend`/`test:postgres` — where
+  # EPICHEM_API_TOKENS made every write endpoint return 401 and the write/list
+  # tests fail. They now live on `verify:stack` alone. The test suite is also
+  # hermetic against an ambient EPICHEM_API_TOKENS (backend/tests/conftest.py),
+  # so a project-level CI/CD variable can't reintroduce this either.
 
 # If you register the dedicated project runner with a tag, uncomment this so
 # jobs only ever land on it. Leave it commented to use whatever runner the
@@ -198,6 +201,11 @@ build:frontend:
 verify:stack:
   extends: .docker
   stage: verify
+  variables:
+    # compose.prod.yaml requires both (its `${VAR:?}` guards refuse to start
+    # otherwise). Throwaway values: the stack is destroyed in after_script.
+    POSTGRES_PASSWORD: ci-throwaway-password
+    EPICHEM_API_TOKENS: ci:ci-throwaway-token
   script:
     - export EPICHEM_REGISTRY="$CI_REGISTRY_IMAGE" EPICHEM_VERSION="$CI_COMMIT_SHA"
     - docker compose -f compose.prod.yaml pull --quiet
