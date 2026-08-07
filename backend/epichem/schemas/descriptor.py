@@ -36,6 +36,10 @@ class Metadata(BaseModel):
 class SiteSpec(BaseModel):
     address: str | None = None
     timezone: str | None = None
+    # The site is a metric canvas (ADR 0012): labs are boxes placed on it.
+    width_m: float = 40.0
+    depth_m: float = 40.0
+    grid_size_m: float = 1.0
 
 
 class LabSpec(BaseModel):
@@ -48,6 +52,12 @@ class LabSpec(BaseModel):
     width_m: float = 6.0
     depth_m: float = 4.0
     grid_size_m: float = 0.5
+    # The lab's box on the parent site canvas (ADR 0012), in metres — distinct
+    # from width_m/depth_m (the lab's own floor). Standard 10x10 m default.
+    site_pos_x: float = 0.0
+    site_pos_y: float = 0.0
+    site_size_x_m: float = 10.0
+    site_size_y_m: float = 10.0
 
 
 class ZoneSpec(BaseModel):
@@ -127,6 +137,14 @@ class PoseSpec(BaseModel):
     yaw_deg: float | None = None
 
 
+class FootprintSpec(BaseModel):
+    # The node's box within its station's canvas (ADR 0012), in mm to match the
+    # pose position. All optional: an unplaced node renders at a standard 0.1 m.
+    size_x_mm: float | None = None
+    size_y_mm: float | None = None
+    size_z_mm: float | None = None
+
+
 class LocationSpec(BaseModel):
     # lab/zone are informational (implied by station); station is authoritative
     # for placement (ADR 0007). Module nesting is expressed by `spec.parent`,
@@ -135,6 +153,7 @@ class LocationSpec(BaseModel):
     zone: str | None = None
     station: str | None = None
     pose: PoseSpec | None = None
+    footprint: FootprintSpec | None = None
 
 
 class SafetySpec(BaseModel):

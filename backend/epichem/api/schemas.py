@@ -18,6 +18,9 @@ class SiteOut(OutBase):
     name: str
     address: str | None
     timezone: str | None
+    width_m: float
+    depth_m: float
+    grid_size_m: float
 
 
 class LabOut(OutBase):
@@ -31,6 +34,10 @@ class LabOut(OutBase):
     width_m: float
     depth_m: float
     grid_size_m: float
+    site_pos_x: float
+    site_pos_y: float
+    site_size_x_m: float
+    site_size_y_m: float
 
 
 class ZoneOut(OutBase):
@@ -109,6 +116,9 @@ class DeviceOut(OutBase):
     pose_y_mm: float | None
     pose_z_mm: float | None
     pose_yaw_deg: float | None
+    size_x_mm: float | None
+    size_y_mm: float | None
+    size_z_mm: float | None
     envelope: dict
     safety_flags: list[str]
     safety_interlocks: list[str]

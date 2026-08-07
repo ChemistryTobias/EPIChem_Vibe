@@ -214,3 +214,49 @@ def test_device_virtual_defaults_false_and_round_trips(client, session):
     r = client.put("/api/v1/devices/DEV-V", json=desc)
     assert r.status_code == 200
     assert r.json()["virtual"] is True
+
+
+def test_site_and_lab_canvas_geometry_round_trip(client):
+    """ADR 0012: the site canvas and the lab's box on it default sensibly and
+    survive a full-replace PUT."""
+    r = client.post("/api/v1/sites", json=_site_descriptor("SITE-G", "Site G"))
+    assert r.status_code == 201
+    body = r.json()
+    assert (body["width_m"], body["depth_m"], body["grid_size_m"]) == (40.0, 40.0, 1.0)
+
+    r = client.post("/api/v1/labs", json=_lab_descriptor("LAB-G", "Lab G", "SITE-G"))
+    assert r.status_code == 201
+    body = r.json()
+    # Standard 10x10 m box at the site origin by default.
+    assert (body["site_pos_x"], body["site_pos_y"]) == (0.0, 0.0)
+    assert (body["site_size_x_m"], body["site_size_y_m"]) == (10.0, 10.0)
+
+    placed = _lab_descriptor("LAB-G", "Lab G", "SITE-G")
+    placed["spec"].update(site_pos_x=12.5, site_pos_y=3.0, site_size_x_m=8.0, site_size_y_m=6.0)
+    r = client.put("/api/v1/labs/LAB-G", json=placed)
+    assert r.status_code == 200
+    body = r.json()
+    assert (body["site_pos_x"], body["site_pos_y"]) == (12.5, 3.0)
+    assert (body["site_size_x_m"], body["site_size_y_m"]) == (8.0, 6.0)
+
+
+def test_device_footprint_defaults_null_and_round_trips(client, session):
+    """ADR 0012: a device's footprint is nullable (unplaced → standard 0.1 m on
+    the canvas) and a full-replace PUT can set it via location.footprint."""
+    _make_topology_chain(session)
+    desc = _device_descriptor("DEV-F", "Device F", "STA-A", ["heat"])
+
+    r = client.post("/api/v1/devices", json=desc)
+    assert r.status_code == 201
+    body = r.json()
+    assert (body["size_x_mm"], body["size_y_mm"], body["size_z_mm"]) == (None, None, None)
+
+    desc["spec"]["location"]["footprint"] = {
+        "size_x_mm": 150.0,
+        "size_y_mm": 120.0,
+        "size_z_mm": 90.0,
+    }
+    r = client.put("/api/v1/devices/DEV-F", json=desc)
+    assert r.status_code == 200
+    body = r.json()
+    assert (body["size_x_mm"], body["size_y_mm"], body["size_z_mm"]) == (150.0, 120.0, 90.0)

@@ -77,6 +77,13 @@ class Device(RegistryEntity):
     pose_y_mm: Mapped[float | None] = mapped_column(default=None)
     pose_z_mm: Mapped[float | None] = mapped_column(default=None)
     pose_yaw_deg: Mapped[float | None] = mapped_column(default=None)
+    # The node's footprint box within its station's canvas (ADR 0012), in mm to
+    # match the pose above (pose_x_mm/y_mm is its position within the station).
+    # Nullable, like pose: an unplaced node renders at a standard 100x100x100 mm
+    # (0.1 m) default on the Station canvas without polluting hand-written YAML.
+    size_x_mm: Mapped[float | None] = mapped_column(default=None)
+    size_y_mm: Mapped[float | None] = mapped_column(default=None)
+    size_z_mm: Mapped[float | None] = mapped_column(default=None)
 
     envelope: Mapped[dict] = mapped_column(JSON, default=dict)
 

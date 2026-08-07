@@ -35,6 +35,12 @@ class Site(RegistryEntity):
 
     address: Mapped[str | None] = mapped_column(default=None)
     timezone: Mapped[str | None] = mapped_column(default=None)
+    # The site is itself a metric canvas (ADR 0012): the same width/depth/grid
+    # model as Lab (ADR 0010), one level up — labs are boxes placed on it. Bigger
+    # default extent so several 10x10 m labs fit.
+    width_m: Mapped[float] = mapped_column(default=40.0)
+    depth_m: Mapped[float] = mapped_column(default=40.0)
+    grid_size_m: Mapped[float] = mapped_column(default=1.0)
 
     labs: Mapped[list["Lab"]] = relationship(back_populates="site")
 
@@ -52,6 +58,14 @@ class Lab(RegistryEntity):
     width_m: Mapped[float] = mapped_column(default=6.0)
     depth_m: Mapped[float] = mapped_column(default=4.0)
     grid_size_m: Mapped[float] = mapped_column(default=0.5)
+    # The lab's *own box on the parent site canvas* (ADR 0012), in metres —
+    # distinct from width_m/depth_m, which are the lab's own floor. Same
+    # snap-but-not-bound box model as a Station on a Lab (ADR 0010): position
+    # from the site origin plus a footprint. Standard 10x10 m default.
+    site_pos_x: Mapped[float] = mapped_column(default=0.0)
+    site_pos_y: Mapped[float] = mapped_column(default=0.0)
+    site_size_x_m: Mapped[float] = mapped_column(default=10.0)
+    site_size_y_m: Mapped[float] = mapped_column(default=10.0)
 
     site: Mapped[Site] = relationship(back_populates="labs")
     zones: Mapped[list["Zone"]] = relationship(back_populates="lab")

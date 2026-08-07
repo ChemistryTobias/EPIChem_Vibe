@@ -104,7 +104,15 @@ class TopologyKind(NamedTuple):
 
 
 TOPOLOGY_WRITE = [
-    TopologyKind("Site", "sites", Site, SiteOut, None, None, ["address", "timezone"]),
+    TopologyKind(
+        "Site",
+        "sites",
+        Site,
+        SiteOut,
+        None,
+        None,
+        ["address", "timezone", "width_m", "depth_m", "grid_size_m"],
+    ),
     TopologyKind(
         "Lab",
         "labs",
@@ -119,6 +127,10 @@ TOPOLOGY_WRITE = [
             "width_m",
             "depth_m",
             "grid_size_m",
+            "site_pos_x",
+            "site_pos_y",
+            "site_size_x_m",
+            "site_size_y_m",
         ],
     ),
     TopologyKind(
@@ -217,6 +229,7 @@ def device_values(descriptor: Descriptor, spec, refs: dict) -> dict:
     ophyd_args = spec.ophyd.args if spec.ophyd else {}
     transport = spec.transport  # None for a passive module (ADR 0007)
     pose = spec.location.pose
+    footprint = spec.location.footprint
     calibration = spec.operational.calibration
     return {
         "code": descriptor.metadata.code,
@@ -242,6 +255,9 @@ def device_values(descriptor: Descriptor, spec, refs: dict) -> dict:
         "pose_y_mm": pose.y_mm if pose else None,
         "pose_z_mm": pose.z_mm if pose else None,
         "pose_yaw_deg": pose.yaw_deg if pose else None,
+        "size_x_mm": footprint.size_x_mm if footprint else None,
+        "size_y_mm": footprint.size_y_mm if footprint else None,
+        "size_z_mm": footprint.size_z_mm if footprint else None,
         "envelope": {k: v.model_dump(mode="json") for k, v in spec.envelope.items()},
         "safety_flags": spec.safety.flags,
         "safety_interlocks": spec.safety.interlocks,

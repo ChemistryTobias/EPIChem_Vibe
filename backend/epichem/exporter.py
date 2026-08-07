@@ -137,6 +137,15 @@ def _export_device(session: Session, obj: Device) -> dict:
     )
     if pose:
         location["pose"] = pose
+    footprint = _prune(
+        {
+            "size_x_mm": obj.size_x_mm,
+            "size_y_mm": obj.size_y_mm,
+            "size_z_mm": obj.size_z_mm,
+        }
+    )
+    if footprint:
+        location["footprint"] = footprint
     if location:
         spec["location"] = location
 
