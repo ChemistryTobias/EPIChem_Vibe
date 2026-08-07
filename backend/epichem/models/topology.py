@@ -103,6 +103,12 @@ class Station(RegistryEntity):
     state: Mapped[str] = mapped_column(default="active")
     owning_group: Mapped[str | None] = mapped_column(default=None)
 
+    # Soft-hide flag (ADR 0011): a virtual station still exists, lists and
+    # revisions normally, but is hidden from every layout canvas. The Lab-layout
+    # editor's "delete" sets this rather than removing the row, so the flip is
+    # reversible from the revision history (ADR 0004).
+    virtual: Mapped[bool] = mapped_column(default=False)
+
     lab: Mapped[Lab] = relationship(back_populates="stations")
     zone: Mapped["Zone | None"] = relationship(back_populates="stations")
     # No cascade: a station's devices are real entities that outlive the grouping

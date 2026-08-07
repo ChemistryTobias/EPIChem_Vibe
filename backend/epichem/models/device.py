@@ -87,6 +87,11 @@ class Device(RegistryEntity):
     operational_mode: Mapped[str] = mapped_column(default="read_write")
     operational_calibration: Mapped[dict | None] = mapped_column(JSON, default=None)
 
+    # Soft-hide flag (ADR 0011): a virtual device/module still exists and
+    # revisions normally, but is hidden from every layout canvas. The Station
+    # canvas's "delete" sets this rather than removing the row (reversible).
+    virtual: Mapped[bool] = mapped_column(default=False)
+
     children: Mapped[list["Device"]] = relationship(
         back_populates="parent", remote_side="Device.parent_id"
     )

@@ -63,6 +63,7 @@ class StationOut(OutBase):
     redis_namespace: str | None
     state: str
     owning_group: str | None
+    virtual: bool
 
 
 class SignalOut(OutBase):
@@ -114,6 +115,7 @@ class DeviceOut(OutBase):
     safety_max_unattended_minutes: int | None
     operational_mode: str
     operational_calibration: dict | None
+    virtual: bool
     # Not an ORM attribute — filled in by the router from the
     # station_device_bindings table (Device/Station are decoupled, §5.1).
     station_code: str | None = None

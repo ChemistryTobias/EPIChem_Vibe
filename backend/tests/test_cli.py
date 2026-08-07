@@ -1,6 +1,6 @@
 import pytest
 
-from epichem import cli
+from epichem import cli, migrations
 from epichem.models import CapabilityClass, Device
 
 
@@ -60,7 +60,9 @@ def test_db_current_reports_head(monkeypatch, tmp_path, capsys):
 
     cli.main(["db", "current"])
 
-    assert "0001" in capsys.readouterr().out
+    # Track the newest migration rather than hard-coding it, so adding a
+    # migration doesn't break this test — it asserts init-db lands at head.
+    assert migrations.head_revision() in capsys.readouterr().out
 
 
 def test_import_dir_against_example_descriptors(

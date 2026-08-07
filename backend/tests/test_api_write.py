@@ -169,3 +169,48 @@ def test_device_revisions_show_correct_station_code_not_null(client, session):
     assert [rev["action"] for rev in revisions] == ["created", "updated"]
     assert revisions[0]["snapshot"]["station_code"] == "STA-A"
     assert revisions[1]["snapshot"]["station_code"] == "STA-B"
+
+
+def test_station_virtual_defaults_false_and_round_trips(client, session):
+    """ADR 0011: `virtual` defaults False on create and a full-replace PUT can
+    soft-hide the station (the Lab-layout editor's "delete")."""
+    _make_topology_chain(session)
+
+    def station_desc(virtual: bool) -> dict:
+        spec = {"lab": "LAB-DEV", "kind": "generic"}
+        if virtual:
+            spec["virtual"] = True
+        return {
+            "apiVersion": "epichem.dev/v1",
+            "kind": "Station",
+            "metadata": {"code": "STA-V", "name": "Station V"},
+            "spec": spec,
+        }
+
+    r = client.post("/api/v1/stations", json=station_desc(virtual=False))
+    assert r.status_code == 201
+    assert r.json()["virtual"] is False
+
+    r = client.put("/api/v1/stations/STA-V", json=station_desc(virtual=True))
+    assert r.status_code == 200
+    assert r.json()["virtual"] is True
+
+    # A subsequent full replace without the field resets it to the default —
+    # the full-replace contract the frontend spec builders must respect.
+    r = client.put("/api/v1/stations/STA-V", json=station_desc(virtual=False))
+    assert r.json()["virtual"] is False
+
+
+def test_device_virtual_defaults_false_and_round_trips(client, session):
+    """ADR 0011: `virtual` on a device/module, same soft-hide as a station."""
+    _make_topology_chain(session)
+    desc = _device_descriptor("DEV-V", "Device V", "STA-A", ["heat"])
+
+    r = client.post("/api/v1/devices", json=desc)
+    assert r.status_code == 201
+    assert r.json()["virtual"] is False
+
+    desc["spec"]["virtual"] = True
+    r = client.put("/api/v1/devices/DEV-V", json=desc)
+    assert r.status_code == 200
+    assert r.json()["virtual"] is True

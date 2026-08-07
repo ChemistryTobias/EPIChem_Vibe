@@ -69,6 +69,11 @@ def _export_topology(entry: TopologyKind, obj: Any) -> dict:
             spec[ref_field] = ref.code
     for attr in entry.attrs:
         spec[attr] = getattr(obj, attr)
+    # `virtual` (ADR 0011) defaults False; omit it there so a normal station's
+    # YAML stays clean (re-import defaults it back to False). _prune keeps
+    # False, so this can't ride on _prune the way None/empty do.
+    if spec.get("virtual") is False:
+        spec.pop("virtual", None)
     return {
         "apiVersion": API_VERSION,
         "kind": entry.kind,
@@ -146,6 +151,10 @@ def _export_device(session: Session, obj: Device) -> dict:
     if obj.operational_calibration:
         operational["calibration"] = obj.operational_calibration
     spec["operational"] = operational
+
+    # Omitted when False (the default, ADR 0011), kept for a soft-hidden device.
+    if obj.virtual:
+        spec["virtual"] = True
 
     metadata: dict[str, Any] = {"code": obj.code, "name": obj.name}
     if obj.labels:

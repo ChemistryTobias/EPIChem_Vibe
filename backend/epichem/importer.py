@@ -150,6 +150,7 @@ TOPOLOGY_WRITE = [
             "redis_namespace",
             "state",
             "owning_group",
+            "virtual",
         ],
         [("zone", Zone)],
     ),
@@ -247,6 +248,7 @@ def device_values(descriptor: Descriptor, spec, refs: dict) -> dict:
         "safety_max_unattended_minutes": spec.safety.max_unattended_minutes,
         "operational_mode": spec.operational.mode,
         "operational_calibration": calibration.model_dump(mode="json") if calibration else None,
+        "virtual": spec.virtual,
     }
 
 

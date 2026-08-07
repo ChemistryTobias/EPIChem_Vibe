@@ -79,6 +79,8 @@ class StationSpec(BaseModel):
     redis_namespace: str | None = None
     state: Literal["active", "maintenance", "offline"] = "active"
     owning_group: str | None = None
+    # Soft-hide flag (ADR 0011): hidden from layout canvases when True.
+    virtual: bool = False
 
 
 # ---- Device spec (§6.1) -----------------------------------------------------
@@ -170,6 +172,8 @@ class DeviceSpec(BaseModel):
     envelope: dict[str, SignalEnvelope] = Field(default_factory=dict)
     safety: SafetySpec = Field(default_factory=SafetySpec)
     operational: OperationalSpec = Field(default_factory=OperationalSpec)
+    # Soft-hide flag (ADR 0011): hidden from layout canvases when True.
+    virtual: bool = False
 
 
 # ---- Capability class spec (§6.3) ------------------------------------------
