@@ -38,14 +38,16 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
 
 ## Conventions established so far
 
-- **Topology is being reworked for M2 (ADRs 0007–0009) — the code below still ships M1's model.**
-  The current `Site → Lab → Zone → Workcell → Bench → Station` + `StationDeviceBinding` schema is
-  what's in the tree today; M2 flattens it to `Site → Lab → Zone(optional) → Station → Module →
-  Device` (Station = a group of ≥1 device; `Workcell`/`Bench` dropped; grid geometry moves to
-  `Lab`, execution fields to `Station`; `Module` folds into the `Device` containment tree). The
-  UI section renames Topology → **Device Management** (Hierarchy / Device Status / Lab Layout).
-  Read ADRs 0007–0009 before touching `models/topology.py`, `importer.py`, the descriptor schemas,
-  or the frontend screens — don't rebuild against the old six-level model.
+- **Topology was flattened for M2 (ADRs 0007–0010) — this is the model in the tree now.** The
+  schema is `Site → Lab → Zone(optional) → Station → Module → Device` (Station = a group of ≥1
+  device; the old M1 `Workcell`/`Bench` levels and `StationDeviceBinding` are gone; layout
+  geometry lives on `Lab` as a metric `width_m × depth_m` canvas per ADR 0010, execution fields
+  on `Station`; `Module` folds into the `Device` containment tree via `node_kind`). The UI renamed
+  the Topology section to **Device Management** (Hierarchy / Device Status / Lab Layout), though the
+  frontend `screens/topology/` directory and `api/topology.ts`/`TopologySnapshot` keep the
+  data-model name on purpose. Read ADRs 0007–0010 before touching `models/topology.py`,
+  `importer.py`, the descriptor schemas, or the frontend screens — don't reintroduce the old
+  six-level model.
 - Enumerated fields (environment_class, atmosphere, workcell state, ...) are plain strings
   validated at the pydantic descriptor layer, not DB enums — see the module docstring in
   `models/topology.py` for why.

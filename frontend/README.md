@@ -1,8 +1,13 @@
 # EPIChem frontend
 
-React + TypeScript + plain CSS console for the EPIChem registry. Four screens — **Lab layout**
-(isometric), **Topology**, **Devices**, **Samples** — all reading the real API. There is no mock
-data anywhere in this app; if the backend is down, the screens say so.
+React + TypeScript + plain CSS console for the EPIChem registry. A **Device Management** section
+groups three screens — **Hierarchy** (the containment tree), **Device Status**, **Lab Layout**
+(metric isometric floor plan, ADR 0010) — alongside **Samples**, all reading the real API. There
+is no mock data anywhere in this app; if the backend is down, the screens say so.
+
+(The screen *directories* under `src/screens/` keep their data-model names — `topology/`,
+`devices/`, `layout/`, `samples/` — even though the nav labels them Hierarchy / Device Status /
+Lab Layout / Samples. The rename was to the view layer only; see the note in the repo `CLAUDE.md`.)
 
 ## Run it
 
@@ -83,8 +88,9 @@ a component is one place, not two directories. Only `tokens.css` and `base.css` 
 
 - **No UI kit, no CSS framework.** `styles/tokens.css` is `project_plan/DESIGN.md` in
   machine-readable form; if a value here and DESIGN.md disagree, DESIGN.md wins.
-- **No router dependency.** Three screens, no params, no nesting — `useHashRoute.ts` is smaller
-  than the README section explaining why you'd add React Router. Swap it in if routing grows.
+- **No router dependency.** Four screens, no params, no nesting (the Device Management group is a
+  nav affordance, not nested routes) — `useHashRoute.ts` is smaller than the README section
+  explaining why you'd add React Router. Swap it in if routing grows.
 - **No data-fetching library.** `useAsync.ts` is ~40 lines and every screen consumes the same
   four-field shape, so replacing it with TanStack Query later touches this file and its call sites
   only.
@@ -104,27 +110,31 @@ a component is one place, not two directories. Only `tokens.css` and `base.css` 
 
 Built on **`@joint/core` alone** (MPL-2.0) — no Stencil, Inspector, Halo, Toolbar, Navigator or
 Selection, all of which are JointJS+ commercial. Plan §10.2 recommends exactly this: the free core
-plus React-side panels, which is what `LayoutInspector` is. The projection is §10.3's formulas,
-implemented as pure functions in `isometric.ts` and unit-tested there, including that `toGrid`
-inverts `toScreen` for every cell of a grid — that inverse is what makes dragging land where you
-dropped it.
+plus React-side panels, which is what `LayoutInspector` is. The lab is a **metric** canvas since
+ADR 0010 (a `width_m × depth_m` floor with a `grid_size_m` raster), so the projection in
+`isometric.ts` is per-metre, not per-cell: `toScreen` places a station at its `(pos_x, pos_y)`
+metres, and the unit-tested inverse `toGrid` turns a dropped pixel back into metres (snapped to the
+grid) — that inverse is what makes dragging land where you dropped it.
 
-The canvas holds no authoritative state, per §10.3: a drag reports a grid cell, the screen PUTs it
-and refetches, and the redraw is what moves the tile. A rejected write snaps it back for free.
+The canvas holds no authoritative state, per §10.3: a drag reports a metric position, the screen
+PUTs it and refetches, and the redraw is what moves the tile. A rejected write snaps it back for
+free.
 
 `@joint/core` is ~435 kB, so this screen is lazy-loaded (`App.tsx`) and the other three don't pay
 for it.
 
-What's *not* built from §10: multi-bench rooms, zone drawing, creating/deleting stations, resizing
-benches, multi-select, align/distribute, copy-paste, undo/redo. The live-status, sample-occupancy,
-transport-route and utilisation layers need M2's device plane — there is no live state to draw.
+What's *not* built from §10 (ADRs 0009/0010): editing the lab canvas/grid from the UI, zone
+drawing, creating/deleting stations by dragging a square, drag-to-resize footprints, box-height
+handles, the per-station device/module sub-layout, multi-select, align/distribute, copy-paste,
+undo/redo. The live-status, sample-occupancy, transport-route and utilisation layers need M2's
+device plane — there is no live state to draw.
 
 ## Not here, on purpose
 
 - **The procedure/workflow editor** (M3). When it is built it will use **React Flow** (MIT), not
   JointJS — decision recorded, nothing to build against yet: no procedure IR or backend exists.
   React Flow is *not* a dependency of this app and is not used by the Samples screen.
-- **Live device state, jog/home controls, signal plots** (M2). The Devices screen shows the
+- **Live device state, jog/home controls, signal plots** (M2). The Device Status screen shows the
   registry record for each device, not its runtime.
 - **Sample lineage graphs, event history, containers** (M4, plan §7.4/§7.3). See `docs/adr/0005`
   for exactly what the minimal sample model does and doesn't have.

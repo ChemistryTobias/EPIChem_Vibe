@@ -69,7 +69,7 @@ npm run build                          # typecheck + production bundle
 backend/epichem/          Python — FastAPI, SQLAlchemy 2.0, Pydantic v2
   db.py                   Engine/session; Postgres via DATABASE_URL, sqlite fallback
   idgen.py                UUIDv7 generation
-  models/                 ORM: topology (Site..Station), Device/Signal/binding, CapabilityClass,
+  models/                 ORM: topology (Site..Station), Device/Signal, CapabilityClass,
                           sample.py (minimal §7 slice, ADR 0005), revision.py (write history, ADR 0004)
   registry.py             Versioned write layer — create/update/delete_entity, each records a Revision.
                           ALL writes go through here (API and YAML import both call it).
@@ -104,13 +104,14 @@ PROJECT_MILESTONES.md     Honest record of what's built vs. what the plan descri
 
 ## Conventions worth knowing
 
-> **Heads-up before you build topology:** the model described above is M1's, and it's being
-> reworked for M2. ADRs 0007–0009 flatten `Site → Lab → Zone → Workcell → Bench → Station` to
-> `Site → Lab → Zone(optional) → Station → Module → Device` (a Station becomes a group of ≥1
-> device; `Workcell`/`Bench` go away), demote NetBox to an optional import, and rename the
-> Topology screen to **Device Management** (Hierarchy / Device Status / Lab Layout) with a
-> New-Device-first creation flow. Read those ADRs before changing `models/topology.py`,
-> `importer.py`, the descriptor schemas or the topology screens.
+> **Heads-up before you build topology:** the model was flattened for M2 (built and merged).
+> ADRs 0007–0010 replaced M1's `Site → Lab → Zone → Workcell → Bench → Station` with
+> `Site → Lab → Zone(optional) → Station → Module → Device` (a Station is a group of ≥1 device;
+> `Workcell`/`Bench` and `StationDeviceBinding` are gone; layout geometry is metric on `Lab`,
+> ADR 0010), demoted NetBox to an optional late-stage import (ADR 0008), and renamed the Topology
+> screen to **Device Management** (Hierarchy / Device Status / Lab Layout) with a New-Device-first
+> creation flow. Read those ADRs before changing `models/topology.py`, `importer.py`, the
+> descriptor schemas or the topology screens — don't reintroduce the six-level model.
 
 These are the ones that bite if you don't know them; the rest are documented inline (every module
 has a one-line docstring pointing at the plan section it implements — keep doing that).
