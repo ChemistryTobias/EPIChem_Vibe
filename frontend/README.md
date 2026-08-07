@@ -6,6 +6,14 @@ data anywhere in this app; if the backend is down, the screens say so.
 
 ## Run it
 
+From the repo root, this app plus everything it needs — seeded database included:
+
+```bash
+docker compose up          # → http://localhost:5173
+```
+
+Or on its own, against a backend you are already running:
+
 ```bash
 # 1. backend, with something in it (from ../backend)
 .venv/bin/epichem init-db
@@ -21,9 +29,13 @@ npm run dev                                          # → http://localhost:5173
 
 The dev server proxies `/api` to `http://127.0.0.1:8000` (`vite.config.ts`), so the browser only
 ever talks to one origin and **no CORS configuration is needed for local development**. Point it
-somewhere else with `EPICHEM_API_URL=http://host:port npm run dev`. If you instead serve this
-build from a different origin than the API, set `EPICHEM_CORS_ORIGINS` on the backend — see
-`backend/epichem/api/app.py`.
+somewhere else with `EPICHEM_API_URL=http://host:port npm run dev` — which is exactly what
+`compose.yaml` does, pointing it at `http://api:8000`.
+
+In production the Vite proxy doesn't exist, so `Dockerfile`'s runtime stage serves the built
+bundle through nginx and gives it the same job (`nginx.conf.template`). Same single origin, so
+still no CORS. If you ever do serve this build from a different origin than the API, set
+`EPICHEM_CORS_ORIGINS` on the backend — see `backend/epichem/api/app.py`.
 
 ```bash
 npm run typecheck   # tsc --noEmit

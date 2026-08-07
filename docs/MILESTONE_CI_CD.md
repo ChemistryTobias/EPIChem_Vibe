@@ -1,15 +1,19 @@
 # Milestone: GitLab CI/CD, containers, Helm, and automated UI screenshots
 
-**Status: not started. Planned, deliberately, for after the isometric lab layout and the current
-hardening pass.**
+**Status: §1, §2, §3 and §5 are written and committed but have never been executed. §4 (Helm) is
+deliberately not built.**
 
-This is a specification, not a record of work done — nothing described here exists yet. It sits
-outside the plan's M0–M6 numbering because it's delivery infrastructure rather than product scope,
-but it blocks anything that involves a second machine: today the only supported way to run EPIChem
-is a developer's laptop.
+This started as a pure specification. Most of it now exists as files — `compose.yaml`,
+`compose.prod.yaml`, both `Dockerfile`s, `.gitlab-ci.yml`, `deploy/screenshots.mjs` — but "exists
+as files" is the whole of the claim: there was no Docker daemon and no GitLab runner in the
+environment they were written in, so nothing here has run. `docs/HOST_SETUP.md` is the checklist
+for making it real, and its §0 is the honest ledger of what is and isn't verified.
 
-Tracked here so it doesn't live only in a conversation. Update this file as pieces land, and move
-the finished parts into `PROJECT_MILESTONES.md`.
+It sits outside the plan's M0–M6 numbering because it's delivery infrastructure rather than
+product scope, but it blocks anything that involves a second machine.
+
+Update this file as pieces are *verified*, not as they are written, and move the finished parts
+into `PROJECT_MILESTONES.md`.
 
 ## Why it's after 1 & 3, not before
 
@@ -118,14 +122,26 @@ image — hence the browser for this job specifically.
 
 ## Definition of done
 
+Nothing is checked, on purpose: every box below is an *executed* outcome, and the code that would
+satisfy them has only been written. Written-but-unrun is what the status header records; ticking
+these would claim something different.
+
 - [ ] `docker compose up` on a clean machine serves a working console with the example lab
+      — written (`compose.yaml`), see `docs/HOST_SETUP.md` §2
 - [ ] Every push runs lint + tests for both halves, and the suite has run green against real
-      Postgres at least once in CI
-- [ ] Images build and push on `main`, tagged by SHA
-- [ ] `helm upgrade --install` deploys to the test cluster from CI, with migrations as a pre-upgrade
-      hook and secrets out of `values.yaml`
-- [ ] Production deploy exists and is manual-only
-- [ ] Screenshots regenerate automatically and are current in the README
+      Postgres at least once in CI — written (`.gitlab-ci.yml`, `test:postgres`), currently
+      `allow_failure: true` until its first green run
+- [ ] Images build and push on `main`, tagged by SHA — written (`build:backend`,
+      `build:frontend`); needs a privileged runner, `docs/HOST_SETUP.md` §4.1
+- [ ] `helm upgrade --install` deploys to the test cluster from CI, with migrations as a
+      pre-upgrade hook and secrets out of `values.yaml` — **not built**, blocked on open
+      question 1
+- [ ] Production deploy exists and is manual-only — written as a compose deploy
+      (`deploy:prod`, tag-only + manual) rather than Helm; needs the shell-executor runner from
+      `docs/HOST_SETUP.md` §4.2
+- [ ] Screenshots regenerate automatically and are current in the README — written
+      (`deploy/screenshots.mjs`, `verify:stack`); they are published as CI artifacts and are
+      **not** yet committed back into the repo or embedded in the README
 
 ## Things to decide before starting
 

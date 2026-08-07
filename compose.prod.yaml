@@ -23,6 +23,17 @@
 
 name: epichem-prod
 
+# EPICHEM_REGISTRY is REQUIRED and has no default on purpose. The obvious
+# guess for a GitLab at gitlab.gwdg.de would be registry.gitlab.gwdg.de — that
+# hostname does not resolve, so the guess is wrong, and a wrong default here
+# fails later and more confusingly than no default at all.
+#
+# Find the real value in GitLab: Deploy -> Container Registry shows the exact
+# prefix to use. In CI it is the predefined $CI_REGISTRY_IMAGE, which is
+# always correct and is what .gitlab-ci.yml passes in.
+x-backend-image: &backend_image ${EPICHEM_REGISTRY:?set EPICHEM_REGISTRY — see Deploy > Container Registry in GitLab for the exact prefix}/backend:${EPICHEM_VERSION:-latest}
+x-frontend-image: &frontend_image ${EPICHEM_REGISTRY:?set EPICHEM_REGISTRY — see Deploy > Container Registry in GitLab for the exact prefix}/frontend:${EPICHEM_VERSION:-latest}
+
 services:
   # ------------------------------------------------------------------ db
   db:
@@ -48,7 +59,7 @@ services:
   # when the schema is already at head, so this costs nothing on a restart and
   # makes an upgrade a one-command operation.
   migrate:
-    image: ${EPICHEM_REGISTRY:-registry.gitlab.gwdg.de/lotschgroup/automation-digitalisation/it-services/epichem}/backend:${EPICHEM_VERSION:-latest}
+    image: *backend_image
     depends_on:
       db:
         condition: service_healthy
@@ -60,7 +71,7 @@ services:
 
   # ----------------------------------------------------------------- api
   api:
-    image: ${EPICHEM_REGISTRY:-registry.gitlab.gwdg.de/lotschgroup/automation-digitalisation/it-services/epichem}/backend:${EPICHEM_VERSION:-latest}
+    image: *backend_image
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -82,7 +93,7 @@ services:
 
   # ----------------------------------------------------------------- web
   web:
-    image: ${EPICHEM_REGISTRY:-registry.gitlab.gwdg.de/lotschgroup/automation-digitalisation/it-services/epichem}/frontend:${EPICHEM_VERSION:-latest}
+    image: *frontend_image
     depends_on:
       api:
         condition: service_healthy
@@ -104,7 +115,7 @@ services:
   # set, not from this repo's example lab. This exists for demo instances and
   # for the CI verify stage.
   seed:
-    image: ${EPICHEM_REGISTRY:-registry.gitlab.gwdg.de/lotschgroup/automation-digitalisation/it-services/epichem}/backend:${EPICHEM_VERSION:-latest}
+    image: *backend_image
     profiles: ["seed"]
     depends_on:
       migrate:

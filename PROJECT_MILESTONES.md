@@ -41,7 +41,7 @@ format instead. See `docs/adr/0004-database-is-source-of-truth-not-git.md` for t
 (modeled on Kadi4Mat's resource-revision pattern). `reconciler.py` and its test suite were removed;
 nothing in the current tree implements git-desired-state reconciliation or drift detection.
 
-Built (all covered by the 91-test suite in `backend/tests/`, sqlite in-memory — **not yet
+Built (all covered by the 95-test suite in `backend/tests/`, sqlite in-memory — **not yet
 re-verified against a real Postgres instance since the ADR 0004 rewrite**; the prior pass's
 `postgres:17` verification covered the retired reconciler/read-only-API shape, not the current
 write/import path):
@@ -75,10 +75,12 @@ write/import path):
 - [x] Example "virtual lab" descriptor set (`descriptors/`) — 1 site → 1 lab → 1 zone → 1 workcell
   → 1 bench → 2 stations, 2 devices, 3 capability classes. Doubles as `test_cli.py`'s fixture and a
   template for a real lab's descriptor set, importable via `epichem import-dir`.
-- [x] `docker compose up` on-ramp (Postgres + API container) — written to the standard Compose
-  spec; **not exercised through Docker itself** in this sandbox (no Docker daemon available here).
-  The underlying pieces it wires together (schema-on-Postgres, import-dir, API) are separately
-  verified against sqlite as above; neither the compose file nor real Postgres is.
+- [x] `docker compose up` on-ramp — now the full stack (`db → migrate → seed → api → web`), not
+  just Postgres + API. Still **not exercised through Docker itself** (no daemon in this sandbox);
+  see the Delivery section below and `docs/HOST_SETUP.md` §2 for the verification checklist.
+- [x] `/api/v1/health` — database-touching readiness endpoint reporting the Alembic revision the
+  database is actually at, so a rolling deploy of new code against an old schema is visible to a
+  probe rather than showing as healthy until the first real query fails.
 
 Frontend (`frontend/` — React + TypeScript + plain CSS on Vite, added after the ADR 0004 pivot):
 
@@ -164,20 +166,41 @@ accepted: `substance` and `location` become foreign keys.
 
 ## Delivery — CI/CD, containers, Helm, screenshots
 
-**Status: not started, specified.** Outside the plan's M0–M6 numbering because it's delivery
-infrastructure rather than product scope, but it blocks anything involving a second machine — a
-developer's laptop is currently the only supported way to run EPIChem.
+**Status: written, not yet executed.** Outside the plan's M0–M6 numbering because it's delivery
+infrastructure rather than product scope. Full specification: `docs/MILESTONE_CI_CD.md`. Setup
+instructions for the parts that need a human: `docs/HOST_SETUP.md`.
 
-Full specification: `docs/MILESTONE_CI_CD.md`. In short: backend + frontend Docker images, a
-`docker compose` that actually brings up the whole stack (the current one covers Postgres and the
-API only, and has never been run against a real Docker daemon), a GitLab pipeline with lint/test/
-build/deploy stages including a run of the suite against real Postgres, Helm charts for a test and
-a production cluster with migrations as a pre-upgrade hook, and automated UI screenshots via
-Playwright.
+The distinction between "written" and "done" is load-bearing here. None of the following has ever
+run, because the environment it was written in has no Docker daemon and no GitLab runner. The YAML
+parses and the shell scripts pass `sh -n`; that is the entire extent of the verification.
+
+Built (unverified):
+
+- [x] `compose.yaml` — the full dev stack, `db -> migrate -> seed -> api -> web`, with the
+  one-shot services as enforced `depends_on` conditions so `docker compose up` alone lands on a
+  seeded console. Every variable defaulted, so a clean clone needs no `.env`.
+- [x] `compose.prod.yaml` — same stack from prebuilt registry images, no build step, no bind
+  mounts, secrets required rather than defaulted.
+- [x] Multi-stage `Dockerfile` for both halves, `dev` and `runtime` targets; runtime is non-root
+  and runs no migrations at startup (that is `migrate`'s job — two replicas racing `alembic
+  upgrade` is a real way to corrupt a schema).
+- [x] `.gitlab-ci.yml` — lint, test, `test:postgres`, image build/push, a `verify` stage that
+  brings the production images up and drives them in a headless browser, and a manual tag-only
+  production deploy.
+- [x] `deploy/screenshots.mjs` — Playwright over the four screens, deterministic viewport and
+  fixed seed data, failing the job on any uncaught page error.
+- [x] `/api/v1/health` — the endpoint all of the above probes.
+
+Deliberately **not** built:
+
+- [ ] Helm charts. Specified in `docs/MILESTONE_CI_CD.md` §4, blocked on open question 1 (GitLab
+  Kubernetes agent, or a runner with a kubeconfig?) — building against a guess would be worse
+  than not building. The `deploy:prod` compose job covers the single-host case meanwhile.
+- [ ] A Python lockfile. Image builds are therefore not byte-reproducible; open question 3.
 
 Sequenced deliberately *after* the isometric layout and the hardening pass: CI/CD makes a
-deployment reachable by other people, and until this pass the API had no auth, no migrations and
-no pagination. Two of the three prerequisites are now done; the layout view is the remaining one.
+deployment reachable by other people, and until that pass the API had no auth, no migrations and
+no pagination.
 
 ## M5 — Scheduler & scale
 
@@ -197,7 +220,11 @@ no pagination. Two of the three prerequisites are now done; the layout view is t
   unset, writes are unauthenticated and the API says so at startup. §12.1's OIDC/RBAC design is
   still owed, and `api/auth.py::require_write_token` is the seam it replaces.
 - **Postgres is still unverified since the ADR 0004 rewrite.** The whole suite runs on sqlite.
-  A `test:postgres` CI stage is specified in `docs/MILESTONE_CI_CD.md` precisely for this.
+  The seam to close this now exists — `EPICHEM_TEST_DATABASE_URL` in `backend/tests/conftest.py`
+  points the same suite at a real database, and the `test:postgres` job in `.gitlab-ci.yml` uses
+  it. That job has never run, so it is `allow_failure: true` until it goes green once; expect it
+  to surface real sqlite-vs-Postgres differences first. **Flip it to blocking as soon as it
+  passes** — a permanently non-blocking test job is theatre.
 - **No observability** (§12.3 OpenTelemetry) — nothing to debug a distributed run with yet, but
   there's also no distributed run yet, so this tracks M2+, not a current regression.
 - Two small schema/spec mismatches the original reconciler build surfaced (still present — the
@@ -215,8 +242,13 @@ no pagination. Two of the three prerequisites are now done; the layout view is t
 ## How to verify current state
 
 ```bash
+# The whole stack, seeded, in one command — but see docs/HOST_SETUP.md §0:
+# this path is written, not yet verified.
+docker compose up             # → http://localhost:5173
+
+# The verified path:
 cd backend
-.venv/bin/pytest              # 91 tests, sqlite in-memory, seconds
+.venv/bin/pytest              # 95 tests, sqlite in-memory, seconds
 .venv/bin/ruff check epichem tests
 .venv/bin/epichem init-db && .venv/bin/epichem import-dir --descriptors-dir ../descriptors \
   && .venv/bin/epichem device list && .venv/bin/epichem sample list
