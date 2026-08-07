@@ -1,0 +1,15 @@
+# Keep the build context small and, more importantly, keep local state out of
+# the image. backend/epichem.db is a real file in a working checkout — baking a
+# developer's sqlite database into a production image would be a quiet disaster.
+.venv/
+*.db
+*.db-journal
+epichem.egg-info/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+tests/
+Dockerfile
+.dockerignore

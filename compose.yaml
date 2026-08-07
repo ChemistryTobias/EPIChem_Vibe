@@ -1,0 +1,145 @@
+# EPIChem — local development stack.
+#
+#     docker compose up
+#
+# and nothing else. Every variable below has a default, so this works on a
+# clean clone with no .env file, no exported variables and no arguments. Copy
+# .env.example to .env only when you want to change something.
+#
+# What comes up, in order:
+#
+#     db  ->  migrate  ->  seed  ->  api  ->  web
+#
+# The arrows are real dependencies, not just ordering: `migrate` and `seed` are
+# one-shot containers that must EXIT SUCCESSFULLY before the next service
+# starts. That is what makes a single `docker compose up` land on a console
+# with the example lab already in it, rather than on an empty database or —
+# worse — an API serving 500s while migrations are still running.
+#
+# Production is a different file: compose.prod.yaml. This one bind-mounts
+# source, runs Vite and uvicorn --reload, and defaults to an open API. Do not
+# deploy it.
+
+name: epichem
+
+services:
+  # ------------------------------------------------------------------ db
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-epichem}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-epichem}
+      POSTGRES_DB: ${POSTGRES_DB:-epichem}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      # Exposed so you can psql into it from the host. Bound to localhost only.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      # -d matters: without it pg_isready checks the default database, which
+      # reports ready slightly before ours exists on first boot.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-epichem} -d ${POSTGRES_DB:-epichem}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # ------------------------------------------------------------- migrate
+  # Alembic to head, once, before anything can talk to the database. Kept as
+  # its own service rather than folded into the API's startup because two API
+  # replicas running `alembic upgrade` concurrently is a real way to corrupt a
+  # schema — see backend/Dockerfile.
+  migrate:
+    build:
+      context: ./backend
+      target: dev
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: &database_url >-
+        postgresql+psycopg://${POSTGRES_USER:-epichem}:${POSTGRES_PASSWORD:-epichem}@db:5432/${POSTGRES_DB:-epichem}
+    volumes:
+      - ./backend:/app
+    command: ["epichem", "db", "upgrade", "head"]
+    restart: "no"
+
+  # ---------------------------------------------------------------- seed
+  # The example virtual lab, so the console isn't empty on first load. Safe to
+  # re-run; see deploy/seed.sh for why that took explicit effort.
+  seed:
+    build:
+      context: ./backend
+      target: dev
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: *database_url
+    volumes:
+      - ./backend:/app
+      - ./descriptors:/descriptors:ro
+      - ./deploy/seed.sh:/seed.sh:ro
+    command: ["sh", "/seed.sh"]
+    restart: "no"
+
+  # ----------------------------------------------------------------- api
+  api:
+    build:
+      context: ./backend
+      target: dev
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: *database_url
+      # Empty by default: writes are unauthenticated locally, which is what
+      # you want for development. The API logs a warning saying so at startup.
+      # Set it in .env to exercise the auth path.
+      EPICHEM_API_TOKENS: ${EPICHEM_API_TOKENS:-}
+      # Not needed here — the browser reaches the API through Vite's proxy on
+      # the web service's origin, so there is no cross-origin request to allow.
+      EPICHEM_CORS_ORIGINS: ${EPICHEM_CORS_ORIGINS:-}
+    volumes:
+      # Bind mount + editable install in the image = uvicorn --reload picks up
+      # edits made on the host.
+      - ./backend:/app
+      - ./descriptors:/descriptors:ro
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ----------------------------------------------------------------- web
+  web:
+    build:
+      context: ./frontend
+      target: dev
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # Vite proxies /api here, so the browser only ever sees one origin and
+      # no CORS configuration is needed — same arrangement as running Vite
+      # directly on the host, just with a service name instead of 127.0.0.1.
+      EPICHEM_API_URL: http://api:8000
+      # Bind-mounted source doesn't produce reliable inotify events on macOS
+      # or Windows. Harmless on Linux, just a little CPU.
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-true}
+    volumes:
+      - ./frontend:/app
+      # Keeps the image's node_modules from being hidden by the bind mount
+      # above. NOTE: this volume is populated once, so after changing
+      # package.json run `docker compose down -v` (or `docker volume rm
+      # epichem_web-node-modules`) to pick up new dependencies.
+      - web-node-modules:/app/node_modules
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+
+volumes:
+  db-data:
+  web-node-modules:

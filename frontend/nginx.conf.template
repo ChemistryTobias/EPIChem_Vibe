@@ -1,0 +1,45 @@
+# Serves the built console and proxies the API onto the same origin.
+# ${EPICHEM_API_UPSTREAM} is substituted at container start (see Dockerfile);
+# every other $variable here is nginx's own and must survive envsubst
+# untouched, which is what NGINX_ENVSUBST_FILTER guarantees.
+
+server {
+    # 8080, not 80: the container runs unprivileged in Kubernetes, where
+    # binding a port below 1024 needs a capability we would rather not grant.
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Vite fingerprints asset filenames, so they can be cached hard. index.html
+    # must not be, or browsers keep loading a stale bundle after a deploy.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    location /api/ {
+        proxy_pass ${EPICHEM_API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # The console sends the write token as an Authorization header; nginx
+        # forwards it by default, but be explicit — this is the one header the
+        # API's auth depends on.
+        proxy_pass_request_headers on;
+    }
+
+    # The console uses a hash router, so deep links never reach nginx as paths.
+    # The fallback is here anyway: it costs nothing and stops a stray URL from
+    # returning a bare 404 page instead of the app.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

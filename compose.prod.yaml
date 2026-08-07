@@ -1,0 +1,121 @@
+# EPIChem — production stack.
+#
+#     docker compose -f compose.prod.yaml up -d
+#
+# Pulls prebuilt images from the institute's GitLab registry; it does not build
+# anything. That is the point: a machine running this needs Docker and network
+# access to the registry, not a checkout, a toolchain, or Node.
+#
+# HOW THIS DIFFERS FROM compose.yaml, and why each difference exists:
+#
+#   * Images are pulled, not built. Deploying the exact bytes CI tested is the
+#     whole argument for having a registry.
+#   * No bind mounts, no --reload, no dev dependencies.
+#   * Secrets have NO DEFAULTS. `${VAR:?message}` makes compose refuse to start
+#     with a clear error rather than silently booting with password "epichem"
+#     on a machine other people can reach. This is deliberate friction.
+#   * Only the web port is published, and Postgres is not reachable from
+#     outside the compose network at all.
+#   * The API is served through nginx on the web container, same origin, so
+#     there is still no CORS configuration anywhere.
+#
+# See docs/HOST_SETUP.md §3 for registry login and the deploy-token setup.
+
+name: epichem-prod
+
+services:
+  # ------------------------------------------------------------------ db
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-epichem}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env — refusing to start with a default}
+      POSTGRES_DB: ${POSTGRES_DB:-epichem}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # No `ports:`. The database is reachable only from the compose network.
+    # Use `docker compose exec db psql -U epichem` for a shell on it.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-epichem} -d ${POSTGRES_DB:-epichem}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # ------------------------------------------------------------- migrate
+  # Runs to completion before the API starts, on every `up`. Alembic is a no-op
+  # when the schema is already at head, so this costs nothing on a restart and
+  # makes an upgrade a one-command operation.
+  migrate:
+    image: ${EPICHEM_REGISTRY:-registry.gitlab.gwdg.de/lotschgroup/automation-digitalisation/it-services/epichem}/backend:${EPICHEM_VERSION:-latest}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: &database_url >-
+        postgresql+psycopg://${POSTGRES_USER:-epichem}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-epichem}
+    command: ["epichem", "db", "upgrade", "head"]
+    restart: "no"
+
+  # ----------------------------------------------------------------- api
+  api:
+    image: ${EPICHEM_REGISTRY:-registry.gitlab.gwdg.de/lotschgroup/automation-digitalisation/it-services/epichem}/backend:${EPICHEM_VERSION:-latest}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: *database_url
+      # Required. Without it every write is unauthenticated, and this stack is
+      # by definition reachable by someone other than you.
+      EPICHEM_API_TOKENS: ${EPICHEM_API_TOKENS:?set EPICHEM_API_TOKENS in .env — refusing to expose an unauthenticated write API}
+    # No published port: nginx on the web service is the only way in.
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------- web
+  web:
+    image: ${EPICHEM_REGISTRY:-registry.gitlab.gwdg.de/lotschgroup/automation-digitalisation/it-services/epichem}/frontend:${EPICHEM_VERSION:-latest}
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      EPICHEM_API_UPSTREAM: http://api:8000
+    ports:
+      # Plain HTTP. Put this behind the institute's reverse proxy for TLS —
+      # do not expose it to the internet directly. Bind to 127.0.0.1 instead
+      # of 0.0.0.0 if the proxy runs on the same host.
+      - "${WEB_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- seed
+  # Opt-in, not part of the default `up`:
+  #
+  #     docker compose -f compose.prod.yaml --profile seed run --rm seed
+  #
+  # A real deployment's registry is filled from the institute's own descriptor
+  # set, not from this repo's example lab. This exists for demo instances and
+  # for the CI verify stage.
+  seed:
+    image: ${EPICHEM_REGISTRY:-registry.gitlab.gwdg.de/lotschgroup/automation-digitalisation/it-services/epichem}/backend:${EPICHEM_VERSION:-latest}
+    profiles: ["seed"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: *database_url
+    volumes:
+      - ./descriptors:/descriptors:ro
+      - ./deploy/seed.sh:/seed.sh:ro
+    command: ["sh", "/seed.sh"]
+    restart: "no"
+
+volumes:
+  db-data:

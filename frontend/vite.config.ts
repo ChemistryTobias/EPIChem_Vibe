@@ -8,13 +8,23 @@ import { defineConfig } from "vite";
 // EPICHEM_API_URL if the API runs somewhere other than :8000.
 const API_TARGET = process.env.EPICHEM_API_URL ?? "http://127.0.0.1:8000";
 
+// Bind mounts don't reliably deliver inotify events on macOS and Windows, so
+// the container stack sets this to fall back to polling. Left off on Linux
+// and outside Docker, where polling is just wasted CPU.
+const USE_POLLING = process.env.CHOKIDAR_USEPOLLING === "true";
+
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    // 0.0.0.0, not localhost: inside a container, a server bound to the
+    // loopback interface is unreachable from the host no matter how the port
+    // is published.
+    host: true,
     proxy: {
       "/api": { target: API_TARGET, changeOrigin: true },
     },
+    watch: USE_POLLING ? { usePolling: true, interval: 300 } : undefined,
   },
   test: {
     // jsdom, because the things worth testing here touch the DOM or
