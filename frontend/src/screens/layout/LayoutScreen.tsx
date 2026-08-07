@@ -3,7 +3,7 @@
  * with click-to-inspect and drag-to-move.
  *
  * This is M1's actual exit criterion — "a real lab room is modelled **and
- * renders correctly**". The Topology screen shows the same registry as a
+ * renders correctly**". The Hierarchy screen shows the same registry as a
  * tree; this shows it as the room.
  *
  * Scope, stated plainly so it isn't mistaken for the whole of §10:

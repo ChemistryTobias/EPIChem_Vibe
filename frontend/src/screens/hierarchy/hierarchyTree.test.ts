@@ -1,5 +1,5 @@
 /**
- * `buildTopologyTree` is the one piece of real logic in this app that isn't a
+ * `buildHierarchyTree` is the one piece of real logic in this app that isn't a
  * thin wrapper over fetch or JSX — it turns flat lists into a hierarchy
  * (Site → Lab → Zone(optional) → Station → Module/Device) — so it's where
  * tests are worth the most per line.
@@ -9,7 +9,7 @@ import { describe, expect, test } from "vitest";
 
 import type { TopologySnapshot } from "../../api/topology";
 import type { Device, Lab, Site, Station, Zone } from "../../api/types";
-import { buildTopologyTree, collectNodeIds, countByKind } from "./topologyTree";
+import { buildHierarchyTree, collectNodeIds, countByKind } from "./hierarchyTree";
 
 const site = (id: string, code: string): Site => ({
   id,
@@ -124,9 +124,9 @@ const fullChain: TopologySnapshot = {
   devices: [device("d1", "DEV-1", { station_id: "st1" })],
 };
 
-describe("buildTopologyTree", () => {
+describe("buildHierarchyTree", () => {
   test("nests Site -> Lab -> Zone -> Station -> Device", () => {
-    const { roots } = buildTopologyTree(fullChain);
+    const { roots } = buildHierarchyTree(fullChain);
 
     expect(roots).toHaveLength(1);
     const path: string[] = [];
@@ -139,7 +139,7 @@ describe("buildTopologyTree", () => {
   });
 
   test("puts a zone-less station directly under its lab", () => {
-    const { roots } = buildTopologyTree({
+    const { roots } = buildHierarchyTree({
       ...empty,
       sites: [site("s1", "SITE-1")],
       labs: [lab("l1", "LAB-1", "s1")],
@@ -152,7 +152,7 @@ describe("buildTopologyTree", () => {
   });
 
   test("nests a module and its devices under a station", () => {
-    const { roots } = buildTopologyTree({
+    const { roots } = buildHierarchyTree({
       ...empty,
       sites: [site("s1", "SITE-1")],
       labs: [lab("l1", "LAB-1", "s1")],
@@ -169,11 +169,11 @@ describe("buildTopologyTree", () => {
   });
 
   test("handles an empty registry without throwing", () => {
-    expect(buildTopologyTree(empty)).toEqual({ roots: [], orphans: [] });
+    expect(buildHierarchyTree(empty)).toEqual({ roots: [], orphans: [] });
   });
 
   test("sorts siblings by code, not by API order", () => {
-    const { roots } = buildTopologyTree({
+    const { roots } = buildHierarchyTree({
       ...empty,
       sites: [site("s1", "SITE-B"), site("s2", "SITE-A")],
     });
@@ -182,7 +182,7 @@ describe("buildTopologyTree", () => {
   });
 
   test("reports a row whose parent is missing instead of dropping it", () => {
-    const { roots, orphans } = buildTopologyTree({
+    const { roots, orphans } = buildHierarchyTree({
       ...empty,
       sites: [site("s1", "SITE-1")],
       labs: [lab("l1", "LAB-ORPHAN", "nonexistent-site")],
@@ -195,7 +195,7 @@ describe("buildTopologyTree", () => {
   });
 
   test("reports an unplaced device as an orphan, not silently hidden", () => {
-    const { orphans } = buildTopologyTree({
+    const { orphans } = buildHierarchyTree({
       ...empty,
       devices: [device("d1", "DEV-LOST")],
     });
@@ -204,7 +204,7 @@ describe("buildTopologyTree", () => {
   });
 
   test("keeps the raw row on each node for the inspector", () => {
-    const { roots } = buildTopologyTree(fullChain);
+    const { roots } = buildHierarchyTree(fullChain);
 
     expect(roots[0].row).toBe(fullChain.sites[0]);
     expect(roots[0].children[0].row).toBe(fullChain.labs[0]);
@@ -213,7 +213,7 @@ describe("buildTopologyTree", () => {
 
 describe("collectNodeIds", () => {
   test("returns every id in the tree, depth-first", () => {
-    const { roots } = buildTopologyTree(fullChain);
+    const { roots } = buildHierarchyTree(fullChain);
 
     expect(collectNodeIds(roots)).toEqual(["s1", "l1", "z1", "st1", "d1"]);
   });
@@ -225,7 +225,7 @@ describe("collectNodeIds", () => {
 
 describe("countByKind", () => {
   test("counts every level, not just the roots", () => {
-    const { roots } = buildTopologyTree({
+    const { roots } = buildHierarchyTree({
       ...fullChain,
       stations: [station("st1", "ST-1", "l1", "z1"), station("st2", "ST-2", "l1", "z1")],
     });
@@ -240,7 +240,7 @@ describe("countByKind", () => {
   });
 
   test("does not count orphans, which aren't in the tree", () => {
-    const { roots } = buildTopologyTree({
+    const { roots } = buildHierarchyTree({
       ...empty,
       sites: [site("s1", "SITE-1")],
       labs: [lab("l1", "LAB-ORPHAN", "missing")],

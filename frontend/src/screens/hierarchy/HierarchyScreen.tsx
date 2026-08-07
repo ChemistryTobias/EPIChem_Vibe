@@ -1,5 +1,5 @@
 /**
- * Topology screen: the registry's containment hierarchy as an expandable
+ * Hierarchy screen: the registry's containment hierarchy as an expandable
  * tree, with a detail panel for the selected node.
  *
  * A tree, not the plan's isometric lab layout (§10.2). That view is a later
@@ -18,17 +18,17 @@ import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
 import { CreatePanel } from "./create/CreatePanel";
 import type { CreateKind } from "./create/nodeCreate";
-import { TopologyInspector } from "./TopologyInspector";
-import { TopologyNode } from "./TopologyNode";
-import { buildTopologyTree, collectNodeIds, countByKind } from "./topologyTree";
-import type { TreeNode } from "./topologyTree";
+import { HierarchyInspector } from "./HierarchyInspector";
+import { HierarchyNode } from "./HierarchyNode";
+import { buildHierarchyTree, collectNodeIds, countByKind } from "./hierarchyTree";
+import type { TreeNode } from "./hierarchyTree";
 
-import "./TopologyScreen.css";
+import "./HierarchyScreen.css";
 
 /** The "+ Add" menu, in order: the common targets first, the rare ones last. */
 const ADD_KINDS: CreateKind[] = ["Station", "Site", "Lab", "Zone"];
 
-export function TopologyScreen() {
+export function HierarchyScreen() {
   const state = useAsync(useCallback(() => fetchTopology(), []));
   const [selected, setSelected] = useState<TreeNode | null>(null);
   const [creating, setCreating] = useState<CreateKind | null>(null);
@@ -44,7 +44,7 @@ export function TopologyScreen() {
   const [expanded, setExpanded] = useState<Set<string> | null>(null);
 
   const tree = useMemo(
-    () => (state.data ? buildTopologyTree(state.data) : null),
+    () => (state.data ? buildHierarchyTree(state.data) : null),
     [state.data],
   );
 
@@ -75,7 +75,7 @@ export function TopologyScreen() {
               New device
             </Button>
             <details className="add-menu" ref={addMenu}>
-              <summary className="add-menu__summary">+ Add</summary>
+              <summary className="add-menu__summary">Add</summary>
               <div className="add-menu__list">
                 {ADD_KINDS.map((kind) => (
                   <button
@@ -88,9 +88,6 @@ export function TopologyScreen() {
                 ))}
               </div>
             </details>
-            <Button onClick={() => setExpanded(new Set(allIds))}>Expand all</Button>
-            <Button onClick={() => setExpanded(new Set())}>Collapse all</Button>
-            <Button onClick={state.reload}>Refresh</Button>
           </>
         }
       />
@@ -122,7 +119,7 @@ export function TopologyScreen() {
                 <>
                   <ul className="tree">
                     {tree.roots.map((node) => (
-                      <TopologyNode
+                      <HierarchyNode
                         key={node.id}
                         node={node}
                         depth={0}
@@ -157,7 +154,7 @@ export function TopologyScreen() {
           </AsyncBoundary>
         </div>
 
-        <TopologyInspector node={selected} onClose={() => setSelected(null)} />
+        <HierarchyInspector node={selected} onClose={() => setSelected(null)} />
       </div>
     </>
   );

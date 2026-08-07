@@ -1,7 +1,7 @@
 # EPIChem frontend
 
 React + TypeScript + plain CSS console for the EPIChem registry. Four screens — **Lab layout**
-(isometric), **Topology**, **Devices**, **Samples** — all reading the real API. There is no mock
+(isometric), **Hierarchy**, **Devices**, **Samples** — all reading the real API. There is no mock
 data anywhere in this app; if the backend is down, the screens say so.
 
 ## Run it
@@ -43,8 +43,8 @@ npm test            # vitest run
 npm run build       # typecheck + production bundle into dist/
 ```
 
-Tests sit next to what they cover (`topologyTree.test.ts` beside
-`topologyTree.ts`). They target the three places where a bug wouldn't be
+Tests sit next to what they cover (`hierarchyTree.test.ts` beside
+`hierarchyTree.ts`). They target the three places where a bug wouldn't be
 obvious on sight: the tree-building logic, the API client's problem+json
 handling, and the pager's boundaries. Screens themselves aren't
 snapshot-tested — the churn would outweigh what it catches.
@@ -68,7 +68,8 @@ src/
   screens/
     layout/                isometric floor plan — isometric.ts is pure geometry (plan §10.3),
                            useIsometricPaper.ts is all the JointJS lifecycle, shapes.ts the tiles
-    topology/              tree view + tree-building logic (topologyTree.ts is pure)
+    hierarchy/             tree view + tree-building logic (hierarchyTree.ts is pure) + the
+                           New-Device-first creation flow (create/)
     devices/               card grid + filters
     samples/               table + register form + inspector
   styles/

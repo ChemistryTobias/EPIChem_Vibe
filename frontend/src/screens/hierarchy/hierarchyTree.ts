@@ -15,24 +15,24 @@
 import type { Device, Lab, Site, Station, Zone } from "../../api/types";
 import type { TopologySnapshot } from "../../api/topology";
 
-export type TopologyKind = "Site" | "Lab" | "Zone" | "Station" | "Device";
+export type HierarchyKind = "Site" | "Lab" | "Zone" | "Station" | "Device";
 
-export type TopologyRow = Site | Lab | Zone | Station | Device;
+export type HierarchyRow = Site | Lab | Zone | Station | Device;
 
 export interface TreeNode {
   id: string;
-  kind: TopologyKind;
+  kind: HierarchyKind;
   code: string;
   name: string;
   /** The raw API row, handed to the inspector. */
-  row: TopologyRow;
+  row: HierarchyRow;
   children: TreeNode[];
 }
 
-export interface TopologyTree {
+export interface HierarchyTree {
   roots: TreeNode[];
   /** Rows whose declared parent wasn't in the snapshot. */
-  orphans: { kind: TopologyKind; code: string; parentId: string }[];
+  orphans: { kind: HierarchyKind; code: string; parentId: string }[];
 }
 
 /** Group rows by the foreign key naming their parent (skipping null keys). */
@@ -50,7 +50,7 @@ function groupByParent<T>(rows: T[], parentIdOf: (row: T) => string | null): Map
 
 const byCode = (a: { code: string }, b: { code: string }) => a.code.localeCompare(b.code);
 
-export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
+export function buildHierarchyTree(snapshot: TopologySnapshot): HierarchyTree {
   const { sites, labs, zones, stations, devices } = snapshot;
 
   const labsBySite = groupByParent(labs, (l) => l.site_id);
@@ -67,7 +67,7 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
   );
   const devicesByParent = groupByParent(devices, (d) => d.parent_id);
 
-  const node = (kind: TopologyKind, row: TopologyRow, children: TreeNode[] = []): TreeNode => ({
+  const node = (kind: HierarchyKind, row: HierarchyRow, children: TreeNode[] = []): TreeNode => ({
     id: row.id,
     kind,
     code: row.code,
@@ -113,7 +113,7 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
     Device: new Set(devices.map((d) => d.id)),
   };
 
-  const orphans: TopologyTree["orphans"] = [
+  const orphans: HierarchyTree["orphans"] = [
     ...labs.filter((l) => !known.Site.has(l.site_id)).map((l) => orphan("Lab", l.code, l.site_id)),
     ...zones.filter((z) => !known.Lab.has(z.lab_id)).map((z) => orphan("Zone", z.code, z.lab_id)),
     // A station is misplaced if its lab is missing, or if it names a zone that
@@ -140,7 +140,7 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
   return { roots, orphans };
 }
 
-function orphan(kind: TopologyKind, code: string, parentId: string) {
+function orphan(kind: HierarchyKind, code: string, parentId: string) {
   return { kind, code, parentId };
 }
 
@@ -150,7 +150,7 @@ export function collectNodeIds(nodes: TreeNode[]): string[] {
 }
 
 /** Count of nodes per kind, for the header subtitle. */
-export function countByKind(nodes: TreeNode[]): Record<TopologyKind, number> {
+export function countByKind(nodes: TreeNode[]): Record<HierarchyKind, number> {
   const counts = { Site: 0, Lab: 0, Zone: 0, Station: 0, Device: 0 };
   const walk = (list: TreeNode[]) => {
     for (const n of list) {
