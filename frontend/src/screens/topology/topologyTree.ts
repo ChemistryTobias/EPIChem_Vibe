@@ -27,6 +27,9 @@ export interface TreeNode {
   /** The raw API row, handed to the inspector. */
   row: TopologyRow;
   children: TreeNode[];
+  /** A live, not-yet-saved preview row (ADR 0009): rendered distinctly and not
+   * selectable. Absent on real rows. */
+  draft?: boolean;
 }
 
 export interface TopologyTree {
@@ -147,6 +150,94 @@ function orphan(kind: TopologyKind, code: string, parentId: string) {
 /** Every node id in the tree — used to expand everything by default. */
 export function collectNodeIds(nodes: TreeNode[]): string[] {
   return nodes.flatMap((n) => [n.id, ...collectNodeIds(n.children)]);
+}
+
+// ---- live draft preview (ADR 0009) -----------------------------------------
+
+/** The synthetic id the in-progress row carries; there is only ever one. */
+export const DRAFT_ID = "__draft__";
+
+/** A not-yet-saved row the Create inspector previews in the tree as you type. */
+export interface DraftNode {
+  kind: TopologyKind;
+  code: string;
+  name: string;
+  /** The real row it will hang under; null only for a Site (a new root). */
+  parentId: string | null;
+}
+
+function draftTreeNode(draft: DraftNode): TreeNode {
+  return {
+    id: DRAFT_ID,
+    kind: draft.kind,
+    code: draft.code,
+    name: draft.name,
+    // Draft rows are never selected/inspected, so a minimal row stands in for
+    // the full API object the real rows carry.
+    row: { id: DRAFT_ID, code: draft.code, name: draft.name } as unknown as TopologyRow,
+    children: [],
+    draft: true,
+  };
+}
+
+/**
+ * Insert the draft as a child of the node whose id is `draft.parentId` (or as a
+ * new root when it's null, i.e. a Site). Returns a new tree — the input isn't
+ * mutated — so it drops back in a `useMemo`. If the parent isn't in the tree the
+ * tree is returned unchanged.
+ */
+export function injectDraft(tree: TopologyTree, draft: DraftNode | null): TopologyTree {
+  if (!draft) return tree;
+  const node = draftTreeNode(draft);
+  // A Site is the only kind that becomes a new root. Any other kind whose parent
+  // isn't chosen yet (a device before a station is picked) has nowhere to hang,
+  // so it simply doesn't preview rather than floating at the top level.
+  if (draft.kind === "Site") {
+    return { ...tree, roots: [...tree.roots, node] };
+  }
+  if (draft.parentId === null) return tree;
+  let inserted = false;
+  const graft = (nodes: TreeNode[]): TreeNode[] =>
+    nodes.map((n) => {
+      if (n.id === draft.parentId) {
+        inserted = true;
+        return { ...n, children: [...n.children, node] };
+      }
+      return n.children.length ? { ...n, children: graft(n.children) } : n;
+    });
+  const roots = graft(tree.roots);
+  return inserted ? { ...tree, roots } : tree;
+}
+
+/**
+ * id -> its parent's id in the containment tree (null at a Site), for every
+ * kind, so an ancestor walk works from any node. A station's parent is its zone
+ * when it has one, else its lab; a device's is its module parent, else its
+ * station.
+ */
+export function buildParentIndex(snapshot: TopologySnapshot): Map<string, string | null> {
+  const index = new Map<string, string | null>();
+  for (const s of snapshot.sites) index.set(s.id, null);
+  for (const l of snapshot.labs) index.set(l.id, l.site_id);
+  for (const z of snapshot.zones) index.set(z.id, z.lab_id);
+  for (const st of snapshot.stations) index.set(st.id, st.zone_id ?? st.lab_id);
+  for (const d of snapshot.devices) index.set(d.id, d.parent_id ?? d.station_id);
+  return index;
+}
+
+/**
+ * `id` and the chain of ancestor ids above it (nearest first). Used to
+ * force-expand a draft's whole lineage so the new row stays on screen even if a
+ * branch was collapsed.
+ */
+export function ancestorIds(index: Map<string, string | null>, id: string | null): string[] {
+  const chain: string[] = [];
+  let cur = id;
+  while (cur != null) {
+    chain.push(cur);
+    cur = index.get(cur) ?? null;
+  }
+  return chain;
 }
 
 /** Count of nodes per kind, for the header subtitle. */

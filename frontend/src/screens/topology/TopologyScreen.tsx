@@ -16,12 +16,19 @@ import { AsyncBoundary } from "../../components/AsyncBoundary";
 import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
-import { CreatePanel } from "./create/CreatePanel";
+import { CreateInspector } from "./create/CreateInspector";
 import type { CreateKind } from "./create/nodeCreate";
 import { TopologyInspector } from "./TopologyInspector";
 import { TopologyNode } from "./TopologyNode";
-import { buildTopologyTree, collectNodeIds, countByKind } from "./topologyTree";
-import type { TreeNode } from "./topologyTree";
+import {
+  ancestorIds,
+  buildParentIndex,
+  buildTopologyTree,
+  collectNodeIds,
+  countByKind,
+  injectDraft,
+} from "./topologyTree";
+import type { DraftNode, TreeNode } from "./topologyTree";
 
 import "./TopologyScreen.css";
 
@@ -32,6 +39,9 @@ export function TopologyScreen() {
   const state = useAsync(useCallback(() => fetchTopology(), []));
   const [selected, setSelected] = useState<TreeNode | null>(null);
   const [creating, setCreating] = useState<CreateKind | null>(null);
+  // The live draft the Create inspector is typing, previewed in the tree.
+  const [preview, setPreview] = useState<DraftNode | null>(null);
+  const onPreview = useCallback((draft: DraftNode | null) => setPreview(draft), []);
   // The <details> "Add" menu — closed after a pick so it doesn't linger open.
   const addMenu = useRef<HTMLDetailsElement>(null);
 
@@ -39,17 +49,30 @@ export function TopologyScreen() {
     setCreating(kind);
     if (addMenu.current) addMenu.current.open = false;
   };
+  const stopCreate = () => setCreating(null);
   // null = "not touched yet", which means "expanded", so a freshly loaded
   // tree shows itself instead of six collapsed site rows.
   const [expanded, setExpanded] = useState<Set<string> | null>(null);
 
+  // The real tree, plus the live draft row grafted in at its future position.
   const tree = useMemo(
-    () => (state.data ? buildTopologyTree(state.data) : null),
-    [state.data],
+    () => (state.data ? injectDraft(buildTopologyTree(state.data), preview) : null),
+    [state.data, preview],
   );
 
   const allIds = useMemo(() => (tree ? collectNodeIds(tree.roots) : []), [tree]);
-  const effectiveExpanded = expanded ?? new Set(allIds);
+  const parentIndex = useMemo(
+    () => (state.data ? buildParentIndex(state.data) : new Map<string, string | null>()),
+    [state.data],
+  );
+
+  // Clone the expansion set (never mutate the stored one), then force the draft's
+  // whole lineage open so the new row stays visible even under a collapsed branch.
+  const effectiveExpanded = useMemo(() => {
+    const set = new Set(expanded ?? allIds);
+    if (preview?.parentId) for (const id of ancestorIds(parentIndex, preview.parentId)) set.add(id);
+    return set;
+  }, [expanded, allIds, preview, parentIndex]);
 
   const toggle = (id: string) => {
     const next = new Set(effectiveExpanded);
@@ -94,22 +117,14 @@ export function TopologyScreen() {
 
       <div className="screen">
         <div className="screen__content">
-          {creating && state.data && (
-            <CreatePanel
-              target={creating}
-              snapshot={state.data}
-              onCreated={state.reload}
-              onClose={() => setCreating(null)}
-            />
-          )}
-
           <AsyncBoundary
             state={state}
-            isEmpty={(data) => data.sites.length === 0}
+            isEmpty={(data) => data.sites.length === 0 && !creating}
             empty={
               <p>
-                Nothing registered yet. Use <strong>New device</strong> above — it walks you
-                through the site, lab and station it needs — or import the example lab with{" "}
+                Nothing registered yet. Use <strong>New device</strong> or <strong>Add</strong>{" "}
+                above — the form opens on the right and the new row previews here as you type — or
+                import the example lab with{" "}
                 <code className="mono">epichem import-dir --descriptors-dir ./descriptors</code>.
               </p>
             }
@@ -154,7 +169,22 @@ export function TopologyScreen() {
           </AsyncBoundary>
         </div>
 
-        <TopologyInspector node={selected} onClose={() => setSelected(null)} />
+        {creating && state.data ? (
+          <CreateInspector
+            key={creating}
+            kind={creating}
+            snapshot={state.data}
+            onPreview={onPreview}
+            onCreated={() => {
+              stopCreate();
+              state.reload();
+            }}
+            onCancel={stopCreate}
+            onSwitchKind={setCreating}
+          />
+        ) : (
+          <TopologyInspector node={selected} onClose={() => setSelected(null)} />
+        )}
       </div>
     </>
   );

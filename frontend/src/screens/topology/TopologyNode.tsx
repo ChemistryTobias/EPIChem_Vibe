@@ -30,6 +30,29 @@ export function TopologyNode({
   const isExpanded = expanded.has(node.id);
   const isSelected = node.id === selectedId;
 
+  // A draft is the live preview of a row being created (ADR 0009): shown, but
+  // not interactive — you edit it in the inspector, not by clicking it.
+  if (node.draft) {
+    return (
+      <li className="tree__item">
+        <div
+          className="tree__row tree__row--draft"
+          style={{ paddingLeft: `${depth * 20 + 12}px` }}
+        >
+          <span className="tree__twisty" aria-hidden="true">
+            ·
+          </span>
+          <span className="tree__label tree__label--draft">
+            <span className="tree__kind label">{node.kind}</span>
+            <span className="tree__code mono">{node.code || "…"}</span>
+            <span className="tree__name">{node.name || "new " + node.kind.toLowerCase()}</span>
+            <span className="tree__draft-tag label">new</span>
+          </span>
+        </div>
+      </li>
+    );
+  }
+
   return (
     <li className="tree__item">
       <div

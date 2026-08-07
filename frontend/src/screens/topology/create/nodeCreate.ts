@@ -1,48 +1,14 @@
 /**
- * The New-Device-first creation flow (ADR 0009), reduced to pure functions so
- * the "walk the prerequisites" logic can be reasoned about (and tested) without
- * React or the network.
+ * Shared constants for the creation flow (ADR 0009).
  *
- * The guiding principle: adding a device is the frequent action; the
- * scaffolding around it (site → lab → station) is set up rarely and should get
- * out of the way. A device can't exist until a station does, a station until a
- * lab, a lab until a site (ADR 0007). So a "New Device" on a blank slate is a
- * short guided chain; once the scaffolding exists it collapses to a single step
- * (pick the station). A Zone is optional and never a prerequisite.
+ * Creation happens in the right-hand inspector (`CreateInspector.tsx`): a
+ * single-kind form with a parent picker, and a live draft row that appears in
+ * the tree as you type and is only written when you press Create. A kind whose
+ * required parent doesn't exist yet points you at creating that parent first
+ * (`REQUIRED_PARENT`), rather than walking a multi-step wizard.
  */
 
 export type CreateKind = "Site" | "Lab" | "Zone" | "Station" | "Device";
-
-/** How many of each scaffolding kind already exist, from the topology snapshot. */
-export interface EntityCounts {
-  Site: number;
-  Lab: number;
-  Station: number;
-}
-
-/**
- * The ordered prerequisite chain for a kind — what must exist before it can.
- * Zone is deliberately absent everywhere: it's an optional grouping, never
- * required to reach a device (ADR 0007/0009).
- */
-const PREREQUISITES: Record<CreateKind, Exclude<CreateKind, "Zone" | "Device">[]> = {
-  Site: [],
-  Lab: ["Site"],
-  Zone: ["Site", "Lab"],
-  Station: ["Site", "Lab"],
-  Device: ["Site", "Lab", "Station"],
-};
-
-/**
- * The steps to walk to create `target`, given what already exists: each missing
- * prerequisite in dependency order, then the target itself. A prerequisite that
- * already has ≥1 row is skipped — its form becomes a picker of the existing rows
- * rather than a create step.
- */
-export function buildCreateFlow(target: CreateKind, counts: EntityCounts): CreateKind[] {
-  const missing = PREREQUISITES[target].filter((k) => counts[k] === 0);
-  return [...missing, target];
-}
 
 export const KIND_LABEL: Record<CreateKind, string> = {
   Site: "Site",
@@ -50,6 +16,19 @@ export const KIND_LABEL: Record<CreateKind, string> = {
   Zone: "Zone",
   Station: "Station",
   Device: "Device",
+};
+
+/**
+ * The one parent a kind can't be created without, or null for Site (a Zone's
+ * lab and a Station's lab are required; a Station's zone is optional and so
+ * isn't here). Used to prompt "create a Lab first" when the picker is empty.
+ */
+export const REQUIRED_PARENT: Record<CreateKind, CreateKind | null> = {
+  Site: null,
+  Lab: "Site",
+  Zone: "Lab",
+  Station: "Lab",
+  Device: "Station",
 };
 
 /** Descriptor-spec enums, mirrored from `schemas/descriptor.py` for the selects. */

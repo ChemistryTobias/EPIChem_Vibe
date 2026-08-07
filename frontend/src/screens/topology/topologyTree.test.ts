@@ -9,7 +9,15 @@ import { describe, expect, test } from "vitest";
 
 import type { TopologySnapshot } from "../../api/topology";
 import type { Device, Lab, Site, Station, Zone } from "../../api/types";
-import { buildTopologyTree, collectNodeIds, countByKind } from "./topologyTree";
+import {
+  DRAFT_ID,
+  ancestorIds,
+  buildParentIndex,
+  buildTopologyTree,
+  collectNodeIds,
+  countByKind,
+  injectDraft,
+} from "./topologyTree";
 
 const site = (id: string, code: string): Site => ({
   id,
@@ -220,6 +228,78 @@ describe("collectNodeIds", () => {
 
   test("is empty for an empty tree", () => {
     expect(collectNodeIds([])).toEqual([]);
+  });
+});
+
+describe("injectDraft", () => {
+  test("returns the tree unchanged when there is no draft", () => {
+    const tree = buildTopologyTree(fullChain);
+    expect(injectDraft(tree, null)).toBe(tree);
+  });
+
+  test("adds a new Site draft as a root", () => {
+    const tree = buildTopologyTree(fullChain);
+    const next = injectDraft(tree, { kind: "Site", code: "SITE-2", name: "New", parentId: null });
+
+    expect(next.roots.map((n) => n.id)).toEqual(["s1", DRAFT_ID]);
+    expect(next.roots[1].draft).toBe(true);
+  });
+
+  test("hangs a Device draft under its station, marked as a draft", () => {
+    const tree = buildTopologyTree(fullChain);
+    const next = injectDraft(tree, { kind: "Device", code: "", name: "", parentId: "st1" });
+
+    const stationNode = next.roots[0].children[0].children[0].children[0];
+    expect(stationNode.id).toBe("st1");
+    const draftNode = stationNode.children.find((n) => n.id === DRAFT_ID);
+    expect(draftNode?.draft).toBe(true);
+    expect(draftNode?.kind).toBe("Device");
+  });
+
+  test("does not mutate the input tree", () => {
+    const tree = buildTopologyTree(fullChain);
+    const stationChildrenBefore = tree.roots[0].children[0].children[0].children[0].children.length;
+    injectDraft(tree, { kind: "Device", code: "x", name: "x", parentId: "st1" });
+
+    expect(tree.roots[0].children[0].children[0].children[0].children.length).toBe(
+      stationChildrenBefore,
+    );
+  });
+
+  test("leaves the tree unchanged if the parent isn't present", () => {
+    const tree = buildTopologyTree(fullChain);
+    expect(injectDraft(tree, { kind: "Device", code: "x", name: "x", parentId: "ghost" })).toBe(
+      tree,
+    );
+  });
+
+  test("does not float a non-Site draft with no parent as a root", () => {
+    const tree = buildTopologyTree(fullChain);
+    // A device before a station is picked has parentId null — it must not become
+    // a root the way a Site does.
+    expect(injectDraft(tree, { kind: "Device", code: "", name: "", parentId: null })).toBe(tree);
+  });
+});
+
+describe("buildParentIndex / ancestorIds", () => {
+  test("walks a node's whole lineage nearest-first", () => {
+    const index = buildParentIndex(fullChain);
+    // From the station up: itself, its zone, its lab, its site.
+    expect(ancestorIds(index, "st1")).toEqual(["st1", "z1", "l1", "s1"]);
+  });
+
+  test("a zone-less station's parent is its lab", () => {
+    const snapshot = {
+      ...empty,
+      sites: [site("s1", "SITE-1")],
+      labs: [lab("l1", "LAB-1", "s1")],
+      stations: [station("st1", "ST-1", "l1")],
+    };
+    expect(ancestorIds(buildParentIndex(snapshot), "st1")).toEqual(["st1", "l1", "s1"]);
+  });
+
+  test("is empty for a null id", () => {
+    expect(ancestorIds(buildParentIndex(fullChain), null)).toEqual([]);
   });
 });
 

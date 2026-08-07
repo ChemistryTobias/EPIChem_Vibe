@@ -23,6 +23,27 @@
   border-left-color: var(--color-primary);
 }
 
+/* The live draft row (ADR 0009): a dashed, tinted preview of what the Create
+   inspector is about to write, sitting at its real position in the tree. */
+.tree__row--draft {
+  border-left: 3px dashed var(--color-primary);
+  background: rgba(0, 108, 102, 0.06);
+}
+
+.tree__label--draft {
+  cursor: default;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.tree__draft-tag {
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-style: normal;
+}
+
 .tree__twisty {
   width: 18px;
   flex: 0 0 18px;

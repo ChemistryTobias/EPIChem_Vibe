@@ -169,14 +169,14 @@ import is explicitly deferred to a late stage (see M6).
   with the current one bold; collapsed it reads like the old flat rail. **Device Status** renders
   the static registry state and says live MQTT state is M2 (reusing the M1 device list). Routes
   renamed `topology/devices/layout → hierarchy/device-status/lab-layout`, default now Hierarchy.
-  The **creation flow** (`8597db6`, `0740e98`) lives on Hierarchy: a prominent `New device`
-  primary action plus a single `+ Add` menu for Station/Site/Lab/Zone. `buildCreateFlow`
-  (`create/nodeCreate.ts`, unit-tested) turns "New X" into the ordered walk of missing
-  prerequisites (Site → Lab → Station → Device, ADR 0007), locking each created thing as the next
-  step's parent, and collapses to one step (a picker) once the scaffolding exists; Zone stays
-  optional. Frontend gained the write API it was missing (`createSite/Lab/Zone/Station`,
-  `createDevice`). Still to come on the *other* subsections: the creation affordances on Device
-  Status / Lab Layout, and delete/edit from the Hierarchy inspector.
+  The **creation flow** lives on Hierarchy: a `New device` primary action plus a single `Add`
+  menu (Site → Lab → Zone → Station, containment order). Creation happens in the **right-hand
+  inspector** — one kind at a time, with a parent picker — and the row being typed **previews live
+  in the tree** at its future position (`injectDraft` in `topologyTree.ts`, unit-tested), written
+  only on Create. A kind whose required parent doesn't exist yet points you at creating that parent
+  first (`REQUIRED_PARENT`) rather than a multi-step wizard. Frontend gained the write API it was
+  missing (`createSite/Lab/Zone/Station`, `createDevice`). Still to come on the *other* subsections:
+  the creation affordances on Device Status / Lab Layout, and delete/edit from the inspector.
 - [ ] **Lab-layout editor (ADRs 0009, 0010)** — the metric floor renders and a station's box drags
   with grid snap; still to build are editing the lab canvas/grid size from the UI, creating
   stations/zones by dragging a square, drag-to-resize footprints, box-height handles, zone
