@@ -1,23 +1,81 @@
+// EPIChem development container.
+//
+// Two things this file is deliberately careful about, both of which were
+// bugs before:
+//
+//  1. NOTHING that must survive a rebuild lives in the container filesystem.
+//     Anything under /home/node that is not on a named volume is destroyed
+//     every time the container is rebuilt. That is what was eating the Claude
+//     Code login, the shell history and the git identity.
+//
+//  2. The config volume name is a FIXED STRING, not ${devcontainerId}. The
+//     generated id is derived from the container's identifying labels, so it
+//     changes if the workspace is opened by a different path or the container
+//     is recreated from scratch — and a changed id silently mounts a brand
+//     new, empty volume rather than failing. A literal name cannot drift.
 {
-  "name": "Claude Code Sandbox",
+  "name": "EPIChem",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
-  "postCreateCommand": "npm install -g @anthropic-ai/claude-code",
-  "remoteEnv": {
-    "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}"},
-    "mounts": [
-    "source=claude-code-config-${devcontainerId},target=/home/node/.claude,type=volume"
-  ],
-  "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/node/.claude"
+
+  "features": {
+    // Docker-in-Docker, NOT docker-outside-of-docker. The difference matters
+    // here: outside-of-docker shares the host daemon, so every bind mount in
+    // compose.yaml would be resolved against *host* paths. Our dev stack
+    // bind-mounts ./backend and ./frontend for hot reload, and those paths
+    // exist at /workspaces/EPIChem only inside this container — they would
+    // mount as empty directories against the host daemon. A nested daemon
+    // sees the same filesystem this container does, so the bind mounts and
+    // the compose file work unmodified.
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "moby": true,
+      "dockerDashComposeVersion": "v2"
+    },
+    // The backend needs a real Python; the base image is Node-only.
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.13",
+      "installTools": false
+    }
   },
+
+  "mounts": [
+    // Claude Code's config, credentials and session history.
+    "source=epichem-claude-config,target=/home/node/.claude,type=volume",
+    // Shell history, so `history` survives a rebuild.
+    "source=epichem-shell-history,target=/commandhistory,type=volume",
+    // The nested Docker daemon's image store. Without this, every rebuild
+    // re-pulls postgres/node/python from scratch.
+    "source=epichem-docker-data,target=/var/lib/docker,type=volume"
+  ],
+
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "HISTFILE": "/commandhistory/.bash_history"
+  },
+
+  // NOTE: CLAUDE_CODE_OAUTH_TOKEN is intentionally NOT forwarded here.
+  // `${localEnv:VAR}` resolves to an EMPTY STRING when VAR is unset on the
+  // host rather than being omitted, and an empty-but-defined auth variable is
+  // worse than no variable at all — it can shadow the credentials stored in
+  // the volume above. Log in once with `claude` and the volume keeps it.
+  // If you genuinely want token auth, set the variable on the host and
+  // uncomment the block below.
+  // "remoteEnv": {
+  //   "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}"
+  // },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
   "customizations": {
     "vscode": {
       "settings": {
-        "terminal.integrated.defaultProfile.linux": "bash"
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/workspaces/EPIChem/backend/.venv/bin/python"
       },
       "extensions": [
         "anthropic.claude-code",
-        "esbenp.prettier-vscode"
+        "esbenp.prettier-vscode",
+        "ms-python.python",
+        "charliermarsh.ruff"
       ]
     }
   }
