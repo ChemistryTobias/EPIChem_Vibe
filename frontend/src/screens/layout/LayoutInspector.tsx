@@ -7,6 +7,10 @@
  * component.
  */
 
+import { useState } from "react";
+
+import { deleteNode } from "../../api/topology";
+import { Button } from "../../components/Button";
 import { Field, FieldGroup, Inspector } from "../../components/Inspector";
 import { StatusDot } from "../../components/StatusDot";
 import { deviceTone } from "../devices/deviceTone";
@@ -16,14 +20,29 @@ interface LayoutInspectorProps {
   placed: PlacedStation | null;
   labCode: string;
   onClose: () => void;
+  /** Edit mode: offer geometry-edit and delete affordances. */
+  editable?: boolean;
+  onEditGeometry?: () => void;
+  onDeleted?: () => void;
 }
 
-export function LayoutInspector({ placed, labCode, onClose }: LayoutInspectorProps) {
+export function LayoutInspector({
+  placed,
+  labCode,
+  onClose,
+  editable = false,
+  onEditGeometry,
+  onDeleted,
+}: LayoutInspectorProps) {
   if (!placed) {
     return (
       <Inspector
         kind="Layout inspector"
-        placeholder="Select a station on the floor plan to see what's there."
+        placeholder={
+          editable
+            ? "Drag on the floor to draw a new station, or pick one to move, resize or delete it."
+            : "Select a station on the floor plan to see what's there."
+        }
       />
     );
   }
@@ -37,6 +56,10 @@ export function LayoutInspector({ placed, labCode, onClose }: LayoutInspectorPro
       subtitle={station.code}
       onClose={onClose}
     >
+      {editable && onEditGeometry && onDeleted && (
+        <StationActions code={station.code} onEditGeometry={onEditGeometry} onDeleted={onDeleted} />
+      )}
+
       <FieldGroup title="Position">
         <Field label="Lab" mono>
           {labCode}
@@ -97,5 +120,67 @@ export function LayoutInspector({ placed, labCode, onClose }: LayoutInspectorPro
         </p>
       </FieldGroup>
     </Inspector>
+  );
+}
+
+/**
+ * Edit-geometry / delete row for the selected station (edit mode). Delete is a
+ * two-step inline confirm owning its own busy/error state — a 409 comes back if
+ * the station still holds devices, which is worth showing, not swallowing.
+ */
+function StationActions({
+  code,
+  onEditGeometry,
+  onDeleted,
+}: {
+  code: string;
+  onEditGeometry: () => void;
+  onDeleted: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove() {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteNode("Station", code);
+      onDeleted();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div className="node-actions">
+      {confirming ? (
+        <>
+          <span className="node-actions__prompt">Delete {code}?</span>
+          <Button variant="danger" onClick={remove} disabled={busy}>
+            {busy ? "Deleting…" : "Confirm"}
+          </Button>
+          <Button onClick={() => setConfirming(false)} disabled={busy}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <>
+          <Button variant="primary" onClick={onEditGeometry}>
+            Edit geometry
+          </Button>
+          <Button variant="danger" onClick={() => setConfirming(true)}>
+            Delete
+          </Button>
+        </>
+      )}
+      {error && (
+        <p className="create-form__error node-actions__error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

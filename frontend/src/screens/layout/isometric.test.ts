@@ -12,6 +12,7 @@ import {
   DEFAULT_METRICS,
   canvasExtent,
   depth,
+  drawnRect,
   placeStations,
   placementProblems,
   snap,
@@ -188,6 +189,28 @@ function device(code: string, station_code: string | null): Device {
     station_code,
   };
 }
+
+describe("drawnRect", () => {
+  test("snaps both corners and takes the min as the near corner", () => {
+    // Drag from (2.9, 1.1) back to (1.1, 0.4), grid 0.5 → corners snap to
+    // (3.0,1.0) and (1.0,0.5); near corner is the min, size is the extent.
+    const rect = drawnRect({ x: 2.9, y: 1.1 }, { x: 1.1, y: 0.4 }, 0.5);
+    expect(rect.pos).toEqual({ x: 1.0, y: 0.5 });
+    expect(rect.size).toEqual({ x: 2.0, y: 0.5 });
+  });
+
+  test("floors a click or tiny drag at one grid cell, not zero", () => {
+    const rect = drawnRect({ x: 1.0, y: 1.0 }, { x: 1.0, y: 1.0 }, 0.5);
+    expect(rect.pos).toEqual({ x: 1.0, y: 1.0 });
+    expect(rect.size).toEqual({ x: 0.5, y: 0.5 });
+  });
+
+  test("orientation-independent: dragging either direction gives the same box", () => {
+    const a = drawnRect({ x: 0, y: 0 }, { x: 2, y: 1 }, 0.5);
+    const b = drawnRect({ x: 2, y: 1 }, { x: 0, y: 0 }, 0.5);
+    expect(a).toEqual(b);
+  });
+});
 
 describe("placeStations", () => {
   test("keeps only this lab's stations", () => {

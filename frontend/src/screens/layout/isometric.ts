@@ -97,6 +97,31 @@ export function depth(pos: FloorPos): number {
   return pos.x + pos.y;
 }
 
+/** A drawn footprint: a near corner (metres) and a metric size. */
+export interface DrawnRect {
+  pos: FloorPos;
+  size: { x: number; y: number };
+}
+
+/**
+ * Turn a drag between two floor points into a snapped station footprint: the
+ * near corner is the min of the two (snapped), the size is their snapped extent,
+ * floored at one grid cell so a click or a tiny drag still yields a real box
+ * (the Lab Layout editor's "draw a station" gesture, ADR 0010).
+ */
+export function drawnRect(a: FloorPos, b: FloorPos, gridSizeM: number): DrawnRect {
+  const cell = gridSizeM > 0 ? gridSizeM : 1;
+  const x0 = snap({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, cell);
+  const x1 = snap({ x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) }, cell);
+  return {
+    pos: x0,
+    size: {
+      x: Math.max(cell, x1.x - x0.x),
+      y: Math.max(cell, x1.y - x0.y),
+    },
+  };
+}
+
 /**
  * How big the drawing is, in screen px, for a width_m × depth_m floor.
  * Used to size the paper and to place the origin so nothing is clipped: the

@@ -14,9 +14,9 @@
 import { useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
-import type { Lab } from "../../api/types";
-import type { FloorPos, PlacedStation, TileMetrics } from "./isometric";
-import { DEFAULT_METRICS, canvasExtent, snap, toFloor } from "./isometric";
+import type { Lab, Station } from "../../api/types";
+import type { DrawnRect, FloorPos, PlacedStation, TileMetrics } from "./isometric";
+import { DEFAULT_METRICS, canvasExtent, drawnRect, snap, toFloor } from "./isometric";
 import {
   FloorGrid,
   StationTile,
@@ -37,6 +37,9 @@ export interface IsometricPaperOptions {
   editable: boolean;
   onSelect: (code: string | null) => void;
   onMove: (placed: PlacedStation, pos: FloorPos) => void;
+  /** A footprint was drawn on empty floor in edit mode (ADR 0010): create a
+   * station there. Omitted disables drawing. */
+  onDrawStation?: (rect: DrawnRect) => void;
 }
 
 const CELL_NAMESPACE = { ...shapes, epi: { FloorGrid, Station: StationTile } };
@@ -80,6 +83,87 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       handlers.current.onSelect((view.model.get("stationCode") as string) ?? null);
     });
     paper.on("blank:pointerclick", () => handlers.current.onSelect(null));
+
+    // ---- draw-a-station on empty floor (edit mode, ADR 0010) ---------------
+    //
+    // A drag on the blank floor rubber-bands a footprint with a live isometric
+    // preview; releasing it hands the snapped rectangle up to create a station.
+    // A plain click (no meaningful drag) makes no preview and falls through to
+    // blank:pointerclick above, which deselects.
+    let drawStart: FloorPos | null = null;
+    let preview: dia.Element | null = null;
+
+    const floorAt = (x: number, y: number): FloorPos | null => {
+      const { lab, metrics = DEFAULT_METRICS } = handlers.current;
+      if (!lab) return null;
+      const { origin } = canvasExtent(lab.width_m, lab.depth_m, metrics);
+      return toFloor({ x, y }, origin, metrics, 0);
+    };
+
+    const clearPreview = () => {
+      if (preview) {
+        preview.remove();
+        preview = null;
+      }
+    };
+
+    paper.on("blank:pointerdown", (_evt, x, y) => {
+      if (!handlers.current.editable || !handlers.current.onDrawStation) return;
+      drawStart = floorAt(x, y);
+    });
+
+    paper.on("blank:pointermove", (_evt, x, y) => {
+      if (!drawStart) return;
+      const { lab, metrics = DEFAULT_METRICS } = handlers.current;
+      const cur = floorAt(x, y);
+      if (!lab || !cur) return;
+      const cell = lab.grid_size_m > 0 ? lab.grid_size_m : 1;
+      // Ignore jitter: only draw once the cursor has left the starting cell.
+      if (Math.abs(cur.x - drawStart.x) < cell / 2 && Math.abs(cur.y - drawStart.y) < cell / 2) {
+        clearPreview();
+        return;
+      }
+      const rect = drawnRect(drawStart, cur, lab.grid_size_m);
+      const { origin } = canvasExtent(lab.width_m, lab.depth_m, metrics);
+      // stationBox only reads these five fields; a partial stands in for a row.
+      const box = stationBox(
+        {
+          pos_x: rect.pos.x,
+          pos_y: rect.pos.y,
+          size_x_m: rect.size.x,
+          size_y_m: rect.size.y,
+          height_m: 0.5,
+        } as unknown as Station,
+        origin,
+        metrics,
+      );
+      if (!preview) {
+        preview = new StationTile({ position: box.position, size: box.size });
+        graph.addCell(preview);
+      } else {
+        preview.position(box.position.x, box.position.y);
+        preview.resize(box.size.width, box.size.height);
+      }
+      preview.attr({
+        top: { points: box.faces.top, fill: "#00B1EA", fillOpacity: 0.35, stroke: "#00B1EA", strokeWidth: 2, strokeDasharray: "4,3" },
+        left: { points: box.faces.left, fill: "#00B1EA", fillOpacity: 0.2, stroke: "#00B1EA" },
+        right: { points: box.faces.right, fill: "#00B1EA", fillOpacity: 0.15, stroke: "#00B1EA" },
+        label: { text: "" },
+        badge: { fill: "transparent", stroke: "transparent" },
+      });
+    });
+
+    paper.on("blank:pointerup", (_evt, x, y) => {
+      const start = drawStart;
+      const drew = preview !== null;
+      drawStart = null;
+      clearPreview();
+      if (!start || !drew) return; // a click, not a draw — leave it to pointerclick
+      const { lab } = handlers.current;
+      const cur = floorAt(x, y);
+      if (!lab || !cur) return;
+      handlers.current.onDrawStation?.(drawnRect(start, cur, lab.grid_size_m));
+    });
 
     paper.on("element:pointerup", (view) => {
       const { lab, metrics = DEFAULT_METRICS, placed } = handlers.current;

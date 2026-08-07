@@ -8,13 +8,16 @@
  *
  * Scope, stated plainly so it isn't mistaken for the whole of §10:
  * - Renders one lab at a time. The lab is a metric canvas (ADR 0010:
- *   width_m × depth_m floor, grid_size_m raster); zone drawing and the site
- *   floorplan map are not here yet.
- * - Editing is limited to dragging a station's box to a new position, which
- *   snaps to the grid (ADR 0010). Creating and deleting stations, resizing the
- *   canvas or grid, drag-to-resize footprints, editing box heights,
- *   multi-select, align/distribute, copy-paste and undo/redo (§10.3
- *   affordances) are not built yet.
+ *   width_m × depth_m floor, grid_size_m raster).
+ * - The editor (edit mode) does the backend-backed §10.3 affordances: drag a
+ *   station to move it; draw a footprint on empty floor to create one (live
+ *   isometric preview, snapped); edit a station's geometry (position, footprint,
+ *   height) or delete it from the inspector; and edit the lab's canvas/grid.
+ *   All full-replace writes through the same registry the tree writes to.
+ * - Not here (no backend fields for them yet): zone rectangles and the
+ *   per-station device/module sub-layout — Zone/Device carry no 2-D geometry in
+ *   the schema. Nor canvas drag-handles (resize is numeric in the inspector),
+ *   multi-select, align/distribute, copy-paste, undo/redo, or the site floorplan.
  * - The live-status, sample-occupancy, transport-route and utilisation
  *   layers need the M2 device plane. The layer toggles here cover only what
  *   the registry can actually answer today.
@@ -28,9 +31,11 @@ import { AsyncBoundary } from "../../components/AsyncBoundary";
 import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
-import type { FloorPos, PlacedStation } from "./isometric";
+import type { DrawnRect, FloorPos, PlacedStation } from "./isometric";
 import { placeStations, placementProblems } from "./isometric";
+import { LabCanvasForm } from "./LabCanvasForm";
 import { LayoutInspector } from "./LayoutInspector";
+import { StationForm } from "./StationForm";
 import { useIsometricPaper } from "./useIsometricPaper";
 
 import "./LayoutScreen.css";
@@ -54,6 +59,16 @@ export function LayoutScreen() {
   const [showLabels, setShowLabels] = useState(true);
   const [showFloor, setShowFloor] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Which editor form (if any) fills the inspector column. At most one at a time.
+  const [editingLab, setEditingLab] = useState(false);
+  const [stationDraft, setStationDraft] = useState<DrawnRect | null>(null);
+  const [editingGeom, setEditingGeom] = useState(false);
+
+  const closeForms = () => {
+    setEditingLab(false);
+    setStationDraft(null);
+    setEditingGeom(false);
+  };
 
   const labs = layout.data?.topology.labs ?? [];
   // Default to the first lab, but let an explicit choice win.
@@ -70,6 +85,11 @@ export function LayoutScreen() {
   const problems = useMemo(() => (lab ? placementProblems(placed, lab) : []), [placed, lab]);
 
   const selected = placed.find((p) => p.station.code === selectedCode) ?? null;
+
+  // The lab's site code — the lab row only carries site_id, but a full-replace
+  // PUT of the lab wants the code.
+  const siteCode =
+    (lab && layout.data?.topology.sites.find((s) => s.id === lab.site_id)?.code) || "";
 
   // A station's zone code, for the full-replace PUT (a station may sit in a zone).
   const zoneCodeOf = useCallback(
@@ -96,6 +116,14 @@ export function LayoutScreen() {
     [lab, layout, zoneCodeOf],
   );
 
+  const onDrawStation = useCallback((rect: DrawnRect) => {
+    // A footprint was drawn on empty floor: open the create form on it.
+    setEditingLab(false);
+    setEditingGeom(false);
+    setSelectedCode(null);
+    setStationDraft(rect);
+  }, []);
+
   const containerRef = useIsometricPaper({
     lab,
     placed,
@@ -105,6 +133,7 @@ export function LayoutScreen() {
     editable,
     onSelect: setSelectedCode,
     onMove,
+    onDrawStation,
   });
 
   return (
@@ -120,7 +149,12 @@ export function LayoutScreen() {
           <>
             <Button
               variant={editable ? "primary" : "secondary"}
-              onClick={() => setEditable((on) => !on)}
+              onClick={() =>
+                setEditable((on) => {
+                  if (on) closeForms(); // leaving edit mode closes any open form
+                  return !on;
+                })
+              }
             >
               {editable ? "Editing" : "Operations"}
             </Button>
@@ -180,8 +214,22 @@ export function LayoutScreen() {
                     Labels
                   </label>
 
+                  {editable && lab && (
+                    <Button
+                      onClick={() => {
+                        closeForms();
+                        setSelectedCode(null);
+                        setEditingLab(true);
+                      }}
+                    >
+                      Edit lab
+                    </Button>
+                  )}
+
                   <span className="toolbar__spacer label">
-                    {editable ? "Drag a station to move it" : "Read-only"}
+                    {editable
+                      ? "Drag empty floor to draw a station · drag a station to move it"
+                      : "Read-only"}
                   </span>
                 </div>
 
@@ -233,11 +281,52 @@ export function LayoutScreen() {
           </AsyncBoundary>
         </div>
 
-        <LayoutInspector
-          placed={selected}
-          labCode={lab?.code ?? ""}
-          onClose={() => setSelectedCode(null)}
-        />
+        {editingLab && lab ? (
+          <LabCanvasForm
+            lab={lab}
+            siteCode={siteCode}
+            onDone={() => {
+              setEditingLab(false);
+              layout.reload();
+            }}
+            onCancel={() => setEditingLab(false)}
+          />
+        ) : stationDraft && lab ? (
+          <StationForm
+            mode="create"
+            lab={lab}
+            rect={stationDraft}
+            onDone={() => {
+              setStationDraft(null);
+              layout.reload();
+            }}
+            onCancel={() => setStationDraft(null)}
+          />
+        ) : editingGeom && selected && lab ? (
+          <StationForm
+            mode="reshape"
+            lab={lab}
+            station={selected.station}
+            zoneCode={zoneCodeOf(selected.station.zone_id)}
+            onDone={() => {
+              setEditingGeom(false);
+              layout.reload();
+            }}
+            onCancel={() => setEditingGeom(false)}
+          />
+        ) : (
+          <LayoutInspector
+            placed={selected}
+            labCode={lab?.code ?? ""}
+            editable={editable}
+            onClose={() => setSelectedCode(null)}
+            onEditGeometry={() => setEditingGeom(true)}
+            onDeleted={() => {
+              setSelectedCode(null);
+              layout.reload();
+            }}
+          />
+        )}
       </div>
     </>
   );

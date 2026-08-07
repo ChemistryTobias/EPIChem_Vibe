@@ -98,6 +98,14 @@ export interface StationSpecBody {
   capacity: number;
   state: string;
   owning_group: string | null;
+  // Optional placement, in metres (ADR 0010). The hierarchy create form omits
+  // these (the backend defaults them); the Lab Layout editor sets them when a
+  // station is drawn on the floor.
+  pos_x?: number;
+  pos_y?: number;
+  size_x_m?: number;
+  size_y_m?: number;
+  height_m?: number;
 }
 
 export const createSite = (code: string, name: string, spec: SiteSpecBody) =>
@@ -205,6 +213,30 @@ export const updateSite = (row: Site, e: SiteEdit) =>
   put<Site>("Site", row.code, e.name, siteEditSpec(e));
 export const updateLab = (row: Lab, e: LabEdit) =>
   put<Lab>("Lab", row.code, e.name, labEditSpec(row, e));
+
+/** The lab's metric canvas (ADR 0010). */
+export interface LabCanvas {
+  width_m: number;
+  depth_m: number;
+  grid_size_m: number;
+}
+
+/**
+ * Resize the lab's canvas/grid from the Lab Layout editor. This is the mirror of
+ * `labEditSpec`, which *preserves* geometry: here the geometry is what changes
+ * and the descriptive fields are preserved off the row. The lab carries
+ * `site_id`, not the site code the descriptor wants, so the caller passes it.
+ */
+export const resizeLabCanvas = (row: Lab, siteCode: string, canvas: LabCanvas) =>
+  put<Lab>("Lab", row.code, row.name, {
+    site: siteCode,
+    room_number: row.room_number,
+    environment_class: row.environment_class,
+    access_control_group: row.access_control_group,
+    width_m: canvas.width_m,
+    depth_m: canvas.depth_m,
+    grid_size_m: canvas.grid_size_m,
+  });
 export const updateZone = (row: Zone, e: ZoneEdit) =>
   put<Zone>("Zone", row.code, e.name, zoneEditSpec(row, e));
 export const updateStation = (row: Station, e: StationEdit) =>
@@ -222,31 +254,74 @@ export const deleteNode = (kind: HierarchyKind, code: string) =>
 export const fetchRevisions = (kind: HierarchyKind, code: string) =>
   apiGet<Revision[]>(`/${PLURAL[kind]}/${encodeURIComponent(code)}/revisions`);
 
+/** A station's box on the lab canvas, in metres (ADR 0010). */
+export interface StationGeometry {
+  pos_x: number;
+  pos_y: number;
+  size_x_m: number;
+  size_y_m: number;
+  height_m: number;
+}
+
+/**
+ * Full-replace spec for a station's *placement*: the geometry is set, everything
+ * else (kind, capacity, labware, execution binding, state) is preserved off the
+ * row. Shared by `moveStation` (drag: new position, same box) and
+ * `reshapeStation` (inspector: new footprint/height). `labCode`/`zoneCode` can't
+ * be read off the station — it carries ids, not codes — so the caller passes them.
+ */
+function stationPlacementSpec(
+  station: Station,
+  labCode: string,
+  zoneCode: string | null,
+  geom: StationGeometry,
+) {
+  return descriptor("Station", station.code, station.name, {
+    lab: labCode,
+    zone: zoneCode,
+    kind: station.kind,
+    pos_x: geom.pos_x,
+    pos_y: geom.pos_y,
+    size_x_m: geom.size_x_m,
+    size_y_m: geom.size_y_m,
+    height_m: geom.height_m,
+    capacity: station.capacity,
+    accepted_labware_types: station.accepted_labware_types,
+    queueserver_endpoint: station.queueserver_endpoint,
+    redis_namespace: station.redis_namespace,
+    state: station.state,
+    owning_group: station.owning_group,
+  });
+}
+
+/** Move a station's box to a new metric position, keeping its footprint/height. */
 export function moveStation(
   station: Station,
   labCode: string,
   zoneCode: string | null,
   pos: { x: number; y: number },
 ) {
-  return apiPut<Station>(`/stations/${encodeURIComponent(station.code)}`, {
-    apiVersion: "epichem.dev/v1",
-    kind: "Station",
-    metadata: { code: station.code, name: station.name },
-    spec: {
-      lab: labCode,
-      zone: zoneCode,
-      kind: station.kind,
+  return apiPut<Station>(
+    `/stations/${encodeURIComponent(station.code)}`,
+    stationPlacementSpec(station, labCode, zoneCode, {
       pos_x: pos.x,
       pos_y: pos.y,
       size_x_m: station.size_x_m,
       size_y_m: station.size_y_m,
       height_m: station.height_m,
-      capacity: station.capacity,
-      accepted_labware_types: station.accepted_labware_types,
-      queueserver_endpoint: station.queueserver_endpoint,
-      redis_namespace: station.redis_namespace,
-      state: station.state,
-      owning_group: station.owning_group,
-    },
-  });
+    }),
+  );
+}
+
+/** Resize/re-place a station's box: new position, footprint and height at once. */
+export function reshapeStation(
+  station: Station,
+  labCode: string,
+  zoneCode: string | null,
+  geom: StationGeometry,
+) {
+  return apiPut<Station>(
+    `/stations/${encodeURIComponent(station.code)}`,
+    stationPlacementSpec(station, labCode, zoneCode, geom),
+  );
 }

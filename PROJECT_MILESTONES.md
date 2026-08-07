@@ -189,10 +189,21 @@ import is explicitly deferred to a late stage (see M6).
   Device Status screen. Restoring a past revision (forward-revert) is a later capability and will
   get its own ADR. Still to come on the *other* subsections: the creation affordances on Device
   Status / Lab Layout.
-- [ ] **Lab-layout editor (ADRs 0009, 0010)** — the metric floor renders and a station's box drags
-  with grid snap; still to build are editing the lab canvas/grid size from the UI, creating
-  stations/zones by dragging a square, drag-to-resize footprints, box-height handles, zone
-  rectangles, and the per-station device/module sub-layout (squares/circles).
+- [x] **Lab-layout editor (ADRs 0009, 0010)** — edit mode on the isometric canvas now does the
+  backend-backed §10.3 affordances, all `@joint/core` only (no JointJS+ component): **drag** a
+  station to move it (was already there); **draw** a footprint on empty floor to create a station,
+  with a live isometric preview that snaps to the grid, then a create form prefilled with that
+  position/footprint (`drawnRect` in `isometric.ts`, unit-tested; the rubber-band lives in
+  `useIsometricPaper.ts`'s blank-pointer handlers); **edit** a selected station's geometry
+  (position, footprint, height) numerically or **delete** it from the inspector; and **edit the
+  lab's canvas/grid** (`width_m × depth_m`, `grid_size_m`). New write helpers `reshapeStation` and
+  `resizeLabCanvas` join `moveStation` (all share one placement-spec builder so a full-replace PUT
+  preserves the fields the form doesn't touch); the station create carries optional geometry.
+  Verified end-to-end against the write path with a TestClient smoke run. **Not built, because the
+  schema has no geometry for them:** zone rectangles and the per-station device/module sub-layout
+  (Zone/Device carry no 2-D coordinates). Also deferred, as UI polish rather than capability:
+  canvas drag-handles for resize (numeric in the inspector instead), multi-select,
+  align/distribute, copy-paste, undo/redo, and the site floorplan map.
 **M2 device plane proper (unchanged from the plan, still not started):** real devices behind IOCs,
 queueserver per cell, the `plans_allowed`/`devices_allowed` introspection service (the
 palette-generation mechanism the plan calls "the single highest-leverage integration in the
