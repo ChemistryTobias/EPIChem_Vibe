@@ -1,11 +1,13 @@
 """Initial registry schema.
 
-Baselines what `Base.metadata.create_all` used to build directly: the six
-topology tables, devices/signals/station_device_bindings, capability_classes,
-samples, and the shared revisions table (ADR 0004).
+Baselines what `Base.metadata.create_all` builds directly: the topology tables
+(sites/labs/zones/stations, ADR 0007 — no workcells/benches), devices/signals,
+capability_classes, samples, and the shared revisions table (ADR 0004).
 
-`test_migrations.py` asserts that running this produces exactly the schema
-the models declare, so the two can't drift apart silently.
+Regenerated for ADR 0007 (topology flattened before M2). There is no production
+data yet, so this is a fresh-schema baseline, not a data migration.
+`test_migrations.py` asserts that running this produces exactly the schema the
+models declare, so the two can't drift apart silently.
 
 Revision ID: 0001
 Revises: None
@@ -83,7 +85,70 @@ def upgrade() -> None:
     with op.batch_alter_table('sites', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_sites_code'), ['code'], unique=True)
 
+    op.create_table('labs',
+    sa.Column('site_id', sa.Uuid(), nullable=False),
+    sa.Column('room_number', sa.String(), nullable=True),
+    sa.Column('environment_class', sa.String(), nullable=False),
+    sa.Column('access_control_group', sa.String(), nullable=True),
+    sa.Column('grid_cols', sa.Integer(), nullable=False),
+    sa.Column('grid_rows', sa.Integer(), nullable=False),
+    sa.Column('id', sa.Uuid(), nullable=False),
+    sa.Column('code', sa.String(), nullable=False),
+    sa.Column('name', sa.String(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    sa.ForeignKeyConstraint(['site_id'], ['sites.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    with op.batch_alter_table('labs', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_labs_code'), ['code'], unique=True)
+
+    op.create_table('zones',
+    sa.Column('lab_id', sa.Uuid(), nullable=False),
+    sa.Column('atmosphere', sa.String(), nullable=False),
+    sa.Column('pressure', sa.String(), nullable=True),
+    sa.Column('temperature_class', sa.String(), nullable=True),
+    sa.Column('hazard_class', sa.String(), nullable=True),
+    sa.Column('occupancy', sa.String(), nullable=False),
+    sa.Column('id', sa.Uuid(), nullable=False),
+    sa.Column('code', sa.String(), nullable=False),
+    sa.Column('name', sa.String(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    sa.ForeignKeyConstraint(['lab_id'], ['labs.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    with op.batch_alter_table('zones', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_zones_code'), ['code'], unique=True)
+
+    op.create_table('stations',
+    sa.Column('lab_id', sa.Uuid(), nullable=False),
+    sa.Column('zone_id', sa.Uuid(), nullable=True),
+    sa.Column('kind', sa.String(), nullable=False),
+    sa.Column('grid_col', sa.Integer(), nullable=False),
+    sa.Column('grid_row', sa.Integer(), nullable=False),
+    sa.Column('stack_height', sa.Integer(), nullable=False),
+    sa.Column('capacity', sa.Integer(), nullable=False),
+    sa.Column('accepted_labware_types', sa.JSON(), nullable=False),
+    sa.Column('queueserver_endpoint', sa.String(), nullable=True),
+    sa.Column('redis_namespace', sa.String(), nullable=True),
+    sa.Column('state', sa.String(), nullable=False),
+    sa.Column('owning_group', sa.String(), nullable=True),
+    sa.Column('id', sa.Uuid(), nullable=False),
+    sa.Column('code', sa.String(), nullable=False),
+    sa.Column('name', sa.String(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    sa.ForeignKeyConstraint(['lab_id'], ['labs.id'], ),
+    sa.ForeignKeyConstraint(['zone_id'], ['zones.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    with op.batch_alter_table('stations', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_stations_code'), ['code'], unique=True)
+
     op.create_table('devices',
+    sa.Column('node_kind', sa.String(), nullable=False),
+    sa.Column('station_id', sa.Uuid(), nullable=True),
     sa.Column('parent_id', sa.Uuid(), nullable=True),
     sa.Column('labels', sa.JSON(), nullable=False),
     sa.Column('capability_class_ref', sa.String(), nullable=True),
@@ -116,26 +181,11 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     sa.ForeignKeyConstraint(['capability_class_id'], ['capability_classes.id'], ),
     sa.ForeignKeyConstraint(['parent_id'], ['devices.id'], ),
+    sa.ForeignKeyConstraint(['station_id'], ['stations.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('devices', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_devices_code'), ['code'], unique=True)
-
-    op.create_table('labs',
-    sa.Column('site_id', sa.Uuid(), nullable=False),
-    sa.Column('room_number', sa.String(), nullable=True),
-    sa.Column('environment_class', sa.String(), nullable=False),
-    sa.Column('access_control_group', sa.String(), nullable=True),
-    sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('code', sa.String(), nullable=False),
-    sa.Column('name', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.ForeignKeyConstraint(['site_id'], ['sites.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    with op.batch_alter_table('labs', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_labs_code'), ['code'], unique=True)
 
     op.create_table('signals',
     sa.Column('id', sa.Uuid(), nullable=False),
@@ -152,116 +202,26 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('device_id', 'name', name='uq_signal_device_name')
     )
-    op.create_table('zones',
-    sa.Column('lab_id', sa.Uuid(), nullable=False),
-    sa.Column('atmosphere', sa.String(), nullable=False),
-    sa.Column('pressure', sa.String(), nullable=True),
-    sa.Column('temperature_class', sa.String(), nullable=True),
-    sa.Column('hazard_class', sa.String(), nullable=True),
-    sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('code', sa.String(), nullable=False),
-    sa.Column('name', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.ForeignKeyConstraint(['lab_id'], ['labs.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    with op.batch_alter_table('zones', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_zones_code'), ['code'], unique=True)
-
-    op.create_table('workcells',
-    sa.Column('zone_id', sa.Uuid(), nullable=False),
-    sa.Column('queueserver_endpoint', sa.String(), nullable=True),
-    sa.Column('redis_namespace', sa.String(), nullable=True),
-    sa.Column('state', sa.String(), nullable=False),
-    sa.Column('owning_group', sa.String(), nullable=True),
-    sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('code', sa.String(), nullable=False),
-    sa.Column('name', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.ForeignKeyConstraint(['zone_id'], ['zones.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    with op.batch_alter_table('workcells', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_workcells_code'), ['code'], unique=True)
-
-    op.create_table('benches',
-    sa.Column('workcell_id', sa.Uuid(), nullable=False),
-    sa.Column('grid_cols', sa.Integer(), nullable=False),
-    sa.Column('grid_rows', sa.Integer(), nullable=False),
-    sa.Column('height_mm', sa.Float(), nullable=True),
-    sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('code', sa.String(), nullable=False),
-    sa.Column('name', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.ForeignKeyConstraint(['workcell_id'], ['workcells.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    with op.batch_alter_table('benches', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_benches_code'), ['code'], unique=True)
-
-    op.create_table('stations',
-    sa.Column('bench_id', sa.Uuid(), nullable=False),
-    sa.Column('kind', sa.String(), nullable=False),
-    sa.Column('grid_col', sa.Integer(), nullable=False),
-    sa.Column('grid_row', sa.Integer(), nullable=False),
-    sa.Column('stack_height', sa.Integer(), nullable=False),
-    sa.Column('capacity', sa.Integer(), nullable=False),
-    sa.Column('accepted_labware_types', sa.JSON(), nullable=False),
-    sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('code', sa.String(), nullable=False),
-    sa.Column('name', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.ForeignKeyConstraint(['bench_id'], ['benches.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-    with op.batch_alter_table('stations', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_stations_code'), ['code'], unique=True)
-
-    op.create_table('station_device_bindings',
-    sa.Column('id', sa.Uuid(), nullable=False),
-    sa.Column('station_id', sa.Uuid(), nullable=False),
-    sa.Column('device_id', sa.Uuid(), nullable=False),
-    sa.Column('role', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-    sa.ForeignKeyConstraint(['device_id'], ['devices.id'], ),
-    sa.ForeignKeyConstraint(['station_id'], ['stations.id'], ),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('station_id', 'device_id', 'role', name='uq_station_device_role')
-    )
 
 
 def downgrade() -> None:
-    op.drop_table('station_device_bindings')
-    with op.batch_alter_table('stations', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_stations_code'))
-
-    op.drop_table('stations')
-    with op.batch_alter_table('benches', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_benches_code'))
-
-    op.drop_table('benches')
-    with op.batch_alter_table('workcells', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_workcells_code'))
-
-    op.drop_table('workcells')
-    with op.batch_alter_table('zones', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_zones_code'))
-
-    op.drop_table('zones')
     op.drop_table('signals')
-    with op.batch_alter_table('labs', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_labs_code'))
-
-    op.drop_table('labs')
     with op.batch_alter_table('devices', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_devices_code'))
 
     op.drop_table('devices')
+    with op.batch_alter_table('stations', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_stations_code'))
+
+    op.drop_table('stations')
+    with op.batch_alter_table('zones', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_zones_code'))
+
+    op.drop_table('zones')
+    with op.batch_alter_table('labs', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_labs_code'))
+
+    op.drop_table('labs')
     with op.batch_alter_table('sites', schema=None) as batch_op:
         batch_op.drop_index(batch_op.f('ix_sites_code'))
 

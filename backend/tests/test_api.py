@@ -2,14 +2,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from epichem.models import (
-    Bench,
     CapabilityClass,
     Device,
     Lab,
     Site,
     Station,
-    StationDeviceBinding,
-    Workcell,
     Zone,
 )
 
@@ -25,13 +22,7 @@ def client(session, monkeypatch):
     zone = Zone(code="ZONE-1", name="Zone 1", lab_id=lab.id)
     session.add(zone)
     session.flush()
-    cell = Workcell(code="CELL-A", name="Cell A", zone_id=zone.id)
-    session.add(cell)
-    session.flush()
-    bench = Bench(code="BENCH-A2", name="Bench A2", workcell_id=cell.id)
-    session.add(bench)
-    session.flush()
-    station = Station(code="HP1", name="HP1", bench_id=bench.id)
+    station = Station(code="HP1", name="HP1", lab_id=lab.id, zone_id=zone.id)
     session.add(station)
     session.flush()
     cc = CapabilityClass(name="HeaterStirrer", actions={"heat": {}, "stir": {}})
@@ -40,13 +31,12 @@ def client(session, monkeypatch):
     device = Device(
         code="DEV-HP-001",
         name="Hotplate H1",
+        station_id=station.id,
         capability_class_id=cc.id,
         capabilities=["heat", "stir"],
         operational_mode="read_write",
     )
     session.add(device)
-    session.flush()
-    session.add(StationDeviceBinding(station_id=station.id, device_id=device.id, role="owns"))
     session.commit()
 
     from epichem import db
@@ -109,4 +99,6 @@ def test_device_classes_endpoint(client):
 def test_topology_filters(client):
     assert len(client.get("/api/v1/labs?site=SITE-MPIFKF").json()) == 1
     assert len(client.get("/api/v1/labs?site=NOPE").json()) == 0
-    assert len(client.get("/api/v1/stations?bench=BENCH-A2").json()) == 1
+    assert len(client.get("/api/v1/stations?lab=LAB-3").json()) == 1
+    assert len(client.get("/api/v1/stations?zone=ZONE-1").json()) == 1
+    assert len(client.get("/api/v1/stations?lab=NOPE").json()) == 0

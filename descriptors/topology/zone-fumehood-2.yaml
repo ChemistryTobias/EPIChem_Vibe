@@ -9,3 +9,5 @@ spec:
   pressure: ambient
   temperature_class: ambient
   hazard_class: none
+  # §12.2 safety classification: a fume hood is human-operated.
+  occupancy: human

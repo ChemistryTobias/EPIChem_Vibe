@@ -1,5 +1,5 @@
 """Tests for the write API (ADR 0004): POST/PUT/DELETE + revisions for the
-8 registry kinds. Matches test_api.py's TestClient + sqlite-in-memory
+registry kinds. Matches test_api.py's TestClient + sqlite-in-memory
 pattern; each test builds its own client fixture rather than sharing
 test_api.py's pre-seeded one, since these tests mostly create their own data
 through the endpoints under test.
@@ -8,7 +8,7 @@ through the endpoints under test.
 import pytest
 from fastapi.testclient import TestClient
 
-from epichem.models import Bench, CapabilityClass, Lab, Site, Station, Workcell, Zone
+from epichem.models import CapabilityClass, Lab, Site, Station
 
 
 @pytest.fixture
@@ -100,17 +100,8 @@ def _make_topology_chain(session):
     lab = Lab(code="LAB-DEV", name="Lab Dev", site_id=site.id)
     session.add(lab)
     session.flush()
-    zone = Zone(code="ZONE-DEV", name="Zone Dev", lab_id=lab.id)
-    session.add(zone)
-    session.flush()
-    cell = Workcell(code="CELL-DEV", name="Cell Dev", zone_id=zone.id)
-    session.add(cell)
-    session.flush()
-    bench = Bench(code="BENCH-DEV", name="Bench Dev", workcell_id=cell.id)
-    session.add(bench)
-    session.flush()
-    station_a = Station(code="STA-A", name="Station A", bench_id=bench.id)
-    station_b = Station(code="STA-B", name="Station B", bench_id=bench.id)
+    station_a = Station(code="STA-A", name="Station A", lab_id=lab.id)
+    station_b = Station(code="STA-B", name="Station B", lab_id=lab.id)
     session.add_all([station_a, station_b])
     session.flush()
     cc = CapabilityClass(name="HeaterStirrer", actions={"heat": {}, "stir": {}})

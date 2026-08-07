@@ -1,12 +1,9 @@
 from epichem.models import (
-    Bench,
     CapabilityClass,
     Device,
     Lab,
     Site,
     Station,
-    StationDeviceBinding,
-    Workcell,
     Zone,
 )
 
@@ -24,70 +21,82 @@ def test_topology_chain_persists(session):
     session.add(zone)
     session.flush()
 
-    cell = Workcell(code="CELL-A", name="Cell A", zone_id=zone.id)
-    session.add(cell)
-    session.flush()
-
-    bench = Bench(code="BENCH-A2", name="Bench A2", workcell_id=cell.id)
-    session.add(bench)
-    session.flush()
-
-    station = Station(code="HP1", name="HP1", bench_id=bench.id)
+    # A station belongs to a lab always, and optionally to a zone (ADR 0007).
+    station = Station(code="HP1", name="HP1", lab_id=lab.id, zone_id=zone.id)
     session.add(station)
     session.commit()
 
     assert lab.site_id == site.id
-    assert station.bench.workcell.zone.lab.site_id == site.id
+    assert station.lab.site_id == site.id
+    assert station.zone.lab.site_id == site.id
 
 
-def test_device_capability_class_and_station_binding(session):
+def test_station_without_a_zone_is_valid(session):
+    """A station may sit directly under a lab (ADR 0007: zone is optional)."""
+    site = Site(code="SITE-Z", name="Site")
+    session.add(site)
+    session.flush()
+    lab = Lab(code="LAB-Z", name="Lab", site_id=site.id)
+    session.add(lab)
+    session.flush()
+
+    station = Station(code="ST-Z", name="Station", lab_id=lab.id)
+    session.add(station)
+    session.commit()
+
+    assert station.zone_id is None
+    assert station.lab_id == lab.id
+
+
+def test_device_belongs_to_a_station(session):
     cc = CapabilityClass(name="HeaterStirrer", actions={"heat": {}, "stir": {}})
     session.add(cc)
-    bench = Bench(code="BENCH-A2", name="Bench A2", workcell_id=_seed_workcell(session).id)
-    session.add(bench)
-    session.flush()
-    station = Station(code="HP1", name="HP1", bench_id=bench.id)
-    session.add(station)
-    session.flush()
+    station = _seed_station(session)
 
     device = Device(
         code="DEV-HP-001",
         name="Hotplate H1",
+        station_id=station.id,
         capability_class_id=cc.id,
         capabilities=["heat", "stir"],
     )
     session.add(device)
-    session.flush()
-    session.add(StationDeviceBinding(station_id=station.id, device_id=device.id, role="owns"))
     session.commit()
 
     assert device.capability_class_id == cc.id
     assert device.capabilities == ["heat", "stir"]
+    assert device.station_id == station.id
+    assert device.station_code == "HP1"
+    assert device in station.devices
 
 
-def test_device_containment_tree(session):
-    parent = Device(code="DEV-LH-001", name="Liquid Handler 01")
-    session.add(parent)
+def test_device_containment_tree_with_a_module(session):
+    """A module (node_kind="module") groups devices via the parent_id tree."""
+    station = _seed_station(session)
+    module = Device(
+        code="MOD-DECK", name="Deck", node_kind="module", station_id=station.id
+    )
+    session.add(module)
     session.flush()
-    child = Device(code="DEV-LH-001-ARM", name="Arm", parent_id=parent.id)
+    child = Device(
+        code="DEV-LH-001", name="Liquid Handler", parent_id=module.id, station_id=station.id
+    )
     session.add(child)
     session.commit()
 
-    assert child.parent_id == parent.id
-    assert child in parent.children
+    assert module.node_kind == "module"
+    assert child.parent_id == module.id
+    assert child in module.children
 
 
-def _seed_workcell(session) -> Workcell:
+def _seed_station(session) -> Station:
     site = Site(code="SITE-X", name="Site X")
     session.add(site)
     session.flush()
     lab = Lab(code="LAB-X", name="Lab X", site_id=site.id)
     session.add(lab)
     session.flush()
-    zone = Zone(code="ZONE-X", name="Zone X", lab_id=lab.id)
-    session.add(zone)
+    station = Station(code="HP1", name="HP1", lab_id=lab.id)
+    session.add(station)
     session.flush()
-    cell = Workcell(code="CELL-X", name="Cell X", zone_id=zone.id)
-    session.add(cell)
-    session.flush()
-    return cell
+    return station

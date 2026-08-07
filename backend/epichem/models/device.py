@@ -1,7 +1,15 @@
-"""Device model (§6.1): a containment tree of Device -> child Device ->
-Signal, decoupled from Station via a many-to-many binding with a role
-(§5.1: "fix this with a proper many-to-many station_device_binding carrying
-a role (owns, services, observes)").
+"""Device model (§6.1, ADR 0007): a containment tree of node -> child node ->
+Signal, belonging to a Station.
+
+One table holds both the controllable leaf (`node_kind="device"`) and the
+recursive `Module` (`node_kind="module"`: a grouping of devices, a sub-assembly,
+or a passive component with no driver). ADR 0007 folds Module into this tree via
+the `node_kind` discriminator rather than a second near-duplicate table; the
+existing `parent_id` self-reference does the nesting.
+
+A node belongs to a Station via `station_id` (ADR 0007 replaces M1's
+many-to-many `StationDeviceBinding` — a station is now simply the group its
+devices point at). `parent_id` nests modules/devices *within* that station.
 """
 
 import uuid as uuid_mod
@@ -20,6 +28,17 @@ if TYPE_CHECKING:  # avoids a topology <-> device import cycle at runtime
 class Device(RegistryEntity):
     __tablename__ = "devices"
 
+    # "device" (controllable leaf, has a capability class / transport / signals)
+    # or "module" (grouping / sub-assembly / passive component). ADR 0007.
+    node_kind: Mapped[str] = mapped_column(default="device")
+
+    # The station this node belongs to (ADR 0007). Nullable so a node can be
+    # created before it's placed, and so a module can nest under a parent that
+    # already carries the station; the write path fills it in from the parent
+    # when omitted.
+    station_id: Mapped[uuid_mod.UUID | None] = mapped_column(
+        ForeignKey("stations.id"), default=None
+    )
     parent_id: Mapped[uuid_mod.UUID | None] = mapped_column(
         ForeignKey("devices.id"), default=None
     )
@@ -27,10 +46,9 @@ class Device(RegistryEntity):
 
     # spec.class — raw dotted reference from the descriptor (e.g.
     # "epichem.classes.HeaterStirrer"), plus the resolved FK the write path
-    # (epichem.registry.resolve_device_references) fills in once it can
-    # match the trailing segment to a registered CapabilityClass.name. Kept
-    # as two fields because the descriptor's dotted-path convention isn't
-    # itself a database key.
+    # (epichem.registry.resolve_device_references) fills in once it can match
+    # the trailing segment to a registered CapabilityClass.name. Both are None
+    # for a passive module (node_kind="module"), which promises no capability.
     capability_class_ref: Mapped[str | None] = mapped_column(default=None)
     capability_class_id: Mapped[uuid_mod.UUID | None] = mapped_column(
         ForeignKey("capability_classes.id"), default=None
@@ -44,8 +62,7 @@ class Device(RegistryEntity):
     transport_uri: Mapped[str | None] = mapped_column(default=None)
     transport_ioc_host: Mapped[str | None] = mapped_column(default=None)
     # §6.2's nominal/degraded flag for the degraded vendor-bridge onboarding
-    # path. The loader has always accepted it; before this column existed it
-    # was parsed and then silently dropped on the way to the database.
+    # path.
     transport_quality: Mapped[str] = mapped_column(default="nominal")
 
     network_netbox_device_id: Mapped[int | None] = mapped_column(default=None)
@@ -53,9 +70,9 @@ class Device(RegistryEntity):
     network_mac: Mapped[str | None] = mapped_column(default=None)
     network_vlan: Mapped[str | None] = mapped_column(default=None)
 
-    # location.{lab,zone,workcell,bench} are implied by the station binding
-    # (a station already sits under bench->workcell->zone->lab); only pose
-    # is device-specific (a robot arm's offset from its nominal station).
+    # location.{lab,zone,station} are implied by station_id (a station sits
+    # under zone?->lab); only pose is device-specific (an offset from the
+    # nominal station position).
     pose_x_mm: Mapped[float | None] = mapped_column(default=None)
     pose_y_mm: Mapped[float | None] = mapped_column(default=None)
     pose_z_mm: Mapped[float | None] = mapped_column(default=None)
@@ -76,19 +93,23 @@ class Device(RegistryEntity):
     parent: Mapped["Device | None"] = relationship(
         back_populates="children", remote_side="Device.id"
     )
-    # Both cascade: a device's signals and its station bindings are owned by
-    # the device and are meaningless without it. Without this, deleting a
-    # device either raised IntegrityError forever (any device imported with
-    # `location.station` has a binding, so DELETE could never succeed against
-    # Postgres) or, with sqlite's foreign keys off, silently orphaned the
-    # binding row. Deleting the *device*, not its links, is what the caller
-    # asked for.
+    station: Mapped["Station | None"] = relationship(back_populates="devices")
+    # Signals are owned by the device and meaningless without it: deleting a
+    # device deletes its signals.
     signals: Mapped[list["Signal"]] = relationship(
         back_populates="device", cascade="all, delete-orphan"
     )
-    station_bindings: Mapped[list["StationDeviceBinding"]] = relationship(
-        back_populates="device", cascade="all, delete-orphan"
-    )
+
+    @property
+    def station_code(self) -> str | None:
+        """The code of the station this node belongs to, for `DeviceOut`.
+
+        Station is a direct FK now (ADR 0007 removed the binding table), so this
+        is a plain lookup — exposed as a property rather than a column so
+        `DeviceOut` (from_attributes) picks it up and every Revision snapshot
+        records it, without the write path having to patch the snapshot by hand.
+        """
+        return self.station.code if self.station is not None else None
 
 
 class Signal(Base, TimestampMixin):
@@ -111,25 +132,3 @@ class Signal(Base, TimestampMixin):
     kind: Mapped[str] = mapped_column(default="normal")  # primary|config|normal|omitted
 
     device: Mapped[Device] = relationship(back_populates="signals")
-
-
-class StationDeviceBinding(Base, TimestampMixin):
-    """§5.1: decouples Station from Device. `role` is one of owns/services/
-    observes — e.g. a robot arm *services* many stations; a hotplate *owns*
-    the one station it sits on.
-    """
-
-    __tablename__ = "station_device_bindings"
-    __table_args__ = (
-        UniqueConstraint("station_id", "device_id", "role", name="uq_station_device_role"),
-    )
-
-    id: Mapped[uuid_mod.UUID] = mapped_column(primary_key=True, default=uuid7)
-    station_id: Mapped[uuid_mod.UUID] = mapped_column(ForeignKey("stations.id"))
-    device_id: Mapped[uuid_mod.UUID] = mapped_column(ForeignKey("devices.id"))
-    role: Mapped[str] = mapped_column(default="owns")
-
-    # A binding is a link, owned by both ends: deleting either the station or
-    # the device removes the link, not the thing at the other end.
-    device: Mapped[Device] = relationship(back_populates="station_bindings")
-    station: Mapped["Station"] = relationship(back_populates="device_bindings")

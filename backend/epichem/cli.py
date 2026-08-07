@@ -16,14 +16,12 @@ from epichem import exporter, importer, migrations
 from epichem.api.schemas import SampleOut
 from epichem.db import SessionLocal, engine
 from epichem.models import (
-    Bench,
     CapabilityClass,
     Device,
     Lab,
     Sample,
     Site,
     Station,
-    Workcell,
     Zone,
 )
 from epichem.registry import create_entity
@@ -35,8 +33,6 @@ KIND_CLI = [
     ("Site", "site", Site, "code"),
     ("Lab", "lab", Lab, "code"),
     ("Zone", "zone", Zone, "code"),
-    ("Workcell", "workcell", Workcell, "code"),
-    ("Bench", "bench", Bench, "code"),
     ("Station", "station", Station, "code"),
     ("Device", "device", Device, "code"),
     ("CapabilityClass", "device-class", CapabilityClass, "name"),

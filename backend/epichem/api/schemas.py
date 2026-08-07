@@ -28,6 +28,8 @@ class LabOut(OutBase):
     room_number: str | None
     environment_class: str
     access_control_group: str | None
+    grid_cols: int
+    grid_rows: int
 
 
 class ZoneOut(OutBase):
@@ -39,40 +41,25 @@ class ZoneOut(OutBase):
     pressure: str | None
     temperature_class: str | None
     hazard_class: str | None
-
-
-class WorkcellOut(OutBase):
-    id: uuid.UUID
-    code: str
-    name: str
-    zone_id: uuid.UUID
-    queueserver_endpoint: str | None
-    redis_namespace: str | None
-    state: str
-    owning_group: str | None
-
-
-class BenchOut(OutBase):
-    id: uuid.UUID
-    code: str
-    name: str
-    workcell_id: uuid.UUID
-    grid_cols: int
-    grid_rows: int
-    height_mm: float | None
+    occupancy: str
 
 
 class StationOut(OutBase):
     id: uuid.UUID
     code: str
     name: str
-    bench_id: uuid.UUID
+    lab_id: uuid.UUID
+    zone_id: uuid.UUID | None
     kind: str
     grid_col: int
     grid_row: int
     stack_height: int
     capacity: int
     accepted_labware_types: list[str]
+    queueserver_endpoint: str | None
+    redis_namespace: str | None
+    state: str
+    owning_group: str | None
 
 
 class SignalOut(OutBase):
@@ -97,7 +84,9 @@ class DeviceOut(OutBase):
     id: uuid.UUID
     code: str
     name: str
+    node_kind: str
     labels: dict
+    station_id: uuid.UUID | None
     parent_id: uuid.UUID | None
     capability_class_ref: str | None
     capability_class_id: uuid.UUID | None

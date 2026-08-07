@@ -4,13 +4,13 @@ is the source of truth for topology (ADR 0004) — writes go through
 recording a `Revision`. The M2 layout editor still owns visual layout
 editing; this is CRUD only.
 
-Write endpoints for the six topology kinds (Site/Lab/Zone/Workcell/Bench/
-Station) are near-identical apart from which model/parent/attrs they touch,
-so they're registered from one data-driven table (`TOPOLOGY_WRITE`, imported
-from `epichem.importer`) rather than six hand-written copies. That table and
-the Descriptor->values translation (`resolve_topology_values`) are shared
-with `epichem.importer`'s YAML import path, so there's exactly one copy of
-each, not one per caller.
+Write endpoints for the topology kinds (Site/Lab/Zone/Station, ADR 0007) are
+near-identical apart from which model/parent/attrs they touch, so they're
+registered from one data-driven table (`TOPOLOGY_WRITE`, imported from
+`epichem.importer`) rather than hand-written copies. That table and the
+Descriptor->values translation (`resolve_topology_values`) are shared with
+`epichem.importer`'s YAML import path, so there's exactly one copy of each,
+not one per caller.
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -23,17 +23,15 @@ from epichem.api.deps import get_session
 from epichem.api.errors import ConflictProblem, UnprocessableProblem
 from epichem.api.resolve import resolve_by_code_or_id
 from epichem.api.schemas import (
-    BenchOut,
     LabOut,
     RevisionOut,
     SiteOut,
     StationOut,
-    WorkcellOut,
     ZoneOut,
 )
 from epichem.api.validation import check_descriptor_kind
 from epichem.importer import TOPOLOGY_WRITE, TopologyKind, resolve_topology_values
-from epichem.models import Bench, Lab, Site, Station, Workcell, Zone
+from epichem.models import Lab, Site, Station, Zone
 from epichem.registry import create_entity, delete_entity, list_revisions, update_entity
 from epichem.schemas.descriptor import Descriptor
 
@@ -82,48 +80,17 @@ def get_zone(ident: str, session: Session = Depends(get_session)):
     return resolve_by_code_or_id(session, Zone, ident)
 
 
-@router.get("/workcells", response_model=list[WorkcellOut])
-def list_workcells(
-    session: Session = Depends(get_session),
-    zone: str | None = Query(None, description="Filter by Zone.code"),
-):
-    stmt = select(Workcell)
-    if zone:
-        stmt = stmt.join(Zone, Zone.id == Workcell.zone_id).where(Zone.code == zone)
-    return session.execute(stmt).scalars().all()
-
-
-@router.get("/workcells/{ident}", response_model=WorkcellOut)
-def get_workcell(ident: str, session: Session = Depends(get_session)):
-    return resolve_by_code_or_id(session, Workcell, ident)
-
-
-@router.get("/benches", response_model=list[BenchOut])
-def list_benches(
-    session: Session = Depends(get_session),
-    workcell: str | None = Query(None, description="Filter by Workcell.code"),
-):
-    stmt = select(Bench)
-    if workcell:
-        stmt = stmt.join(Workcell, Workcell.id == Bench.workcell_id).where(
-            Workcell.code == workcell
-        )
-    return session.execute(stmt).scalars().all()
-
-
-@router.get("/benches/{ident}", response_model=BenchOut)
-def get_bench(ident: str, session: Session = Depends(get_session)):
-    return resolve_by_code_or_id(session, Bench, ident)
-
-
 @router.get("/stations", response_model=list[StationOut])
 def list_stations(
     session: Session = Depends(get_session),
-    bench: str | None = Query(None, description="Filter by Bench.code"),
+    lab: str | None = Query(None, description="Filter by Lab.code"),
+    zone: str | None = Query(None, description="Filter by Zone.code"),
 ):
     stmt = select(Station)
-    if bench:
-        stmt = stmt.join(Bench, Bench.id == Station.bench_id).where(Bench.code == bench)
+    if lab:
+        stmt = stmt.join(Lab, Lab.id == Station.lab_id).where(Lab.code == lab)
+    if zone:
+        stmt = stmt.join(Zone, Zone.id == Station.zone_id).where(Zone.code == zone)
     return session.execute(stmt).scalars().all()
 
 

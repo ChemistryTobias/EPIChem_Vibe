@@ -13,9 +13,9 @@ so this is a lossless round-trip despite not reproducing the original file's
 `code` value verbatim.
 
 Device `location` only ever reconstructs `spec.location.station` — `lab`/
-`zone`/`workcell`/`bench` are left unset, matching the write side, which
-never reads them (`api/routers/devices.py`'s `_device_values` only consumes
-`spec.location.station` and `spec.location.pose`).
+`zone` are left unset, matching the write side, which never reads them (only
+`spec.location.station` and `spec.location.pose` are consumed). Station is a
+direct FK now (ADR 0007), read straight off `obj.station`.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from epichem.importer import TOPOLOGY_BY_KIND, TOPOLOGY_WRITE, TopologyKind, station_codes_by_device
+from epichem.importer import TOPOLOGY_BY_KIND, TOPOLOGY_WRITE, TopologyKind
 from epichem.models import CapabilityClass, Device
 
 API_VERSION = "epichem.dev/v1"
@@ -37,8 +37,6 @@ _SUBDIR_BY_KIND = {
     "Site": "topology",
     "Lab": "topology",
     "Zone": "topology",
-    "Workcell": "topology",
-    "Bench": "topology",
     "Station": "topology",
     "Device": "devices",
     "CapabilityClass": "classes",
@@ -65,6 +63,10 @@ def _export_topology(entry: TopologyKind, obj: Any) -> dict:
     spec: dict[str, Any] = {}
     if entry.parent_field:
         spec[entry.parent_field] = getattr(obj, entry.parent_field).code
+    for ref_field, _model in entry.optional_refs:
+        ref = getattr(obj, ref_field)
+        if ref is not None:
+            spec[ref_field] = ref.code
     for attr in entry.attrs:
         spec[attr] = getattr(obj, attr)
     return {
@@ -90,12 +92,18 @@ def _export_capability_class(obj: CapabilityClass) -> dict:
 
 def _export_device(session: Session, obj: Device) -> dict:
     spec: dict[str, Any] = {"class": obj.capability_class_ref}
+    # Omitted when "device" (the default), kept for modules — so a plain device
+    # stays clean and a module round-trips (ADR 0007).
+    if obj.node_kind != "device":
+        spec["node_kind"] = obj.node_kind
     if obj.parent is not None:
         spec["parent"] = obj.parent.code
 
     if obj.ophyd_import:
         spec["ophyd"] = {"import": obj.ophyd_import, "args": obj.ophyd_args}
 
+    # A passive module has no transport; leaving protocol None makes _prune drop
+    # the whole block, which re-imports as `transport: None` (now optional).
     spec["transport"] = {
         "protocol": obj.transport_protocol,
         "uri": obj.transport_uri,
@@ -112,9 +120,8 @@ def _export_device(session: Session, obj: Device) -> dict:
     }
 
     location: dict[str, Any] = {}
-    station_code = station_codes_by_device(session, [obj.id]).get(obj.id)
-    if station_code:
-        location["station"] = station_code
+    if obj.station is not None:
+        location["station"] = obj.station.code
     pose = _prune(
         {
             "x_mm": obj.pose_x_mm,

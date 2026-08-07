@@ -54,7 +54,9 @@ def test_every_model_table_exists_after_upgrade(migrated_db):
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     # The tables the reader is most likely to check for by name.
-    assert {"samples", "revisions", "station_device_bindings"} <= tables
+    assert {"samples", "revisions", "stations", "devices"} <= tables
+    # ADR 0007 removed these — guard against a stray re-add.
+    assert not ({"workcells", "benches", "station_device_bindings"} & tables)
 
 
 def test_downgrade_to_base_drops_everything(migrated_db):

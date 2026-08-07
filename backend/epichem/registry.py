@@ -149,28 +149,35 @@ def list_revisions(session: Session, entity_type: str, entity_id: uuid.UUID) -> 
 
 def resolve_device_references(
     session: Session,
-    capability_class_ref: str,
+    capability_class_ref: str | None,
     capabilities: list[str],
     station_code: str | None,
     parent_code: str | None = None,
 ) -> dict:
-    """Validate and resolve a single Device's cross-references. Raises
+    """Validate and resolve a single node's cross-references. Raises
     ValueError describing every problem found (mirrors reconciler.py's
     per-device problem list) if resolution fails. Returns
-    {"capability_class_id": UUID, "station_id": UUID | None,
+    {"capability_class_id": UUID | None, "station_id": UUID | None,
     "parent_id": UUID | None}.
+
+    `capability_class_ref` is None for a passive module (ADR 0007: a module
+    promises no capability), in which case class resolution is skipped.
     """
     problems: list[str] = []
 
-    class_name = capability_class_ref.rsplit(".", 1)[-1]
-    cc = session.execute(
-        select(CapabilityClass).where(CapabilityClass.name == class_name)
-    ).scalar_one_or_none()
-    if cc is None:
-        problems.append(
-            f"class {capability_class_ref!r} does not resolve to any registered "
-            f"CapabilityClass (looked for name {class_name!r})"
-        )
+    capability_class_id = None
+    if capability_class_ref is not None:
+        class_name = capability_class_ref.rsplit(".", 1)[-1]
+        cc = session.execute(
+            select(CapabilityClass).where(CapabilityClass.name == class_name)
+        ).scalar_one_or_none()
+        if cc is None:
+            problems.append(
+                f"class {capability_class_ref!r} does not resolve to any registered "
+                f"CapabilityClass (looked for name {class_name!r})"
+            )
+        else:
+            capability_class_id = cc.id
 
     all_actions: set[str] = set()
     for c in session.execute(select(CapabilityClass)).scalars():
@@ -200,4 +207,8 @@ def resolve_device_references(
     if problems:
         raise ValueError("; ".join(problems))
 
-    return {"capability_class_id": cc.id, "station_id": station_id, "parent_id": parent_id}
+    return {
+        "capability_class_id": capability_class_id,
+        "station_id": station_id,
+        "parent_id": parent_id,
+    }

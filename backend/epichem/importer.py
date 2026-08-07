@@ -11,18 +11,16 @@ key conflict), resolve the existing row and call `update_entity` instead
 second time, without the caller needing to know in advance whether the row
 exists yet.
 
-`import_directory` mirrors the retired `reconciler.py`'s upsert order
-(CapabilityClass, then topology in Site->Lab->Zone->Workcell->Bench->Station
-order, then Device) and its partial-failure isolation: one descriptor
-failing to resolve is reported as an "error" item for that descriptor only
-and never blocks the rest of the batch. Unlike the old reconciler, a Device
-whose `parent` points at another device in the *same* import batch is not
-cascade-resolved across multiple passes — it must already exist in the
-registry (e.g. imported in an earlier run, or appear first when sorted by
-file path). This is a deliberate scope cut: ADR 0004 hands bulk import the
-CapabilityClass/topology/Device dependency order, not the reconciler's
-fixed-point batch cascade for intra-batch Device parents, and no current
-descriptor set exercises device-to-device parenting.
+`import_directory` upserts in dependency order (CapabilityClass, then topology
+in Site->Lab->Zone->Station order, ADR 0007, then Device) with partial-failure
+isolation: one descriptor failing to resolve is reported as an "error" item for
+that descriptor only and never blocks the rest of the batch. A Device whose
+`parent` points at another device in the *same* import batch is not
+cascade-resolved across passes — it must already exist in the registry (imported
+earlier, or ordered first by file path). Deliberate scope cut: ADR 0004 hands
+bulk import a fixed dependency order, not the retired reconciler's fixed-point
+cascade for intra-batch Device parents, and no current descriptor set exercises
+device-to-device parenting.
 """
 
 from __future__ import annotations
@@ -31,37 +29,23 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NamedTuple
-from uuid import UUID
 
 import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from epichem.api.schemas import (
-    BenchOut,
     CapabilityClassOut,
     DeviceOut,
     LabOut,
     SiteOut,
     StationOut,
-    WorkcellOut,
     ZoneOut,
 )
 from epichem.descriptors.loader import DescriptorError, load_descriptors
-from epichem.models import (
-    Bench,
-    CapabilityClass,
-    Device,
-    Lab,
-    Site,
-    Station,
-    StationDeviceBinding,
-    Workcell,
-    Zone,
-)
+from epichem.models import CapabilityClass, Device, Lab, Site, Station, Zone
 from epichem.registry import (
     create_entity,
-    record_revision,
     resolve_device_references,
     update_entity,
 )
@@ -88,7 +72,7 @@ class ImportReport:
         return not self.loader_errors and not any(i.action == "error" for i in self.items)
 
 
-# ---- topology (Site -> Lab -> Zone -> Workcell -> Bench -> Station) --------
+# ---- topology (Site -> Lab -> Zone -> Station, ADR 0007) -------------------
 
 
 class TopologyKind(NamedTuple):
@@ -104,14 +88,19 @@ class TopologyKind(NamedTuple):
     plural: str  # HTTP path segment
     model: type
     out_schema: type
-    #: Name of the spec field naming this kind's parent, or None for Site.
-    #: The parent FK column is always f"{parent_field}_id", and the ORM
+    #: Name of the spec field naming this kind's required parent, or None for
+    #: Site. The parent FK column is always f"{parent_field}_id", and the ORM
     #: relationship attribute on the child is always `parent_field` itself
-    #: (Lab.site, Zone.lab, ...), which the exporter relies on too.
+    #: (Lab.site, Zone.lab, Station.lab), which the exporter relies on too.
     parent_field: str | None
     parent_model: type | None
     #: Attrs copied 1:1 from spec to ORM column.
     attrs: list[str]
+    #: Optional cross-references, resolved like the parent but nullable — used
+    #: by Station's optional `zone` (ADR 0007: a station may sit in a zone).
+    #: Each is (spec_field, model); the FK column and relationship attr are
+    #: f"{spec_field}_id" and `spec_field`, same convention as the parent.
+    optional_refs: list[tuple[str, type]] = []
 
 
 TOPOLOGY_WRITE = [
@@ -123,7 +112,7 @@ TOPOLOGY_WRITE = [
         LabOut,
         "site",
         Site,
-        ["room_number", "environment_class", "access_control_group"],
+        ["room_number", "environment_class", "access_control_group", "grid_cols", "grid_rows"],
     ),
     TopologyKind(
         "Zone",
@@ -132,34 +121,28 @@ TOPOLOGY_WRITE = [
         ZoneOut,
         "lab",
         Lab,
-        ["atmosphere", "pressure", "temperature_class", "hazard_class"],
-    ),
-    TopologyKind(
-        "Workcell",
-        "workcells",
-        Workcell,
-        WorkcellOut,
-        "zone",
-        Zone,
-        ["queueserver_endpoint", "redis_namespace", "state", "owning_group"],
-    ),
-    TopologyKind(
-        "Bench",
-        "benches",
-        Bench,
-        BenchOut,
-        "workcell",
-        Workcell,
-        ["grid_cols", "grid_rows", "height_mm"],
+        ["atmosphere", "pressure", "temperature_class", "hazard_class", "occupancy"],
     ),
     TopologyKind(
         "Station",
         "stations",
         Station,
         StationOut,
-        "bench",
-        Bench,
-        ["kind", "grid_col", "grid_row", "stack_height", "capacity", "accepted_labware_types"],
+        "lab",
+        Lab,
+        [
+            "kind",
+            "grid_col",
+            "grid_row",
+            "stack_height",
+            "capacity",
+            "accepted_labware_types",
+            "queueserver_endpoint",
+            "redis_namespace",
+            "state",
+            "owning_group",
+        ],
+        [("zone", Zone)],
     ),
 ]
 
@@ -184,7 +167,8 @@ def resolve_parent_id(
 
 def resolve_topology_values(entry: TopologyKind, descriptor: Descriptor, session: Session) -> dict:
     """Descriptor -> the `values` dict create_entity/update_entity take.
-    Raises ValueError if the parent code doesn't resolve.
+    Raises ValueError if the required parent or an optional ref that *was*
+    given doesn't resolve.
     """
     spec = descriptor.typed_spec()
     values: dict[str, Any] = {"code": descriptor.metadata.code, "name": descriptor.metadata.name}
@@ -194,6 +178,11 @@ def resolve_topology_values(entry: TopologyKind, descriptor: Descriptor, session
         parent_code = getattr(spec, entry.parent_field)
         values[f"{entry.parent_field}_id"] = resolve_parent_id(
             session, entry.parent_model, entry.parent_field, parent_code
+        )
+    for ref_field, ref_model in entry.optional_refs:
+        ref_code = getattr(spec, ref_field)
+        values[f"{ref_field}_id"] = (
+            resolve_parent_id(session, ref_model, ref_field, ref_code) if ref_code else None
         )
     return values
 
@@ -216,22 +205,25 @@ def capability_class_values(descriptor: Descriptor, spec) -> dict:
 def device_values(descriptor: Descriptor, spec, refs: dict) -> dict:
     ophyd_import = spec.ophyd.import_ if spec.ophyd else None
     ophyd_args = spec.ophyd.args if spec.ophyd else {}
+    transport = spec.transport  # None for a passive module (ADR 0007)
     pose = spec.location.pose
     calibration = spec.operational.calibration
     return {
         "code": descriptor.metadata.code,
         "name": descriptor.metadata.name,
+        "node_kind": spec.node_kind,
         "labels": descriptor.metadata.labels,
+        "station_id": refs["station_id"],
         "parent_id": refs["parent_id"],
         "capability_class_ref": spec.class_,
         "capability_class_id": refs["capability_class_id"],
         "capabilities": spec.capabilities,
         "ophyd_import": ophyd_import,
         "ophyd_args": ophyd_args,
-        "transport_protocol": spec.transport.protocol,
-        "transport_uri": spec.transport.uri,
-        "transport_ioc_host": spec.transport.ioc_host,
-        "transport_quality": spec.transport.quality,
+        "transport_protocol": transport.protocol if transport else None,
+        "transport_uri": transport.uri if transport else None,
+        "transport_ioc_host": transport.ioc_host if transport else None,
+        "transport_quality": transport.quality if transport else "nominal",
         "network_netbox_device_id": spec.network.netbox_device_id,
         "network_primary_ip": spec.network.primary_ip,
         "network_mac": spec.network.mac,
@@ -249,77 +241,15 @@ def device_values(descriptor: Descriptor, spec, refs: dict) -> dict:
     }
 
 
-def station_codes_by_device(session: Session, device_ids: list[UUID]) -> dict[UUID, str]:
-    if not device_ids:
-        return {}
-    rows = session.execute(
-        select(StationDeviceBinding.device_id, Station.code)
-        .join(Station, Station.id == StationDeviceBinding.station_id)
-        .where(StationDeviceBinding.device_id.in_(device_ids), StationDeviceBinding.role == "owns")
-    ).all()
-    return dict(rows)
-
-
-def finalize_station_binding(
-    session: Session, device: Device, station_id: UUID | None, revision
-) -> bool:
-    """Settle a device's station binding *after* its row has been written,
-    and make the Revision tell the truth about it.
-
-    Two things make this awkward enough to be worth one shared function
-    rather than a copy in the HTTP router and a copy in the import path
-    (which is what this used to be):
-
-    1. `DeviceOut.station_code` isn't a Device column — it comes from the
-       binding table — and the binding can only be written once the Device
-       row has an id, i.e. after create/update_entity already recorded its
-       snapshot. So the snapshot has to be patched afterwards, or every
-       revision would claim `station_code: null`.
-    2. If *only* the binding changed, `update_entity` sees no changed Device
-       column and records nothing — but the entity's observable state did
-       change, so a revision still has to be recorded by hand.
-
-    Returns whether a revision now exists for this write.
+def inherit_station_from_parent(session: Session, refs: dict) -> None:
+    """A node without its own `location.station` but nested under a parent
+    inherits the parent's station (ADR 0007: a module and its devices belong to
+    the same station). Mutates `refs` in place.
     """
-    binding_changed = upsert_station_binding(session, device, station_id)
-    session.flush()
-    station_code = station_codes_by_device(session, [device.id]).get(device.id)
-
-    if revision is not None:
-        revision.snapshot = {**revision.snapshot, "station_code": station_code}
-        return True
-    if binding_changed:
-        snapshot = {
-            **DeviceOut.model_validate(device).model_dump(mode="json"),
-            "station_code": station_code,
-        }
-        record_revision(session, "Device", device.id, "updated", snapshot)
-        return True
-    return False
-
-
-def upsert_station_binding(session: Session, device: Device, station_id: UUID | None) -> bool:
-    """Mirrors the retired reconciler's upsert-with-role="owns" pattern: only
-    touches the binding when a station was resolved; never deletes it (a
-    descriptor that omits `location.station` isn't asserting "no station").
-    Returns whether the binding was created or changed, since that's not
-    visible in `update_entity`'s own change-detection (station_id isn't a
-    Device column).
-    """
-    if station_id is None:
-        return False
-    binding = session.execute(
-        select(StationDeviceBinding).where(
-            StationDeviceBinding.device_id == device.id, StationDeviceBinding.role == "owns"
-        )
-    ).scalar_one_or_none()
-    if binding is None:
-        session.add(StationDeviceBinding(station_id=station_id, device_id=device.id, role="owns"))
-        return True
-    if binding.station_id != station_id:
-        binding.station_id = station_id
-        return True
-    return False
+    if refs["station_id"] is None and refs["parent_id"] is not None:
+        refs["station_id"] = session.execute(
+            select(Device.station_id).where(Device.id == refs["parent_id"])
+        ).scalar_one_or_none()
 
 
 # ---- generic upsert ------------------------------------------------------
@@ -381,12 +311,9 @@ def _apply_device(session: Session, descriptor: Descriptor) -> ImportItem:
     except ValueError as e:
         return ImportItem("Device", code, "error", str(e))
 
+    inherit_station_from_parent(session, refs)
     values = device_values(descriptor, spec, refs)
-    obj, revision, action = _upsert(session, Device, "Device", DeviceOut, "code", values)
-    if finalize_station_binding(session, obj, refs["station_id"], revision) and revision is None:
-        # No Device column changed, but the binding did, so a revision was
-        # recorded — report that as an update, not "unchanged".
-        action = "updated"
+    _obj, _revision, action = _upsert(session, Device, "Device", DeviceOut, "code", values)
     return ImportItem("Device", code, action)
 
 

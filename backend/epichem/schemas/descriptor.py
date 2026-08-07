@@ -5,10 +5,11 @@ HTTP writes share one model and one Descriptor->values translation path
 (epichem.importer). The loader (epichem.descriptors.loader) validates files
 into these before epichem.importer upserts them into the registry.
 
-Topology kinds (Site/Lab/Zone/Workcell/Bench/Station) aren't given an
-explicit YAML example in the plan — only Device (§6.1) and CapabilityClass
-(§6.3) are. Their spec shapes here follow directly from the topology table
-in §5.1 and are recorded as a decision in docs/adr/0003.
+Topology kinds (Site/Lab/Zone/Station) aren't given an explicit YAML example
+in the plan — only Device (§6.1) and CapabilityClass (§6.3) are. Their spec
+shapes here follow the topology table in §5.1 as flattened by ADR 0007
+(Workcell/Bench removed; grid onto Lab; execution binding onto Station;
+Station's parent is a Lab, optionally a Zone).
 """
 
 import uuid
@@ -16,9 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-Kind = Literal[
-    "Site", "Lab", "Zone", "Workcell", "Bench", "Station", "Device", "CapabilityClass"
-]
+Kind = Literal["Site", "Lab", "Zone", "Station", "Device", "CapabilityClass"]
 
 
 class Metadata(BaseModel):
@@ -44,6 +43,10 @@ class LabSpec(BaseModel):
     room_number: str | None = None
     environment_class: Literal["ambient", "glovebox", "fume_hood", "cleanroom"] = "ambient"
     access_control_group: str | None = None
+    # The isometric grid this lab's stations snap onto (ADR 0007: moved off the
+    # removed Bench).
+    grid_cols: int = 1
+    grid_rows: int = 1
 
 
 class ZoneSpec(BaseModel):
@@ -52,31 +55,24 @@ class ZoneSpec(BaseModel):
     pressure: str | None = None
     temperature_class: str | None = None
     hazard_class: str | None = None
-
-
-class WorkcellSpec(BaseModel):
-    zone: str  # Zone.code
-    queueserver_endpoint: str | None = None
-    redis_namespace: str | None = None
-    state: Literal["active", "maintenance", "offline"] = "active"
-    owning_group: str | None = None
-
-
-class BenchSpec(BaseModel):
-    workcell: str  # Workcell.code
-    grid_cols: int = 1
-    grid_rows: int = 1
-    height_mm: float | None = None
+    # §12.2 human-vs-robot safety boundary; "shared" when unclassified.
+    occupancy: Literal["human", "robot", "shared"] = "shared"
 
 
 class StationSpec(BaseModel):
-    bench: str  # Bench.code
+    lab: str  # Lab.code — a station always belongs to a lab (ADR 0007)
+    zone: str | None = None  # Zone.code — optional; a station may sit inside a zone
     kind: str = "generic"
     grid_col: int = 0
     grid_row: int = 0
     stack_height: int = 1
     capacity: int = 1
     accepted_labware_types: list[str] = Field(default_factory=list)
+    # Execution binding, moved off the removed Workcell (ADR 0007).
+    queueserver_endpoint: str | None = None
+    redis_namespace: str | None = None
+    state: Literal["active", "maintenance", "offline"] = "active"
+    owning_group: str | None = None
 
 
 # ---- Device spec (§6.1) -----------------------------------------------------
@@ -124,10 +120,11 @@ class PoseSpec(BaseModel):
 
 
 class LocationSpec(BaseModel):
+    # lab/zone are informational (implied by station); station is authoritative
+    # for placement (ADR 0007). Module nesting is expressed by `spec.parent`,
+    # not here.
     lab: str | None = None
     zone: str | None = None
-    workcell: str | None = None
-    bench: str | None = None
     station: str | None = None
     pose: PoseSpec | None = None
 
@@ -152,10 +149,15 @@ class OperationalSpec(BaseModel):
 class DeviceSpec(BaseModel):
     model_config = {"populate_by_name": True}
 
-    class_: str = Field(alias="class")
+    # "device" (controllable leaf) or "module" (grouping / sub-assembly /
+    # passive component). ADR 0007. A module promises no capability, so `class`
+    # and `transport` are optional — required in practice for a real device,
+    # absent for a passive module.
+    node_kind: Literal["device", "module"] = "device"
+    class_: str | None = Field(default=None, alias="class")
     parent: str | None = None
     ophyd: OphydSpec | None = None
-    transport: TransportSpec
+    transport: TransportSpec | None = None
     network: NetworkSpec = Field(default_factory=NetworkSpec)
     location: LocationSpec = Field(default_factory=LocationSpec)
     capabilities: list[str] = Field(default_factory=list)
@@ -193,8 +195,6 @@ SPEC_BY_KIND: dict[Kind, type[BaseModel]] = {
     "Site": SiteSpec,
     "Lab": LabSpec,
     "Zone": ZoneSpec,
-    "Workcell": WorkcellSpec,
-    "Bench": BenchSpec,
     "Station": StationSpec,
     "Device": DeviceSpec,
     "CapabilityClass": CapabilityClassSpec,

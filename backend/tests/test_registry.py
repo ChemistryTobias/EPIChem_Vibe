@@ -3,15 +3,11 @@ from sqlalchemy import select
 
 from epichem.api.schemas import CapabilityClassOut, DeviceOut, SiteOut
 from epichem.models import (
-    Bench,
     CapabilityClass,
     Device,
     Lab,
     Site,
     Station,
-    StationDeviceBinding,
-    Workcell,
-    Zone,
 )
 from epichem.registry import (
     create_entity,
@@ -89,7 +85,7 @@ def test_list_revisions_ascending_order(session):
     assert [r.action for r in revisions] == ["created", "updated", "deleted"]
 
 
-# ---- Device (cross-references + StationDeviceBinding) ----------------------
+# ---- Device (cross-references + station FK) --------------------------------
 
 
 def _setup_capability_classes(session):
@@ -109,33 +105,22 @@ def _setup_capability_classes(session):
 
 
 def _setup_station(session):
-    # A real Site->...->Bench chain, because foreign keys are enforced in
-    # tests now (conftest turns on sqlite's PRAGMA foreign_keys, matching
-    # what epichem.db does at runtime). This used to attach the station to a
-    # made-up bench id, which only worked because sqlite silently ignored
-    # the constraint — the kind of gap the PRAGMA exists to close.
+    # A real Site->Lab->Station chain (ADR 0007), because foreign keys are
+    # enforced in tests (conftest turns on sqlite's PRAGMA foreign_keys, matching
+    # what epichem.db does at runtime).
     site = Site(code="SITE-R", name="Site R")
     session.add(site)
     session.flush()
     lab = Lab(code="LAB-R", name="Lab R", site_id=site.id)
     session.add(lab)
     session.flush()
-    zone = Zone(code="ZONE-R", name="Zone R", lab_id=lab.id)
-    session.add(zone)
-    session.flush()
-    workcell = Workcell(code="CELL-R", name="Cell R", zone_id=zone.id)
-    session.add(workcell)
-    session.flush()
-    bench = Bench(code="BENCH-R", name="Bench R", workcell_id=workcell.id)
-    session.add(bench)
-    session.flush()
-    station = Station(code="HP1", name="Hotplate Station 1", bench_id=bench.id)
+    station = Station(code="HP1", name="Hotplate Station 1", lab_id=lab.id)
     session.add(station)
     session.flush()
     return station
 
 
-def test_device_create_resolves_capability_class_and_station_binding(session):
+def test_device_create_resolves_capability_class_and_station(session):
     _setup_capability_classes(session)
     station = _setup_station(session)
 
@@ -150,29 +135,27 @@ def test_device_create_resolves_capability_class_and_station_binding(session):
         "code": "DEV-HP-002",
         "name": "Hotplate 2",
         "labels": {},
+        "station_id": refs["station_id"],
         "capability_class_ref": "epichem.classes.HeaterStirrer",
         "capability_class_id": refs["capability_class_id"],
         "capabilities": ["heat", "stir"],
     }
     obj, revision = create_entity(session, Device, "Device", DeviceOut, values)
-    session.add(StationDeviceBinding(station_id=refs["station_id"], device_id=obj.id, role="owns"))
     session.flush()
 
     heater_stirrer = session.execute(
         select(CapabilityClass).where(CapabilityClass.name == "HeaterStirrer")
     ).scalar_one()
     assert obj.capability_class_id == heater_stirrer.id
+    assert obj.station_id == station.id
+    assert obj.station_code == "HP1"
     assert refs["station_id"] == station.id
     assert refs["parent_id"] is None
 
-    binding = session.execute(
-        select(StationDeviceBinding).where(StationDeviceBinding.device_id == obj.id)
-    ).scalar_one()
-    assert binding.station_id == station.id
-    assert binding.role == "owns"
-
     assert revision.action == "created"
     assert revision.snapshot["capability_class_id"] == str(heater_stirrer.id)
+    # station is a direct FK now, so the snapshot records it with no patching.
+    assert revision.snapshot["station_code"] == "HP1"
 
 
 def test_device_create_with_unregistered_capability_is_rejected(session):

@@ -8,7 +8,7 @@ def test_example_virtual_lab_loads_with_no_errors(example_descriptors_dir):
     assert result.errors == []
     kinds = sorted(d.kind for d in result.descriptors)
     assert kinds == sorted(
-        ["Site", "Lab", "Zone", "Workcell", "Bench", "Station", "Station"]
+        ["Site", "Lab", "Zone", "Station", "Station"]
         + ["CapabilityClass"] * 3
         + ["Device"] * 2
     )
@@ -48,7 +48,7 @@ metadata:
   code: ST-MIN
   name: Minimal Station
 spec:
-  bench: BENCH-A2
+  lab: LAB-3
 """
     )
 

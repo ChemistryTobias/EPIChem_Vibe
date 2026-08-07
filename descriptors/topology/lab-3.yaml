@@ -8,3 +8,6 @@ spec:
   room_number: "3.12"
   environment_class: ambient
   access_control_group: lab3-users
+  # The isometric grid this lab's stations snap onto (ADR 0007: moved off Bench).
+  grid_cols: 10
+  grid_rows: 6

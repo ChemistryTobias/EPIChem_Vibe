@@ -13,16 +13,12 @@ from sqlalchemy import select
 from epichem import exporter
 from epichem.api.schemas import DeviceOut
 from epichem.models import (
-    Bench,
     CapabilityClass,
     Device,
     Lab,
     Signal,
     Site,
     Station,
-    StationDeviceBinding,
-    Workcell,
-    Zone,
 )
 from epichem.registry import delete_entity
 
@@ -39,38 +35,27 @@ def client(session, monkeypatch):
 
 
 def _chain(session, suffix=""):
-    """A real Site -> Lab -> Zone -> Workcell -> Bench -> Station chain."""
+    """A real Site -> Lab -> Station chain (ADR 0007)."""
     site = Site(code=f"SITE{suffix}", name="Site")
     session.add(site)
     session.flush()
     lab = Lab(code=f"LAB{suffix}", name="Lab", site_id=site.id)
     session.add(lab)
     session.flush()
-    zone = Zone(code=f"ZONE{suffix}", name="Zone", lab_id=lab.id)
-    session.add(zone)
-    session.flush()
-    cell = Workcell(code=f"CELL{suffix}", name="Cell", zone_id=zone.id)
-    session.add(cell)
-    session.flush()
-    bench = Bench(code=f"BENCH{suffix}", name="Bench", workcell_id=cell.id)
-    session.add(bench)
-    session.flush()
-    station = Station(code=f"ST{suffix}", name="Station", bench_id=bench.id)
+    station = Station(code=f"ST{suffix}", name="Station", lab_id=lab.id)
     session.add(station)
     session.flush()
     return station
 
 
-def _bound_device(session, station, code="DEV-1"):
+def _placed_device(session, station, code="DEV-1"):
     cc = session.execute(select(CapabilityClass)).scalars().first()
     if cc is None:
         cc = CapabilityClass(name="Class", actions={})
         session.add(cc)
         session.flush()
-    device = Device(code=code, name="Device", capability_class_id=cc.id)
+    device = Device(code=code, name="Device", station_id=station.id, capability_class_id=cc.id)
     session.add(device)
-    session.flush()
-    session.add(StationDeviceBinding(station_id=station.id, device_id=device.id, role="owns"))
     session.flush()
     return device
 
@@ -83,32 +68,30 @@ def test_sqlite_enforces_foreign_keys(session):
 
     from epichem.idgen import uuid7
 
-    session.add(Station(code="ORPHAN", name="Orphan", bench_id=uuid7()))
+    session.add(Station(code="ORPHAN", name="Orphan", lab_id=uuid7()))
     with pytest.raises(IntegrityError):
         session.flush()
     session.rollback()
 
 
-def test_deleting_a_device_removes_its_station_binding(session):
-    """Used to be unfixable in both directions: with foreign keys enforced
-    the delete raised IntegrityError forever (every device imported with
-    `location.station` has a binding), and with them off it left an orphaned
-    binding row behind."""
+def test_deleting_a_device_that_belongs_to_a_station_succeeds(session):
+    """A device is the child of its station (ADR 0007: station is a direct FK),
+    so deleting the device is always allowed — the station stays."""
     station = _chain(session)
-    device = _bound_device(session, station)
+    device = _placed_device(session, station)
 
     delete_entity(session, device, "Device", DeviceOut)
     session.flush()
 
     assert session.execute(select(Device)).scalars().all() == []
-    assert session.execute(select(StationDeviceBinding)).scalars().all() == []
+    assert [s.code for s in session.execute(select(Station)).scalars()] == [station.code]
 
 
 def test_deleting_a_device_removes_its_signals(session):
-    """Same defect, other child table — this one bites as soon as M2's
-    introspection service starts populating signals."""
+    """Signals are owned by the device — cascade-deleted with it. Bites as soon
+    as M2's introspection service starts populating signals."""
     station = _chain(session)
-    device = _bound_device(session, station)
+    device = _placed_device(session, station)
     session.add(Signal(device_id=device.id, name="temperature"))
     session.flush()
 
@@ -118,24 +101,28 @@ def test_deleting_a_device_removes_its_signals(session):
     assert session.execute(select(Signal)).scalars().all() == []
 
 
-def test_deleting_a_station_unbinds_but_keeps_the_device(session):
-    """A binding is a link: dropping the station drops the link, not the
-    device at the other end."""
+def test_deleting_a_station_keeps_its_devices_unplaced(session):
+    """A station is a group of devices (ADR 0007), and device.station_id is
+    nullable — so dropping the station keeps the devices at the other end,
+    unplaced (station_id -> None), the same spirit as M1's old station-unbind.
+    """
     station = _chain(session)
-    device = _bound_device(session, station)
+    device = _placed_device(session, station)
 
     session.delete(station)
     session.flush()
 
-    assert session.execute(select(StationDeviceBinding)).scalars().all() == []
-    assert [d.code for d in session.execute(select(Device)).scalars()] == [device.code]
+    assert session.execute(select(Station)).scalars().all() == []
+    survivors = session.execute(select(Device)).scalars().all()
+    assert [d.code for d in survivors] == [device.code]
+    assert survivors[0].station_id is None
+    assert survivors[0].station_code is None
 
 
-def test_delete_device_endpoint_returns_204_for_a_bound_device(client, session):
-    """The HTTP symptom of the same bug: DELETE /devices/{code} answered 409
-    'still referenced by other records' for any device with a station."""
+def test_delete_device_endpoint_returns_204_for_a_placed_device(client, session):
+    """DELETE /devices/{code} succeeds for a device that belongs to a station."""
     station = _chain(session)
-    _bound_device(session, station, code="DEV-HTTP")
+    _placed_device(session, station, code="DEV-HTTP")
     session.commit()
 
     assert client.delete("/api/v1/devices/DEV-HTTP").status_code == 204
@@ -176,7 +163,7 @@ def test_device_out_exposes_every_device_column(client, session):
     mentioned — so it was absent from the API *and* from the Revision
     snapshots that are supposed to be a full record of the row."""
     station = _chain(session)
-    device = _bound_device(session, station, code="DEV-COLS")
+    device = _placed_device(session, station, code="DEV-COLS")
     device.network_netbox_device_id = 4242
     device.transport_quality = "degraded"
     session.commit()

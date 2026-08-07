@@ -1,16 +1,13 @@
 """Device and CapabilityClass endpoints (§8.1 subset): read + write. The
 registry (Postgres) is the source of truth (ADR 0004) — writes go through
 `create_entity`/`update_entity`/`delete_entity` (`epichem.registry`), each
-recording a `Revision`. The Descriptor->values translation and station-
-binding helpers are shared with the YAML import path — see `epichem.importer`.
+recording a `Revision`. The Descriptor->values translation is shared with the
+YAML import path — see `epichem.importer`.
 
-Device create/update need one extra step after the generic write path:
-`DeviceOut.station_code` isn't an ORM column (it comes from the
-`StationDeviceBinding` join, see `_to_device_out` below), so the binding can
-only be settled — and the Revision snapshot corrected — once the Device row
-has an id. `finalize_station_binding` (`epichem.importer`) does that, and is
-shared with the YAML import path so there is one copy of the reasoning
-rather than one per caller.
+`DeviceOut.station_code` is a `Device` property (ADR 0007: station is a direct
+FK now, so it's a plain lookup), which means the generic write path records a
+truthful snapshot with no post-write patching — a device write is just resolve
+references -> build values -> create/update.
 """
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -28,20 +25,9 @@ from epichem.api.validation import check_descriptor_kind
 from epichem.importer import (
     capability_class_values,
     device_values,
-    finalize_station_binding,
-    station_codes_by_device,
+    inherit_station_from_parent,
 )
-from epichem.models import (
-    Bench,
-    CapabilityClass,
-    Device,
-    Lab,
-    Signal,
-    Station,
-    StationDeviceBinding,
-    Workcell,
-    Zone,
-)
+from epichem.models import CapabilityClass, Device, Lab, Signal, Station
 from epichem.registry import (
     create_entity,
     delete_entity,
@@ -52,12 +38,6 @@ from epichem.registry import (
 from epichem.schemas.descriptor import Descriptor
 
 router = APIRouter(prefix="/api/v1", tags=["devices"])
-
-
-def _to_device_out(session: Session, device: Device) -> DeviceOut:
-    out = DeviceOut.model_validate(device)
-    out.station_code = station_codes_by_device(session, [device.id]).get(device.id)
-    return out
 
 
 @router.get(
@@ -89,12 +69,8 @@ def list_devices(
         stmt = stmt.where(Device.operational_mode == mode)
     if lab:
         stmt = (
-            stmt.join(StationDeviceBinding, StationDeviceBinding.device_id == Device.id)
-            .join(Station, Station.id == StationDeviceBinding.station_id)
-            .join(Bench, Bench.id == Station.bench_id)
-            .join(Workcell, Workcell.id == Bench.workcell_id)
-            .join(Zone, Zone.id == Workcell.zone_id)
-            .join(Lab, Lab.id == Zone.lab_id)
+            stmt.join(Station, Station.id == Device.station_id)
+            .join(Lab, Lab.id == Station.lab_id)
             .where(Lab.code == lab)
         )
 
@@ -111,19 +87,14 @@ def list_devices(
     response.headers[TOTAL_COUNT_HEADER] = str(len(devices))
     devices = devices[offset : offset + limit]
 
-    codes = station_codes_by_device(session, [d.id for d in devices])
-    outs = []
-    for device in devices:
-        out = DeviceOut.model_validate(device)
-        out.station_code = codes.get(device.id)
-        outs.append(out)
-    return outs
+    # station_code comes from the Device.station property (ADR 0007).
+    return [DeviceOut.model_validate(device) for device in devices]
 
 
 @router.get("/devices/{ident}", response_model=DeviceOut)
 def get_device(ident: str, session: Session = Depends(get_session)):
     device = resolve_by_code_or_id(session, Device, ident)
-    return _to_device_out(session, device)
+    return DeviceOut.model_validate(device)
 
 
 @router.get("/devices/{ident}/signals", response_model=list[SignalOut])
@@ -219,15 +190,15 @@ def create_device(descriptor: Descriptor, session: Session = Depends(get_session
     check_descriptor_kind(descriptor, "Device")
     spec = descriptor.typed_spec()
     refs = _resolve_device_refs(session, spec)
+    inherit_station_from_parent(session, refs)
     values = device_values(descriptor, spec, refs)
     try:
-        device, revision = create_entity(session, Device, "Device", DeviceOut, values)
+        device, _revision = create_entity(session, Device, "Device", DeviceOut, values)
     except ValueError as e:
         raise ConflictProblem(title="Device already exists", detail=str(e)) from e
 
-    finalize_station_binding(session, device, refs["station_id"], revision)
     session.commit()
-    return _to_device_out(session, device)
+    return DeviceOut.model_validate(device)
 
 
 @router.put(
@@ -238,11 +209,11 @@ def replace_device(ident: str, descriptor: Descriptor, session: Session = Depend
     device = resolve_by_code_or_id(session, Device, ident)
     spec = descriptor.typed_spec()
     refs = _resolve_device_refs(session, spec)
+    inherit_station_from_parent(session, refs)
     values = device_values(descriptor, spec, refs)
-    revision = update_entity(session, device, "Device", DeviceOut, values)
-    finalize_station_binding(session, device, refs["station_id"], revision)
+    update_entity(session, device, "Device", DeviceOut, values)
     session.commit()
-    return _to_device_out(session, device)
+    return DeviceOut.model_validate(device)
 
 
 @router.delete("/devices/{ident}", dependencies=[Depends(require_write_token)], status_code=204)
