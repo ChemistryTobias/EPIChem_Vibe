@@ -119,6 +119,14 @@ If you skip it, nothing here is lost — this file and `docs/HOST_SETUP.md` are 
 matters. You will just log in once more and start with no memory of the conversation, which is
 what this document exists for.
 
+**Update, 2026-08-07:** this script existed but nobody had run it — that's why login kept
+vanishing on every rebuild despite `69aa945` being merged. Run from the host (not the container),
+it copies live into the volume a running container already has mounted, no rebuild required. Done
+once; login confirmed present in the running container afterward. Full account in
+`docs/HOST_SETUP.md` §1.1, including a second, unrelated fix (`moby:false` for docker-in-docker to
+actually start on this host). Still outstanding: a real rebuild to confirm the state survives one,
+per §1's own check.
+
 ## 6. Still open, needs a human
 
 1. **Kubernetes: GitLab agent, or a runner with a kubeconfig?** (ask FHI IT) — blocks the Helm

@@ -25,6 +25,8 @@ the rest of the repo.
 | Lint / typecheck | `ruff check`, `tsc --noEmit` |
 | Every YAML and shell file added here | parsed / `sh -n` |
 | The GitLab remote after the group transfer | `git ls-remote` — see §0.1 |
+| Dev container builds and docker-in-docker starts | `docker version` inside it, see §1.1 |
+| Claude Code login persistence | migrated + confirmed live, see §1.1 |
 
 **NOT verified, because there is no Docker daemon in the dev container:**
 
@@ -125,6 +127,34 @@ ls /commandhistory             # .bash_history — the history volume
 Then rebuild **a second time** and confirm you are still logged into Claude
 Code and that `history` still shows your old commands. One successful rebuild
 proves nothing; the bug was specifically about state not surviving one.
+
+### §1.1 What actually happened here, 2026-08-07
+
+The pinned-volume fix (`69aa945`) was correct but incomplete: it changed
+where the container *looks* for config, but nobody had run
+`preserve-claude-state.sh` to actually move the old data there. Every rebuild
+mounted the new `epichem-claude-config` volume, found it empty, and asked to
+log in again — the exact symptom the fix was supposed to solve. `docker
+volume ls` showed both volumes existed the whole time; the old one,
+`claude-code-config-177m86mlann63cgq426iictpqga63dq45efgff62m5g7uhk0v78l`,
+still had the real `.credentials.json`.
+
+Also found: `moby:true` in the docker-in-docker feature was failing to start
+a nested daemon on this host (see the comment in `devcontainer.json`) —
+`moby:false` fixed it, verified with `docker version` inside a running
+container.
+
+Fixed, from the host, without a rebuild (volumes are visible live to a
+running container):
+
+```bash
+bash .devcontainer/preserve-claude-state.sh   # copies old volume -> epichem-claude-config
+docker exec -u node <container> ls -la /home/node/.claude   # confirms .credentials.json present
+```
+
+Still worth doing once: rebuild the container for real and confirm login
+survives it, per the paragraph above. That has not been done — only the live
+volume copy has been verified.
 
 ### Why docker-in-docker and not the lighter option
 

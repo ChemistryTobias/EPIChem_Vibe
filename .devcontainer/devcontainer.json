@@ -26,8 +26,14 @@
     // mount as empty directories against the host daemon. A nested daemon
     // sees the same filesystem this container does, so the bind mounts and
     // the compose file work unmodified.
+    // moby:false, not the feature's default (true). On this host, "moby: true"
+    // (installs Docker via the upstream get.docker.com/moby packages) failed to
+    // bring up the nested daemon; "false" (installs the distro docker.io
+    // packages instead) does not. The exact original error wasn't captured —
+    // if you change this back, verify with `docker version` inside the
+    // container before trusting it.
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
-      "moby": true,
+      "moby": false,
       "dockerDashComposeVersion": "v2"
     },
     // The backend needs a real Python; the base image is Node-only.
