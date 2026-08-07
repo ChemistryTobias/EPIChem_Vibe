@@ -26,13 +26,13 @@ export function App() {
 
   return (
     <AppShell route={route}>
-      {route === "layout" && (
+      {route === "lab-layout" && (
         <Suspense fallback={<div className="async async--loading label">Loading floor plan…</div>}>
           <LayoutScreen />
         </Suspense>
       )}
-      {route === "topology" && <TopologyScreen />}
-      {route === "devices" && <DevicesScreen />}
+      {route === "hierarchy" && <TopologyScreen />}
+      {route === "device-status" && <DevicesScreen />}
       {route === "samples" && <SamplesScreen />}
     </AppShell>
   );

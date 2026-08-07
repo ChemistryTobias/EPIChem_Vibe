@@ -146,8 +146,9 @@ Hardening done in a later pass (see `git log`):
 
 **Status: in progress. Scope reshaped 2026-08-07 (ADRs 0007–0010)** — before the device-plane work
 proper, M2 began with a topology rework and UI re-section agreed with the user. The topology
-flatten and the metric lab canvas are built and green; the Device-Management creation flow and
-NetBox/CSV import are next.
+flatten, the metric lab canvas and the Device-Management shell (nav re-section + Device Status
+stub) are built and green; the New-Device-first creation flow is next. NetBox/CSV import is
+explicitly deferred to a late stage (see M6).
 
 **M2 front-load (the agreed first buildable slice, ADR 0009):**
 
@@ -161,18 +162,19 @@ NetBox/CSV import are next.
   corrected to ADR 0007 (the hotplate/stirrer are devices under one `SPINBOT` station, not stations
   of their own). `descriptors/`, the pydantic schemas, `importer.py`/`exporter.py`, the migration
   and the test fixtures all moved with it.
-- [ ] **Device Management shell (ADR 0009)** — the section is renamed *Device Management* with
-  **Hierarchy** (the M1 nested list, kept) and **Lab Layout** in place; **Device Status** and the
-  **New-Device-first** creation flow (a prominent one-click `New Device`, a single `+` for
-  everything else, blank-slate guidance Site → Lab → Station → Device) are still to build.
+- [~] **Device Management shell (ADR 0009)** — *nav re-section + Device Status stub done; the
+  creation flow is the remaining piece.* The sidebar's flat `Topology` entry is now a
+  **Device Management** group that, when active, expands to its three subsections
+  (**Hierarchy** — the M1 nested list, kept; **Device Status**; **Lab Layout**), rendered smaller
+  with the current one bold; collapsed it reads like the old flat rail. **Device Status** renders
+  the static registry state and says live MQTT state is M2 (reusing the M1 device list). Routes
+  renamed `topology/devices/layout → hierarchy/device-status/lab-layout`, default now Hierarchy.
+  Still to build: the **New-Device-first** creation flow — a prominent one-click `New Device`, a
+  single `+` for everything else, blank-slate guidance Site → Lab → Station → Device.
 - [ ] **Lab-layout editor (ADRs 0009, 0010)** — the metric floor renders and a station's box drags
   with grid snap; still to build are editing the lab canvas/grid size from the UI, creating
   stations/zones by dragging a square, drag-to-resize footprints, box-height handles, zone
   rectangles, and the per-station device/module sub-layout (squares/circles).
-- [ ] **NetBox / CSV import (ADR 0008)** — an idempotent upsert through `registry.py` that reads a
-  NetBox API or CSV export (a rack imports as a Station grouping its devices). EPIChem stays
-  authoritative; no live sync.
-
 **M2 device plane proper (unchanged from the plan, still not started):** real devices behind IOCs,
 queueserver per cell, the `plans_allowed`/`devices_allowed` introspection service (the
 palette-generation mechanism the plan calls "the single highest-leverage integration in the
@@ -249,6 +251,12 @@ no pagination.
 ## M6 — Depth
 
 **Status: not started.**
+
+- [ ] **NetBox / CSV import (ADR 0008)** — *deferred here deliberately (2026-08-07).* An idempotent
+  upsert through `registry.py` that reads a NetBox API or CSV export (a rack imports as a Station
+  grouping its devices). EPIChem stays authoritative; no live sync. It was originally slated for the
+  M2 front-load slice but is a late-stage convenience, not a blocker for the device plane, so it
+  moved out to the end. ADR 0008 stands.
 
 ---
 

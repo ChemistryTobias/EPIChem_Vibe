@@ -1,6 +1,7 @@
 /**
- * Devices screen: a summary strip, then the registered devices as a card
- * grid, filterable by the query parameters the API already supports
+ * Device Status subsection of Device Management (ADR 0009): a summary strip,
+ * then the registered devices as a card grid, filterable by the query
+ * parameters the API already supports
  * (`GET /api/v1/devices?lab=&capability_class=&mode=`).
  *
  * Read-only. The plan's live device plane — real state off MQTT, jog/home
@@ -87,8 +88,8 @@ export function DevicesScreen() {
   return (
     <>
       <ScreenHeader
-        title="Devices"
-        subtitle="Registry records for every registered device (§6.1). Live state is M2."
+        title="Device management — Device Status"
+        subtitle="Static registry state for every device (§6.1). Live state — MQTT mode, health, last-seen — arrives with the M2 device plane (ADR 0009)."
         actions={
           <Button variant="primary" onClick={devices.reload}>
             Refresh

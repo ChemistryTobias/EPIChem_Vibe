@@ -70,6 +70,43 @@
   color: #ffffff;
 }
 
+/* Subsections of the active section: smaller and quieter than the section
+   label above them (matching the "Registry" label's scale), indented under
+   it. The active one is bold; the others sit back. */
+.sidebar__subnav {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-2);
+  background: var(--color-primary);
+}
+
+.sidebar__subitem {
+  display: block;
+  width: 100%;
+  padding: 6px var(--space-5) 6px calc(var(--space-5) + var(--space-4));
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 11px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  cursor: pointer;
+}
+
+.sidebar__subitem:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.sidebar__subitem--active {
+  color: #ffffff;
+  font-weight: 700;
+}
+
 .sidebar__footer {
   margin-top: auto;
   padding: var(--space-4) var(--space-5) 0;
