@@ -43,10 +43,11 @@ class LabSpec(BaseModel):
     room_number: str | None = None
     environment_class: Literal["ambient", "glovebox", "fume_hood", "cleanroom"] = "ambient"
     access_control_group: str | None = None
-    # The isometric grid this lab's stations snap onto (ADR 0007: moved off the
-    # removed Bench).
-    grid_cols: int = 1
-    grid_rows: int = 1
+    # The lab is a metric canvas (ADR 0010): floor size and grid spacing in
+    # metres. Cell count is derived (width_m / grid_size_m), not stored.
+    width_m: float = 6.0
+    depth_m: float = 4.0
+    grid_size_m: float = 0.5
 
 
 class ZoneSpec(BaseModel):
@@ -63,9 +64,14 @@ class StationSpec(BaseModel):
     lab: str  # Lab.code — a station always belongs to a lab (ADR 0007)
     zone: str | None = None  # Zone.code — optional; a station may sit inside a zone
     kind: str = "generic"
-    grid_col: int = 0
-    grid_row: int = 0
-    stack_height: int = 1
+    # The station's box on the lab canvas, in metres (ADR 0010: snap-but-not-
+    # bound). pos = position from the lab origin, size = footprint, height_m =
+    # isometric box height.
+    pos_x: float = 0.0
+    pos_y: float = 0.0
+    size_x_m: float = 1.0
+    size_y_m: float = 1.0
+    height_m: float = 0.5
     capacity: int = 1
     accepted_labware_types: list[str] = Field(default_factory=list)
     # Execution binding, moved off the removed Workcell (ADR 0007).

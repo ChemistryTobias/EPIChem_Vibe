@@ -8,7 +8,7 @@ def test_example_virtual_lab_loads_with_no_errors(example_descriptors_dir):
     assert result.errors == []
     kinds = sorted(d.kind for d in result.descriptors)
     assert kinds == sorted(
-        ["Site", "Lab", "Zone", "Station", "Station"]
+        ["Site", "Lab", "Zone", "Station"]
         + ["CapabilityClass"] * 3
         + ["Device"] * 2
     )
@@ -24,7 +24,7 @@ def test_device_spec_parses_envelope_and_capabilities(example_descriptors_dir):
     assert spec.capabilities == ["heat", "stir", "read_temperature"]
     assert spec.envelope["temperature_c"].min == 20
     assert spec.envelope["temperature_c"].max == 300
-    assert spec.location.station == "HP1"
+    assert spec.location.station == "SPINBOT"
 
 
 def test_capability_class_spec_parses_actions(example_descriptors_dir):

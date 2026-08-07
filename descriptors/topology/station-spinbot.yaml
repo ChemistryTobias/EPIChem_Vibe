@@ -1,0 +1,28 @@
+apiVersion: epichem.dev/v1
+kind: Station
+metadata:
+  code: SPINBOT
+  name: Spincoating Robot
+spec:
+  lab: LAB-3
+  zone: ZONE-FUMEHOOD-2
+  # A station is a group of >=1 device (ADR 0007): the SpinBot rack groups a
+  # SCARA arm, a parallel gripper, a liquid-handling pipette, dual hotplates and
+  # a BLDC spincoater. Its instruments are Devices under this station, not
+  # stations of their own. The example ships two of them (a hotplate and a
+  # stirrer); the rest are follow-up example data.
+  kind: spincoating_robot
+  # Metric box on the lab canvas (ADR 0010): 2 m from the origin, 1.2 m x 0.9 m
+  # footprint, 1.1 m tall.
+  pos_x: 2.0
+  pos_y: 1.0
+  size_x_m: 1.2
+  size_y_m: 0.9
+  height_m: 1.1
+  capacity: 6
+  accepted_labware_types: [vial_4ml, beaker_100ml, wafer_substrate]
+  # Execution binding, moved off the removed Workcell (ADR 0007).
+  queueserver_endpoint: "tcp://localhost:60615"
+  redis_namespace: spinbot
+  state: active
+  owning_group: solbat

@@ -21,7 +21,7 @@ spec:
   location:
     lab: LAB-3
     zone: ZONE-FUMEHOOD-2
-    station: HP1
+    station: SPINBOT
     pose: {x_mm: 1420, y_mm: 300, z_mm: 900, yaw_deg: 0}
   capabilities:
     - heat

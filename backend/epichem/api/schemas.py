@@ -28,8 +28,9 @@ class LabOut(OutBase):
     room_number: str | None
     environment_class: str
     access_control_group: str | None
-    grid_cols: int
-    grid_rows: int
+    width_m: float
+    depth_m: float
+    grid_size_m: float
 
 
 class ZoneOut(OutBase):
@@ -51,9 +52,11 @@ class StationOut(OutBase):
     lab_id: uuid.UUID
     zone_id: uuid.UUID | None
     kind: str
-    grid_col: int
-    grid_row: int
-    stack_height: int
+    pos_x: float
+    pos_y: float
+    size_x_m: float
+    size_y_m: float
+    height_m: float
     capacity: int
     accepted_labware_types: list[str]
     queueserver_endpoint: str | None

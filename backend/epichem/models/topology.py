@@ -46,11 +46,12 @@ class Lab(RegistryEntity):
     room_number: Mapped[str | None] = mapped_column(default=None)
     environment_class: Mapped[str] = mapped_column(default="ambient")
     access_control_group: Mapped[str | None] = mapped_column(default=None)
-    # The isometric grid the lab's stations snap onto (ADR 0007: moved up from
-    # the removed Bench). Cell size and floorplan geometry are M2 layout-editor
-    # work; the grid extent is the part the topology model owns.
-    grid_cols: Mapped[int] = mapped_column(default=1)
-    grid_rows: Mapped[int] = mapped_column(default=1)
+    # The lab is a metric canvas (ADR 0010): floor size and grid spacing in
+    # metres, like a vector editor where you set the canvas size then the grid
+    # size. The guide-cell count is derived (width_m / grid_size_m), not stored.
+    width_m: Mapped[float] = mapped_column(default=6.0)
+    depth_m: Mapped[float] = mapped_column(default=4.0)
+    grid_size_m: Mapped[float] = mapped_column(default=0.5)
 
     site: Mapped[Site] = relationship(back_populates="labs")
     zones: Mapped[list["Zone"]] = relationship(back_populates="lab")
@@ -82,10 +83,15 @@ class Station(RegistryEntity):
     lab_id: Mapped[uuid_mod.UUID] = mapped_column(ForeignKey("labs.id"))
     zone_id: Mapped[uuid_mod.UUID | None] = mapped_column(ForeignKey("zones.id"), default=None)
     kind: Mapped[str] = mapped_column(default="generic")
-    grid_col: Mapped[int] = mapped_column(default=0)
-    grid_row: Mapped[int] = mapped_column(default=0)
-    # The user-editable isometric depth (§10.3), meaningful not decorative.
-    stack_height: Mapped[int] = mapped_column(default=1)
+    # The station's box on the lab canvas, all in metres (ADR 0010). pos is the
+    # position from the lab origin; the editor snaps it to grid_size_m but doesn't
+    # bind it (snap-but-not-bound). size is the drawn footprint; height_m is the
+    # isometric box height, a continuous drag handle (meaningful, not decorative).
+    pos_x: Mapped[float] = mapped_column(default=0.0)
+    pos_y: Mapped[float] = mapped_column(default=0.0)
+    size_x_m: Mapped[float] = mapped_column(default=1.0)
+    size_y_m: Mapped[float] = mapped_column(default=1.0)
+    height_m: Mapped[float] = mapped_column(default=0.5)
     capacity: Mapped[int] = mapped_column(default=1)
     accepted_labware_types: Mapped[list[str]] = mapped_column(JSON, default=list)
 
