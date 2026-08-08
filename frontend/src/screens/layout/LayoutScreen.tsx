@@ -1,7 +1,7 @@
 /**
  * Lab layout (plan §10): the isometric floor plan, one editor over three levels
  * (ADR 0012) — Site → Lab → Station, drilling down by clicking a box's label and
- * back up via the breadcrumb. Each level is the *same* canvas; only the data and
+ * back up via the location path. Each level is the *same* canvas; only the data and
  * the write endpoints differ (`levels.ts`).
  *
  * Editing is **staged** (ADR 0014): in edit mode, add/move/resize/remove and
@@ -25,7 +25,7 @@ import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useNotify } from "../../components/Notifications";
 import { useAsync } from "../../hooks/useAsync";
-import { Breadcrumb } from "./Breadcrumb";
+import { LocationPath } from "./LocationPath";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
 import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, sortBoxes } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
@@ -230,7 +230,7 @@ export function LayoutScreen() {
     onReshape,
   });
 
-  // ---- navigation (inspect mode only; Breadcrumb is `locked` in edit) -------
+  // ---- navigation (inspect mode only; LocationPath is `locked` in edit) -----
 
   const enter = (code: string) => {
     const patch = level.drillInto(code);
@@ -409,7 +409,7 @@ export function LayoutScreen() {
 
                 <div className="canvas-overlay">
                   <div className="canvas-overlay__bar">
-                    <Breadcrumb
+                    <LocationPath
                       sites={data.sites}
                       labs={data.labs}
                       stations={data.stations}

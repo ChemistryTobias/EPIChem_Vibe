@@ -23,7 +23,7 @@
   background: var(--color-surface-muted);
 }
 
-/* Everything that isn't the canvas — breadcrumb, buttons, warnings — lives here,
+/* Everything that isn't the canvas — location path, buttons, warnings — lives here,
  * over the drawing. The layer itself is click-through; only its real controls
  * take pointer events, so the canvas stays draggable everywhere they aren't. */
 .canvas-overlay {
@@ -47,12 +47,12 @@
   pointer-events: none;
 }
 
-.canvas-overlay__bar > .crumbs,
+.canvas-overlay__bar > .path,
 .canvas-overlay__bar > .btn {
   pointer-events: auto;
 }
 
-/* Pushes the buttons to the right of the bar — breadcrumb left, controls right.
+/* Pushes the buttons to the right of the bar — location path left, controls right.
  * Click-through so the gap between them drops onto the canvas. */
 .canvas-overlay__spacer {
   flex: 1 1 auto;
@@ -105,33 +105,33 @@
   gap: var(--space-2);
 }
 
-/* ---- breadcrumb ---------------------------------------------------------- */
+/* ---- location path ------------------------------------------------------- */
 
-/* A floating pill so the crumbs read over the grey canvas. Same typeface as the
- * main menu (--font-display, uppercase), just greyed. */
-.crumbs {
+/* Reads as one small button — white, thin grey border, sharp, no shadow, not
+ * bold — matching the compact buttons it sits beside. Only the *writing* of a
+ * clickable part turns green (on hover), which is the whole affordance: green =
+ * you can click this. */
+.path {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   background: var(--color-bg);
-  border: 1px solid var(--color-border-soft);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 4px var(--space-2);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 12px;
+  font-weight: 400;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: var(--tracking-label);
 }
 
-/* A name in the trail. Ancestors are clickable (a shade darker); the current
- * level is the quietest and inert — "you are here". */
-.crumb {
+/* A level name in the path. Ancestors are clickable and go green on hover; the
+ * current level ("you are here") is quiet grey and inert. */
+.path__step {
   border: 0;
   background: none;
   padding: 2px 4px;
-  border-radius: var(--radius);
   font: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
@@ -139,68 +139,64 @@
   cursor: pointer;
 }
 
-.crumb:hover {
+.path__step:hover {
   color: var(--color-primary);
 }
 
-.crumb--current {
+.path__step--current {
   color: var(--color-border);
   cursor: default;
 }
 
-/* The `›` (and the `[N]` floor chip) that opens a level's option menu. */
-.crumb__dd {
+/* The `›` (and the `[N]` floor chip) that opens a level's option list. */
+.path__dd {
   position: relative;
   display: inline-flex;
 }
 
-.crumb__arrow {
+.path__switch {
   border: 0;
   background: none;
   padding: 2px 4px;
-  border-radius: var(--radius);
   font: inherit;
   letter-spacing: inherit;
-  color: var(--color-border);
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
-.crumb__arrow:hover {
+.path__switch:hover {
   color: var(--color-primary);
 }
 
-/* Nothing to pick at this level: keep the arrow for spacing, but inert. */
-.crumb__arrow--empty {
+/* Nothing to pick at this level: keep the `›` for spacing, but inert. */
+.path__switch--empty {
   color: var(--color-border-soft);
   cursor: default;
 }
 
-.crumbs__floor {
-  color: var(--color-text-secondary);
-}
-
-.crumb__menu {
+/* The option list — a multiline take on the small button: white, thin grey
+ * border, sharp, no shadow. Items are quiet grey; the currently-selected one is
+ * the only coloured (green) entry, and hovering an item previews that green. */
+.path__menu {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
   z-index: 5;
   list-style: none;
   margin: 0;
-  padding: 4px;
-  min-width: 140px;
+  padding: 3px;
+  min-width: 120px;
   background: var(--color-bg);
-  border: 1px solid var(--color-border-soft);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
-.crumb__menu-item {
+.path__menu-item {
   display: block;
   width: 100%;
   border: 0;
   background: none;
-  padding: 6px var(--space-2);
-  border-radius: var(--radius);
+  padding: 5px var(--space-2);
   font: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
@@ -209,11 +205,10 @@
   cursor: pointer;
 }
 
-.crumb__menu-item:hover {
-  background: var(--color-surface-muted);
+.path__menu-item:hover {
   color: var(--color-primary);
 }
 
-.crumb__menu-item--active {
-  color: var(--color-text);
+.path__menu-item--active {
+  color: var(--color-primary);
 }

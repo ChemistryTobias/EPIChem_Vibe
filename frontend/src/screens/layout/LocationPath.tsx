@@ -1,15 +1,18 @@
 /**
- * The layout's drill-down breadcrumb: `› SITE-MPIFKF [0] › LAB-3 › SPINBOT`.
+ * The layout's location path — where you are in the hierarchy and a way to jump:
+ * `› SITE-MPIFKF [0] › LAB-3 › SPINBOT`. (This is the pattern usually called a
+ * "breadcrumb"; renamed here to the plainer "location path".)
  *
- * Each `›` is a dropdown of that level's options (sites / labs / stations); the
- * name after it is the chosen value, and clicking a name navigates back up to
- * that level. The `[N]` chip is the site *floor* (ADR 0013) — a view control,
- * not a hierarchy level — shown only when the site has more than one floor. The
- * leading sites `›` appears only when the user can reach more than one site.
+ * Each `›` opens the list of that level's options (sites / labs / stations); the
+ * name after it is the chosen one, and clicking a name jumps back to that level.
+ * The `[N]` chip is the site *floor* (ADR 0013) — a view control, not a level —
+ * shown only when the site has more than one floor. The leading sites `›` shows
+ * only when more than one site is reachable.
  *
- * It's the same typeface as the main menu (`--font-display`, uppercase), just
- * greyed: the current level is the quietest, the clickable ancestors a shade
- * darker, matching the sidebar's "you are here vs. you can go there" language.
+ * Styling (see `.path` in LayoutScreen.css): it reads as one small button —
+ * white, thin grey border, no shadow, not bold — and the only thing that turns
+ * green is the *writing* of whatever is clickable, on hover, so it's obvious what
+ * you can click. In the option list, the currently-selected entry is the green one.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -18,7 +21,7 @@ import type { ReactNode } from "react";
 import type { Lab, Site, Station } from "../../api/types";
 import type { Level } from "./levels";
 
-interface BreadcrumbProps {
+interface LocationPathProps {
   sites: Site[];
   labs: Lab[];
   stations: Station[];
@@ -27,7 +30,7 @@ interface BreadcrumbProps {
   station: Station | null;
   floor: number;
   level: Level;
-  /** Edit mode: level changes are blocked; every crumb/arrow calls `onLocked`. */
+  /** Edit mode: level changes are blocked; every step/switch calls `onLocked`. */
   locked?: boolean;
   onLocked?: () => void;
   onPickSite: (code: string) => void;
@@ -38,7 +41,7 @@ interface BreadcrumbProps {
   onGoToLab: () => void;
 }
 
-export function Breadcrumb({
+export function LocationPath({
   sites,
   labs,
   stations,
@@ -55,7 +58,7 @@ export function Breadcrumb({
   onEnterStation,
   onGoToSite,
   onGoToLab,
-}: BreadcrumbProps) {
+}: LocationPathProps) {
   if (!site) return null;
 
   const labOptions = labs
@@ -73,10 +76,10 @@ export function Breadcrumb({
   }));
 
   return (
-    <nav className={`crumbs${locked ? " crumbs--locked" : ""}`} aria-label="Layout location">
+    <nav className={`path${locked ? " path--locked" : ""}`} aria-label="Location">
       {/* Sites — only when there's more than one to switch between. */}
       {sites.length > 1 && (
-        <Dropdown
+        <Switch
           label="›"
           title="Switch site"
           locked={locked}
@@ -85,15 +88,15 @@ export function Breadcrumb({
           onPick={onPickSite}
         />
       )}
-      <Crumb current={level === "site"} locked={locked} onLocked={onLocked} onClick={onGoToSite}>
+      <Step current={level === "site"} locked={locked} onLocked={onLocked} onClick={onGoToSite}>
         {site.code}
-      </Crumb>
+      </Step>
       {/* Floor chip — a view control, only when the building has floors to pick. */}
       {site.floors > 1 && (
-        <Dropdown
+        <Switch
           label={`[${floor}]`}
           title="Switch floor"
-          className="crumbs__floor"
+          className="path__floor"
           locked={locked}
           onLocked={onLocked}
           options={floorOptions}
@@ -101,9 +104,9 @@ export function Breadcrumb({
         />
       )}
 
-      {/* Labs — the arrow is always available (enter/switch a lab); the name only
+      {/* Labs — the switch is always available (enter/switch a lab); the name only
           once a lab is selected. */}
-      <Dropdown
+      <Switch
         label="›"
         title="Enter a lab"
         locked={locked}
@@ -112,14 +115,14 @@ export function Breadcrumb({
         onPick={onEnterLab}
       />
       {lab && (
-        <Crumb current={level === "lab"} locked={locked} onLocked={onLocked} onClick={onGoToLab}>
+        <Step current={level === "lab"} locked={locked} onLocked={onLocked} onClick={onGoToLab}>
           {lab.code}
-        </Crumb>
+        </Step>
       )}
 
       {/* Stations — only once inside a lab. */}
       {lab && (
-        <Dropdown
+        <Switch
           label="›"
           title="Enter a station"
           locked={locked}
@@ -129,15 +132,15 @@ export function Breadcrumb({
         />
       )}
       {station && (
-        <Crumb current locked={locked} onLocked={onLocked}>
+        <Step current locked={locked} onLocked={onLocked}>
           {station.code}
-        </Crumb>
+        </Step>
       )}
     </nav>
   );
 }
 
-function Crumb({
+function Step({
   current,
   locked,
   onLocked,
@@ -150,14 +153,14 @@ function Crumb({
   onClick?: () => void;
   children: ReactNode;
 }) {
-  // Locked (edit mode): the crumb still reacts, but only to explain that level
+  // Locked (edit mode): the step still reacts, but only to explain that level
   // changes need inspect mode.
   const handler = locked ? onLocked : current ? undefined : onClick;
   if (!handler) {
-    return <span className={`crumb${current ? " crumb--current" : ""}`}>{children}</span>;
+    return <span className={`path__step${current ? " path__step--current" : ""}`}>{children}</span>;
   }
   return (
-    <button type="button" className={`crumb${current ? " crumb--current" : ""}`} onClick={handler}>
+    <button type="button" className={`path__step${current ? " path__step--current" : ""}`} onClick={handler}>
       {children}
     </button>
   );
@@ -170,11 +173,11 @@ interface Option {
 }
 
 /**
- * The `›` (or `[N]`) trigger and its popover menu. Closes on pick and on a click
- * outside. When there's nothing to pick, the trigger renders inert so the arrow
- * still spaces the crumb but doesn't invite a click that does nothing.
+ * A `›` (or `[N]`) that opens the list of a level's options — closes on pick and
+ * on a click outside. With nothing to pick it renders inert, so the `›` still
+ * spaces the path without inviting a dead click.
  */
-function Dropdown({
+function Switch({
   label,
   title,
   options,
@@ -203,12 +206,12 @@ function Dropdown({
     return () => document.removeEventListener("pointerdown", onDoc);
   }, [open]);
 
-  const arrowClass = `crumb__arrow${className ? ` ${className}` : ""}`;
+  const switchClass = `path__switch${className ? ` ${className}` : ""}`;
 
-  // Locked (edit mode): the arrow doesn't open — it explains the block instead.
+  // Locked (edit mode): the switch doesn't open — it explains the block instead.
   if (locked) {
     return (
-      <button type="button" className={arrowClass} title="Level changes need inspect mode" onClick={onLocked}>
+      <button type="button" className={switchClass} title="Level changes need inspect mode" onClick={onLocked}>
         {label}
       </button>
     );
@@ -216,17 +219,17 @@ function Dropdown({
 
   if (options.length === 0) {
     return (
-      <span className={`${arrowClass} crumb__arrow--empty`} aria-hidden="true">
+      <span className={`${switchClass} path__switch--empty`} aria-hidden="true">
         {label}
       </span>
     );
   }
 
   return (
-    <div className="crumb__dd" ref={ref}>
+    <div className="path__dd" ref={ref}>
       <button
         type="button"
-        className={arrowClass}
+        className={switchClass}
         title={title}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -235,13 +238,13 @@ function Dropdown({
         {label}
       </button>
       {open && (
-        <ul className="crumb__menu" role="menu">
+        <ul className="path__menu" role="menu">
           {options.map((o) => (
             <li key={o.code} role="none">
               <button
                 type="button"
                 role="menuitem"
-                className={`crumb__menu-item${o.active ? " crumb__menu-item--active" : ""}`}
+                className={`path__menu-item${o.active ? " path__menu-item--active" : ""}`}
                 onClick={() => {
                   setOpen(false);
                   onPick(o.code);
