@@ -37,6 +37,8 @@ export interface IsometricPaperOptions {
   /** False puts the canvas in read-only "operations" mode (§10.3). */
   editable: boolean;
   onSelect: (code: string | null) => void;
+  /** The box's label was clicked — the screen may drill into it (inspect mode). */
+  onActivate: (code: string) => void;
   /** A box was dragged to a new floor position (snapped), in canvas units. */
   onMove: (code: string, pos: FloorPos) => void;
   /** A box was resized via a handle: new footprint + height, in canvas units. */
@@ -160,9 +162,13 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     });
     ro.observe(container);
 
-    paper.on("element:pointerclick", (view) => {
+    paper.on("element:pointerclick", (view, evt) => {
       if (view.model.get("type") === "epi.Handle") return; // a handle isn't a selection
-      handlers.current.onSelect((view.model.get("boxCode") as string) ?? null);
+      const code = (view.model.get("boxCode") as string) ?? null;
+      // A click on the <text> label is a drill request; anywhere else selects.
+      const target = evt?.target as Element | undefined;
+      if (code && target?.tagName?.toLowerCase() === "text") handlers.current.onActivate(code);
+      else handlers.current.onSelect(code);
     });
     paper.on("blank:pointerclick", () => handlers.current.onSelect(null));
 

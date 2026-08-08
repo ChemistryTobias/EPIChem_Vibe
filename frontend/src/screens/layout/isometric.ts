@@ -249,3 +249,79 @@ export function boxProblems(boxes: Box[], widthU: number, depthU: number): BoxPr
 function round(v: number): number {
   return Math.round(v * 100) / 100;
 }
+
+// ---- placement constraints (the isometric-diagram demo's "keep it inside") ---
+//
+// A box must stay inside its floor and off every other box — for drags, handle
+// resizes and numeric entry alike. These pure helpers are the one place that
+// rule lives; the screen calls them at the moment an edit commits.
+
+/** A box's geometry in canvas units — position, footprint, height. */
+export interface RectGeom {
+  pos: FloorPos;
+  size: { x: number; y: number };
+  height: number;
+}
+
+/** The floor a box is constrained to, in the same units. */
+export interface Floor {
+  widthU: number;
+  depthU: number;
+  gridU: number;
+}
+
+function clampN(v: number, lo: number, hi: number): number {
+  return Math.min(Math.max(v, lo), hi);
+}
+
+/**
+ * Pull a geometry back inside the floor: footprint no larger than the floor,
+ * position so the whole box fits. Height is only floored at 0. This never fails —
+ * it returns the nearest in-bounds geometry (overlap is checked separately).
+ */
+export function clampToFloor(g: RectGeom, floor: Floor): RectGeom {
+  const minX = Math.min(floor.gridU || 0.01, floor.widthU);
+  const minY = Math.min(floor.gridU || 0.01, floor.depthU);
+  const sx = clampN(g.size.x, minX, floor.widthU);
+  const sy = clampN(g.size.y, minY, floor.depthU);
+  return {
+    pos: { x: clampN(g.pos.x, 0, floor.widthU - sx), y: clampN(g.pos.y, 0, floor.depthU - sy) },
+    size: { x: sx, y: sy },
+    height: Math.max(g.height, 0),
+  };
+}
+
+/** Do two footprints overlap (touching edges don't count)? */
+export function rectsOverlap(a: RectGeom, b: RectGeom): boolean {
+  return (
+    a.pos.x < b.pos.x + b.size.x - 1e-6 &&
+    a.pos.x + a.size.x > b.pos.x + 1e-6 &&
+    a.pos.y < b.pos.y + b.size.y - 1e-6 &&
+    a.pos.y + a.size.y > b.pos.y + 1e-6
+  );
+}
+
+/** Does `g` overlap any of `others` (already excluding itself)? */
+export function overlapsAny(g: RectGeom, others: RectGeom[]): boolean {
+  return others.some((o) => rectsOverlap(g, o));
+}
+
+/**
+ * The first free slot for a `size` footprint, scanning the floor grid row by row
+ * (left→right, top→bottom), so a new box lands next to the last rather than on
+ * top of it (req: fill the canvas, don't stack). Null when nothing fits — the
+ * canvas is full and the caller warns instead of placing.
+ */
+export function placeNextSlot(
+  size: { x: number; y: number },
+  floor: Floor,
+  others: RectGeom[],
+): FloorPos | null {
+  const step = floor.gridU > 0 ? floor.gridU : Math.min(size.x, size.y) || 0.1;
+  for (let y = 0; y + size.y <= floor.depthU + 1e-6; y = round(y + step)) {
+    for (let x = 0; x + size.x <= floor.widthU + 1e-6; x = round(x + step)) {
+      if (!overlapsAny({ pos: { x, y }, size, height: 0 }, others)) return { x, y };
+    }
+  }
+  return null;
+}

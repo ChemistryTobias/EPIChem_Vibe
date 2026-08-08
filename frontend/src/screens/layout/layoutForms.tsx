@@ -1,13 +1,13 @@
 /**
- * The two numeric forms in the layout inspector column (ADRs 0010/0012),
+ * The two numeric forms in the layout inspector column (ADRs 0010/0012/0014),
  * generic over the level:
- * - `GeometryForm` — the selected box's position, footprint and height, saved
- *   through `level.setGeometry` (the same write the drag and handles use).
- * - `FloorForm` — the level's own floor size and grid, saved through
- *   `level.resizeFloor`.
+ * - `GeometryForm` — the selected box's position, footprint and height.
+ * - `FloorForm` — the level's own floor size and grid.
  *
- * Both sit in the inspector column and reuse the shared `.create-form` styles.
- * Numbers are metres in every level (the station level converts mm↔m at its
+ * In the staged editor (ADR 0014) neither form writes to the API: each hands its
+ * numbers to `onStage`, which validates + records them in the draft (returning an
+ * error string to show, or null on success). The actual write happens later, on
+ * Save. Numbers are metres at every level (the station level converts mm↔m at its
  * adapter boundary), so the labels are uniform.
  */
 
@@ -17,7 +17,7 @@ import type { FormEvent } from "react";
 import { Button } from "../../components/Button";
 import { Inspector } from "../../components/Inspector";
 import { TextField } from "../topology/formFields";
-import type { LevelConfig } from "./levels";
+import type { BoxGeometry, FloorGeometry } from "./levels";
 
 const num = (v: string, fallback: number) => {
   const n = Number(v);
@@ -25,50 +25,55 @@ const num = (v: string, fallback: number) => {
 };
 
 export function GeometryForm({
-  level,
   code,
+  initial,
+  showHeight,
+  onStage,
   onDone,
   onCancel,
 }: {
-  level: LevelConfig;
   code: string;
+  initial: BoxGeometry;
+  showHeight: boolean;
+  /** Validate + stage the geometry; return an error to show, or null on success. */
+  onStage: (geom: BoxGeometry) => string | null;
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const initial = level.geometryOf(code) ?? { pos: { x: 0, y: 0 }, size: { x: 1, y: 1 }, height: 0.5 };
   const [posX, setPosX] = useState(String(initial.pos.x));
   const [posY, setPosY] = useState(String(initial.pos.y));
   const [sizeX, setSizeX] = useState(String(initial.size.x));
   const [sizeY, setSizeY] = useState(String(initial.size.y));
   const [height, setHeight] = useState(String(initial.height));
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await level.setGeometry(code, {
-        pos: { x: num(posX, initial.pos.x), y: num(posY, initial.pos.y) },
-        size: { x: num(sizeX, initial.size.x), y: num(sizeY, initial.size.y) },
-        height: num(height, initial.height),
-      });
-      onDone();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      setBusy(false);
+    const problem = onStage({
+      pos: { x: num(posX, initial.pos.x), y: num(posY, initial.pos.y) },
+      size: { x: num(sizeX, initial.size.x), y: num(sizeY, initial.size.y) },
+      height: num(height, initial.height),
+    });
+    if (problem) {
+      setError(problem);
+      return;
     }
+    onDone();
   }
 
   return (
-    <Inspector kind="Edit geometry" title={code} subtitle="Position, footprint, height — press Save" onClose={onCancel}>
+    <Inspector
+      kind="Edit geometry"
+      title={code}
+      subtitle="Position, footprint, height — staged until you Save"
+      onClose={onCancel}
+    >
       <form className="create-form" onSubmit={submit}>
         <TextField label="Position X (m)" value={posX} onChange={setPosX} type="number" />
         <TextField label="Position Y (m)" value={posY} onChange={setPosY} type="number" />
         <TextField label="Footprint X (m)" value={sizeX} onChange={setSizeX} type="number" />
         <TextField label="Footprint Y (m)" value={sizeY} onChange={setSizeY} type="number" />
-        {level.level !== "site" && (
+        {showHeight && (
           <TextField label="Height (m)" value={height} onChange={setHeight} type="number" />
         )}
         {error && (
@@ -77,10 +82,10 @@ export function GeometryForm({
           </p>
         )}
         <div className="create-form__actions">
-          <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? "Saving…" : "Save"}
+          <Button type="submit" variant="primary">
+            Apply
           </Button>
-          <Button type="button" onClick={onCancel} disabled={busy}>
+          <Button type="button" onClick={onCancel}>
             Cancel
           </Button>
         </div>
@@ -90,39 +95,44 @@ export function GeometryForm({
 }
 
 export function FloorForm({
-  level,
+  levelName,
+  initial,
+  onStage,
   onDone,
   onCancel,
 }: {
-  level: LevelConfig;
+  levelName: string;
+  initial: FloorGeometry;
+  onStage: (floor: FloorGeometry) => string | null;
   onDone: () => void;
   onCancel: () => void;
 }) {
-  const [width, setWidth] = useState(String(level.floor.widthU));
-  const [depth, setDepth] = useState(String(level.floor.depthU));
-  const [grid, setGrid] = useState(String(level.floor.gridU));
-  const [busy, setBusy] = useState(false);
+  const [width, setWidth] = useState(String(initial.widthU));
+  const [depth, setDepth] = useState(String(initial.depthU));
+  const [grid, setGrid] = useState(String(initial.gridU));
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await level.resizeFloor({
-        widthU: num(width, level.floor.widthU),
-        depthU: num(depth, level.floor.depthU),
-        gridU: num(grid, level.floor.gridU),
-      });
-      onDone();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      setBusy(false);
+    const problem = onStage({
+      widthU: num(width, initial.widthU),
+      depthU: num(depth, initial.depthU),
+      gridU: num(grid, initial.gridU),
+    });
+    if (problem) {
+      setError(problem);
+      return;
     }
+    onDone();
   }
 
   return (
-    <Inspector kind={`Edit ${level.level} floor`} title="Canvas & grid" subtitle="Press Save" onClose={onCancel}>
+    <Inspector
+      kind={`Edit ${levelName} floor`}
+      title="Canvas & grid"
+      subtitle="Staged until you Save"
+      onClose={onCancel}
+    >
       <form className="create-form" onSubmit={submit}>
         <TextField label="Floor width (m)" value={width} onChange={setWidth} type="number" />
         <TextField label="Floor depth (m)" value={depth} onChange={setDepth} type="number" />
@@ -133,10 +143,10 @@ export function FloorForm({
           </p>
         )}
         <div className="create-form__actions">
-          <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? "Saving…" : "Save"}
+          <Button type="submit" variant="primary">
+            Apply
           </Button>
-          <Button type="button" onClick={onCancel} disabled={busy}>
+          <Button type="button" onClick={onCancel}>
             Cancel
           </Button>
         </div>

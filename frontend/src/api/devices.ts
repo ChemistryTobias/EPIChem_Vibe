@@ -34,12 +34,32 @@ export interface DeviceCreate {
   /** Station.code this device lives in, or null if not yet placed. */
   station: string | null;
   operational_mode: string;
+  // Optional placement within the station canvas (ADR 0012), in mm. The Lab
+  // Layout editor sets these so a created device lands where it was dropped; the
+  // hierarchy create form omits them (the backend defaults pose to 0 and leaves
+  // the footprint null → a standard 0.1 m box).
+  pose_x_mm?: number;
+  pose_y_mm?: number;
+  size_x_mm?: number;
+  size_y_mm?: number;
+  size_z_mm?: number;
 }
 
 export const createDevice = (body: DeviceCreate) => {
+  const location: Record<string, unknown> = { station: body.station };
+  if (body.pose_x_mm != null || body.pose_y_mm != null) {
+    location.pose = { x_mm: body.pose_x_mm ?? 0, y_mm: body.pose_y_mm ?? 0 };
+  }
+  if (body.size_x_mm != null || body.size_y_mm != null || body.size_z_mm != null) {
+    location.footprint = {
+      size_x_mm: body.size_x_mm,
+      size_y_mm: body.size_y_mm,
+      size_z_mm: body.size_z_mm,
+    };
+  }
   const spec: Record<string, unknown> = {
     node_kind: body.node_kind,
-    location: { station: body.station },
+    location,
     operational: { mode: body.operational_mode },
   };
   // Only send `class` when set — an empty string would fail reference resolution.

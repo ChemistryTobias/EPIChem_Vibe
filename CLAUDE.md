@@ -7,7 +7,8 @@
 > the topology flatten and metric lab canvas are built (ADRs 0007–0010), and the Lab-layout editor
 > is now a single **full-bleed** generic canvas over **three levels** (Site → Lab → Station) with a
 > drill-down breadcrumb, a 2D/isometric toggle, drag-resize handles, a `virtual` soft-hide delete
-> (ADRs 0011–0012), and a layout-only site-floor selector (ADR 0013). The Device-Management shell
+> (ADRs 0011–0012), a layout-only site-floor selector (ADR 0013), and **staged editing** with
+> constrained placement (ADR 0014 — nothing writes until Save). The Device-Management shell
 > (Device Status + New-Device-first creation flow) and NetBox/CSV import are next.
 > (The old `docs/SESSION_HANDOFF.md` was deleted 2026-08-07 — it had gone stale, pinned to a
 > commit six commits behind `main`.)
@@ -62,11 +63,18 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
   which write endpoint each action calls), so add a level or change a write there, not by branching
   in the canvas. The editor is **full-bleed**: the JointJS paper is `.canvas` and fills the content
   area (the hook fits the drawing to the container via a ResizeObserver — `metricsFor` takes a
-  target px); all controls float over it in `.canvas-overlay`. Navigation is a drill-down
-  **breadcrumb** (`Breadcrumb.tsx`) — `› SITE [floor] › LAB › STATION`, each `›` a dropdown of that
-  level's options. Read ADRs 0007–0013 before touching `models/topology.py`, `importer.py`, the
-  descriptor schemas, or the layout/topology frontend screens — don't reintroduce the old six-level
-  model, don't duplicate the canvas per level, and don't turn the floor into a hierarchy level.
+  target px); all controls float over it in `.canvas-overlay` (mode + Save/Cancel live there, not
+  the screen header). Navigation is a drill-down **breadcrumb** (`Breadcrumb.tsx`) — `› SITE [floor]
+  › LAB › STATION`, each `›` a dropdown of that level's options; a click on a box's **label** drills
+  in. **Edit mode is staged (ADR 0014):** add/move/resize/remove/floor changes accumulate in a
+  *draft* in `LayoutScreen` (the canvas renders base data + draft as an *effective model*) and
+  nothing writes until **Save**; **Cancel**/mode-switch confirms a discard; level changes are
+  disabled while editing. Placement is *constrained* — `clampToFloor`/`overlapsAny`/`placeNextSlot`
+  in `isometric.ts` keep a box on its floor and off other boxes (drag, handle, and numeric alike),
+  and Add tiles into the next free slot. Read ADRs 0007–0014 before touching `models/topology.py`,
+  `importer.py`, the descriptor schemas, or the layout/topology frontend screens — don't reintroduce
+  the old six-level model, don't duplicate the canvas per level, don't turn the floor into a
+  hierarchy level, and don't make edit-mode writes immediate again (Save is the write boundary).
 - Enumerated fields (environment_class, atmosphere, workcell state, ...) are plain strings
   validated at the pydantic descriptor layer, not DB enums — see the module docstring in
   `models/topology.py` for why.

@@ -1,27 +1,19 @@
 /**
  * Lab layout (plan §10): the isometric floor plan, one editor over three levels
- * (ADR 0012) — Site → Lab → Station, drilling down by clicking a box and back up
- * via the breadcrumb. Each level is the *same* canvas; only the data and the
- * write endpoints differ (`levels.ts`).
+ * (ADR 0012) — Site → Lab → Station, drilling down by clicking a box's label and
+ * back up via the breadcrumb. Each level is the *same* canvas; only the data and
+ * the write endpoints differ (`levels.ts`).
  *
- * The canvas is full-bleed: it fills everything the shell leaves it (header, nav,
- * inspector) and re-fits as that space changes (`useIsometricPaper`). The
- * controls — a drill-down breadcrumb, Back, add/edit-floor, and the 2D/isometric
- * toggle — float over the canvas in a `.canvas-overlay`, so the drawing owns the
- * whole area. The one thing in the screen header is the Edit ↔ Inspect toggle.
+ * Editing is **staged** (ADR 0014): in edit mode, add/move/resize/remove and
+ * floor changes accumulate in a local draft and nothing is written until **Save**;
+ * **Cancel** (or trying to leave edit mode) discards them, after a confirm. Level
+ * changes are disabled while editing — you save or switch to inspect first. Placement
+ * is constrained: a box can't be dragged, resized or typed outside its floor or onto
+ * another box, and a new box tiles into the first free slot rather than stacking.
  *
- * Scope, stated plainly:
- * - Renders one level's floor at a time (a metric canvas, ADR 0010): the site
- *   holds labs, a lab holds stations, a station holds devices/modules — each a
- *   box placed in metres (the station level converts device mm at its boundary).
- *   A multi-floor site (ADR 0013) shows a floor picker; only that floor's labs
- *   draw.
- * - The editor (edit mode) does the §10.3 affordances: add a standard-size child
- *   at the origin; drag a box to move it; edit a box's geometry (position,
- *   footprint, height) numerically or with drag handles; remove a box (hard for
- *   labs, soft-hide for stations/devices, ADR 0011); resize the floor/grid.
- * - Not here: zones (they classify, they aren't placed — ADR 0010/0012), and the
- *   live-status/occupancy/utilisation layers, which need live device state.
+ * The canvas is full-bleed and re-fits to its container (`useIsometricPaper`); the
+ * controls float over it in `.canvas-overlay`. Not here: zones (they classify, they
+ * aren't placed), and the live-status layers (they need live device state).
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -33,28 +25,48 @@ import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
 import { Breadcrumb } from "./Breadcrumb";
-import type { FloorPos, Projection } from "./isometric";
-import { boxProblems } from "./isometric";
+import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
+import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, sortBoxes } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
 import { FloorForm, GeometryForm } from "./layoutForms";
 import { buildLevel } from "./levels";
-import type { LayoutData, LevelContext } from "./levels";
+import type { BoxGeometry, FloorGeometry, LayoutData, LevelConfig, LevelContext } from "./levels";
 import { useIsometricPaper } from "./useIsometricPaper";
 
 import "./LayoutScreen.css";
 
 /** One fetch for the whole screen: topology plus devices for every level. */
 async function fetchLayout() {
-  const [topology, devices] = await Promise.all([
-    fetchTopology(),
-    // High limit rather than paging: the canvas needs every device that might be
-    // placed at some level, and a lab has tens.
-    listDevices({ limit: 1000 }),
-  ]);
+  const [topology, devices] = await Promise.all([fetchTopology(), listDevices({ limit: 1000 })]);
   return { topology, devices: devices.items };
 }
 
 const EMPTY: LayoutData = { sites: [], labs: [], zones: [], stations: [], devices: [] };
+
+/** A box created in the draft but not yet persisted — carries its future code. */
+interface DraftCreate {
+  code: string;
+  geom: BoxGeometry;
+}
+
+/** The unsaved edits for the current level, applied over the fetched data. */
+interface Draft {
+  creates: DraftCreate[];
+  edits: Record<string, BoxGeometry>;
+  removes: string[];
+  floor: FloorGeometry | null;
+}
+
+const EMPTY_DRAFT: Draft = { creates: [], edits: {}, removes: [], floor: null };
+
+/** Distinct fill so an unsaved (draft) box reads as "not written yet" — MPG green. */
+const NEW_FILL: BoxFill = { top: "#C6D325", left: "#A9B41F", right: "#8C9519" };
+
+const toRect = (b: { pos: FloorPos; size: { x: number; y: number }; height: number }): RectGeom => ({
+  pos: b.pos,
+  size: b.size,
+  height: b.height,
+});
 
 export function LayoutScreen() {
   const layout = useAsync(useCallback(fetchLayout, []));
@@ -65,9 +77,15 @@ export function LayoutScreen() {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [projection, setProjection] = useState<Projection>("iso");
   const [editable, setEditable] = useState(false);
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [bump, setBump] = useState(0); // forces a canvas redraw (snap-back on reject)
   const [editingGeom, setEditingGeom] = useState(false);
   const [editingFloor, setEditingFloor] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [levelHint, setLevelHint] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const data: LayoutData = useMemo(
     () =>
@@ -83,23 +101,87 @@ export function LayoutScreen() {
     [layout.data],
   );
 
-  // The navigation path resolves to rows; the site defaults to the first one.
   const site = data.sites.find((s) => s.code === siteCode) ?? data.sites[0] ?? null;
   const lab = labCode ? (data.labs.find((l) => l.code === labCode) ?? null) : null;
   const station = stationCode ? (data.stations.find((s) => s.code === stationCode) ?? null) : null;
   const ctx: LevelContext = { site, lab, station, floor };
-
   const level = useMemo(() => buildLevel(ctx, data), [ctx, data]);
 
+  // ---- draft-aware effective model -----------------------------------------
+
+  const floorEff: FloorGeometry = draft.floor ?? level.floor;
+
+  const effModel: CanvasModel = useMemo(() => {
+    const base = level.model.boxes
+      .filter((b) => !draft.removes.includes(b.code))
+      .map((b) => {
+        const e = draft.edits[b.code];
+        return e ? { ...b, pos: e.pos, size: e.size, height: e.height } : b;
+      });
+    const created = draft.creates.map((c) => ({
+      code: c.code,
+      pos: c.geom.pos,
+      size: c.geom.size,
+      height: c.geom.height,
+      fill: NEW_FILL,
+      label: c.code,
+      badge: false,
+    }));
+    return {
+      widthU: floorEff.widthU,
+      depthU: floorEff.depthU,
+      gridU: floorEff.gridU,
+      boxes: sortBoxes([...base, ...created]),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level, draft, floorEff.widthU, floorEff.depthU, floorEff.gridU, bump]);
+
   const problems = useMemo(
-    () => boxProblems(level.model.boxes, level.model.widthU, level.model.depthU),
-    [level],
+    () => boxProblems(effModel.boxes, effModel.widthU, effModel.depthU),
+    [effModel],
   );
 
-  const closeForms = () => {
-    setEditingGeom(false);
-    setEditingFloor(false);
+  const isNew = (code: string) => draft.creates.some((c) => c.code === code);
+  const isDirty =
+    draft.creates.length > 0 ||
+    Object.keys(draft.edits).length > 0 ||
+    draft.removes.length > 0 ||
+    draft.floor !== null;
+
+  const effGeometry = useCallback(
+    (code: string): BoxGeometry | null => {
+      const created = draft.creates.find((c) => c.code === code);
+      if (created) return created.geom;
+      if (draft.removes.includes(code)) return null;
+      return draft.edits[code] ?? level.geometryOf(code);
+    },
+    [draft, level],
+  );
+
+  // Pull a geometry inside the floor and reject it if it lands on another box.
+  const constrain = useCallback(
+    (code: string, candidate: BoxGeometry): BoxGeometry | null => {
+      const clamped = clampToFloor(candidate, floorEff);
+      const others = effModel.boxes.filter((b) => b.code !== code).map(toRect);
+      return overlapsAny(clamped, others) ? null : clamped;
+    },
+    [effModel, floorEff],
+  );
+
+  const stageGeometry = useCallback((code: string, geom: BoxGeometry) => {
+    setDraft((d) =>
+      d.creates.some((c) => c.code === code)
+        ? { ...d, creates: d.creates.map((c) => (c.code === code ? { ...c, geom } : c)) }
+        : { ...d, edits: { ...d.edits, [code]: geom } },
+    );
+  }, []);
+
+  const rejected = (verb: string, code: string) => {
+    setBump((b) => b + 1); // redraw from the draft → the box snaps back
+    setNotice(`Can't ${verb} ${code} there — it would leave the floor or overlap another ${level.childLabel}.`);
   };
+
+  // ---- canvas interactions (staged) ----------------------------------------
 
   const selectBox = useCallback((code: string | null) => {
     setSelectedCode(code);
@@ -108,49 +190,46 @@ export function LayoutScreen() {
   }, []);
 
   const onMove = useCallback(
-    async (code: string, pos: FloorPos) => {
-      const current = level.geometryOf(code);
-      if (!current) return;
-      setError(null);
-      try {
-        await level.setGeometry(code, { ...current, pos });
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
-      // Reload either way: the canvas holds no authoritative state (§10.3), so a
-      // failed write simply snaps the box back where it was.
-      layout.reload();
+    (code: string, pos: FloorPos) => {
+      const cur = effGeometry(code);
+      if (!cur) return;
+      const next = constrain(code, { pos, size: cur.size, height: cur.height });
+      if (!next) return rejected("move", code);
+      setNotice(null);
+      stageGeometry(code, next);
     },
-    [level, layout],
+    [effGeometry, constrain, stageGeometry, level.childLabel],
   );
 
   const onReshape = useCallback(
-    async (code: string, size: { x: number; y: number }, height: number) => {
-      const current = level.geometryOf(code);
-      if (!current) return;
-      setError(null);
-      try {
-        await level.setGeometry(code, { pos: current.pos, size, height });
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
-      layout.reload();
+    (code: string, size: { x: number; y: number }, height: number) => {
+      const cur = effGeometry(code);
+      if (!cur) return;
+      const next = constrain(code, { pos: cur.pos, size, height });
+      if (!next) return rejected("resize", code);
+      setNotice(null);
+      stageGeometry(code, next);
     },
-    [level, layout],
+    [effGeometry, constrain, stageGeometry, level.childLabel],
   );
 
   const containerRef = useIsometricPaper({
-    model: level.model,
+    model: effModel,
     projection,
     selectedCode,
     showLabels: true,
     editable,
     onSelect: selectBox,
+    onActivate: (code) => {
+      if (editable) return selectBox(code); // no drilling while editing
+      if (level.drillInto(code)) enter(code);
+      else selectBox(code);
+    },
     onMove,
     onReshape,
   });
 
-  // ---- navigation ----------------------------------------------------------
+  // ---- navigation (inspect mode only; Breadcrumb is `locked` in edit) -------
 
   const enter = (code: string) => {
     const patch = level.drillInto(code);
@@ -159,7 +238,6 @@ export function LayoutScreen() {
     if (patch.station) setStationCode(patch.station.code);
     selectBox(null);
   };
-
   const goToSite = () => {
     setLabCode(null);
     setStationCode(null);
@@ -173,10 +251,6 @@ export function LayoutScreen() {
     if (station) goToLab();
     else if (lab) goToSite();
   };
-
-  // Breadcrumb jumps: pick a site/floor resets to that site's plan; enter a lab
-  // or a station descends there directly (the breadcrumb can cross levels, so it
-  // sets context rather than going through `drillInto`).
   const pickSite = (code: string) => {
     setSiteCode(code);
     setFloor(0);
@@ -196,15 +270,95 @@ export function LayoutScreen() {
     selectBox(null);
   };
 
-  const addChild = async () => {
+  // ---- staged edit actions -------------------------------------------------
+
+  const addChild = () => {
+    const size = level.standardSize;
+    const pos = placeNextSlot(size, floorEff, effModel.boxes.map(toRect));
+    if (!pos) {
+      setNotice(`No room for another ${level.childLabel} — the ${level.level} floor is full.`);
+      return;
+    }
+    const code = level.nextChildCode(draft.creates.map((c) => c.code));
+    setDraft((d) => ({
+      ...d,
+      creates: [...d.creates, { code, geom: { pos, size: { ...size }, height: level.nominalHeight } }],
+    }));
+    setNotice(null);
+    selectBox(code);
+  };
+
+  const removeSelected = (code: string) => {
+    setDraft((d) =>
+      d.creates.some((c) => c.code === code)
+        ? { ...d, creates: d.creates.filter((c) => c.code !== code) }
+        : {
+            ...d,
+            removes: [...d.removes, code],
+            edits: Object.fromEntries(Object.entries(d.edits).filter(([k]) => k !== code)),
+          },
+    );
+    selectBox(null);
+  };
+
+  const stageGeometryForm = (code: string, geom: BoxGeometry): string | null => {
+    const next = constrain(code, geom);
+    if (!next) return `That would leave the floor or overlap another ${level.childLabel}.`;
+    stageGeometry(code, next);
+    return null;
+  };
+
+  const stageFloor = (f: FloorGeometry): string | null => {
+    if (f.widthU <= 0 || f.depthU <= 0 || f.gridU <= 0) return "Floor width, depth and grid must be positive.";
+    setDraft((d) => ({ ...d, floor: f }));
+    return null;
+  };
+
+  // ---- persist / mode transitions ------------------------------------------
+
+  async function save(l: LevelConfig, d: Draft): Promise<boolean> {
     setError(null);
+    setSaving(true);
     try {
-      const code = await level.create();
+      for (const c of d.creates) await l.create({ code: c.code, geom: c.geom });
+      for (const [code, geom] of Object.entries(d.edits)) {
+        if (d.removes.includes(code)) continue;
+        await l.setGeometry(code, geom);
+      }
+      for (const code of d.removes) await l.remove(code);
+      if (d.floor) await l.resizeFloor(d.floor);
+      setDraft(EMPTY_DRAFT);
+      setSelectedCode(null);
       layout.reload();
-      selectBox(code);
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    } finally {
+      setSaving(false);
     }
+  }
+
+  const enterEdit = () => {
+    setEditable(true);
+    setDraft(EMPTY_DRAFT);
+    setError(null);
+    setNotice(null);
+    selectBox(null);
+  };
+  const exitToInspect = () => {
+    setEditable(false);
+    setDraft(EMPTY_DRAFT);
+    setSelectedCode(null);
+    setEditingGeom(false);
+    setEditingFloor(false);
+    setLevelHint(false);
+    setNotice(null);
+    setError(null);
+  };
+  const cancel = () => {
+    if (isDirty) setConfirmLeave(true);
+    else exitToInspect();
   };
 
   const canEditFloor = level.level !== "station";
@@ -215,21 +369,8 @@ export function LayoutScreen() {
         title="Device management — Lab layout"
         subtitle={
           site
-            ? `${level.level} · ${level.model.widthU}×${level.model.depthU} m · ${level.model.boxes.length} ${level.childLabel}s`
+            ? `${level.level} · ${effModel.widthU}×${effModel.depthU} m · ${effModel.boxes.length} ${level.childLabel}s${isDirty ? " · unsaved changes" : ""}`
             : "Isometric floor plan (§10)"
-        }
-        actions={
-          <Button
-            variant={editable ? "primary" : "secondary"}
-            onClick={() =>
-              setEditable((on) => {
-                if (on) closeForms();
-                return !on;
-              })
-            }
-          >
-            {editable ? "Inspect layout" : "Edit layout"}
-          </Button>
         }
       />
 
@@ -260,6 +401,8 @@ export function LayoutScreen() {
                       station={station}
                       floor={floor}
                       level={level.level}
+                      locked={editable}
+                      onLocked={() => setLevelHint(true)}
                       onPickSite={pickSite}
                       onPickFloor={pickFloor}
                       onEnterLab={enterLab}
@@ -268,14 +411,15 @@ export function LayoutScreen() {
                       onGoToLab={goToLab}
                     />
 
-                    <span className="canvas-overlay__spacer" />
-
-                    <Button onClick={back} disabled={!lab && !station}>
-                      ← Back
-                    </Button>
-                    {editable && (
+                    {editable ? (
                       <>
-                        <Button variant="primary" onClick={addChild}>
+                        <Button variant="primary" onClick={() => save(level, draft)} disabled={!isDirty || saving}>
+                          {saving ? "Saving…" : "Save"}
+                        </Button>
+                        <Button onClick={cancel} disabled={saving}>
+                          Cancel
+                        </Button>
+                        <Button variant="primary" onClick={addChild} disabled={saving}>
                           + Add {level.childLabel}
                         </Button>
                         {canEditFloor && (
@@ -284,16 +428,56 @@ export function LayoutScreen() {
                               selectBox(null);
                               setEditingFloor(true);
                             }}
+                            disabled={saving}
                           >
                             Edit floor
                           </Button>
                         )}
                       </>
+                    ) : (
+                      <>
+                        <Button variant="primary" onClick={enterEdit}>
+                          Edit layout
+                        </Button>
+                        <Button onClick={back} disabled={!lab && !station}>
+                          ← Back
+                        </Button>
+                      </>
                     )}
+
                     <Button onClick={() => setProjection((p) => (p === "iso" ? "2d" : "iso"))}>
                       {projection === "iso" ? "2D view" : "Isometric"}
                     </Button>
                   </div>
+
+                  {levelHint && (
+                    <div className="canvas-overlay__panel canvas-overlay__panel--info" role="alert">
+                      <button
+                        type="button"
+                        className="canvas-overlay__dismiss"
+                        aria-label="Hide"
+                        onClick={() => setLevelHint(false)}
+                      >
+                        ×
+                      </button>
+                      Changing level is only possible in inspect mode. Save your changes, or Cancel to
+                      switch to inspect mode.
+                    </div>
+                  )}
+
+                  {notice && (
+                    <div className="canvas-overlay__panel canvas-overlay__panel--warn" role="alert">
+                      <button
+                        type="button"
+                        className="canvas-overlay__dismiss"
+                        aria-label="Hide"
+                        onClick={() => setNotice(null)}
+                      >
+                        ×
+                      </button>
+                      {notice}
+                    </div>
+                  )}
 
                   {error && (
                     <div className="canvas-overlay__panel canvas-overlay__panel--error" role="alert">
@@ -314,6 +498,25 @@ export function LayoutScreen() {
                     </div>
                   )}
                 </div>
+
+                {confirmLeave && (
+                  <ConfirmLeave
+                    childLabel={level.childLabel}
+                    saving={saving}
+                    onSave={async () => {
+                      const ok = await save(level, draft);
+                      if (ok) {
+                        setConfirmLeave(false);
+                        exitToInspect();
+                      }
+                    }}
+                    onDiscard={() => {
+                      setConfirmLeave(false);
+                      exitToInspect();
+                    }}
+                    onKeep={() => setConfirmLeave(false)}
+                  />
+                )}
               </>
             )}
           </AsyncBoundary>
@@ -321,38 +524,72 @@ export function LayoutScreen() {
 
         {editingFloor ? (
           <FloorForm
-            level={level}
-            onDone={() => {
-              setEditingFloor(false);
-              layout.reload();
-            }}
+            levelName={level.level}
+            initial={floorEff}
+            onStage={stageFloor}
+            onDone={() => setEditingFloor(false)}
             onCancel={() => setEditingFloor(false)}
           />
         ) : editingGeom && selectedCode ? (
           <GeometryForm
-            level={level}
             code={selectedCode}
-            onDone={() => {
-              setEditingGeom(false);
-              layout.reload();
-            }}
+            initial={effGeometry(selectedCode) ?? { pos: { x: 0, y: 0 }, size: level.standardSize, height: level.nominalHeight }}
+            showHeight={level.level !== "site"}
+            onStage={(geom) => stageGeometryForm(selectedCode, geom)}
+            onDone={() => setEditingGeom(false)}
             onCancel={() => setEditingGeom(false)}
           />
         ) : (
           <LayoutInspector
             level={level}
             code={selectedCode}
+            geom={selectedCode ? effGeometry(selectedCode) : null}
+            isNew={selectedCode ? isNew(selectedCode) : false}
             editable={editable}
             onEnter={enter}
             onEditGeometry={() => setEditingGeom(true)}
-            onRemoved={() => {
-              selectBox(null);
-              layout.reload();
-            }}
+            onRemove={() => selectedCode && removeSelected(selectedCode)}
             onClose={() => selectBox(null)}
           />
         )}
       </div>
     </>
+  );
+}
+
+/** The discard/save confirm shown when leaving edit mode with unsaved changes. */
+function ConfirmLeave({
+  childLabel,
+  saving,
+  onSave,
+  onDiscard,
+  onKeep,
+}: {
+  childLabel: string;
+  saving: boolean;
+  onSave: () => void;
+  onDiscard: () => void;
+  onKeep: () => void;
+}) {
+  return (
+    <div className="layout-confirm" role="dialog" aria-modal="true" aria-label="Unsaved changes">
+      <div className="layout-confirm__box">
+        <p className="layout-confirm__title">Unsaved changes</p>
+        <p className="layout-confirm__body">
+          You have unsaved {childLabel} changes. Save them, or discard and switch to inspect mode?
+        </p>
+        <div className="layout-confirm__actions">
+          <Button variant="primary" onClick={onSave} disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+          <Button variant="danger" onClick={onDiscard} disabled={saving}>
+            Discard
+          </Button>
+          <Button onClick={onKeep} disabled={saving}>
+            Keep editing
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

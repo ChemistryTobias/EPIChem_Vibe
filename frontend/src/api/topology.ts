@@ -87,6 +87,13 @@ export interface LabSpecBody {
   // it (backend defaults 0); the Site-level layout editor sets it so a lab
   // created while viewing floor N lands on floor N.
   floor?: number;
+  // Optional box on the site canvas (ADR 0012), in metres. The layout editor sets
+  // these so a created lab lands where it was dropped; omitted → backend default
+  // 10×10 m at the origin.
+  site_pos_x?: number;
+  site_pos_y?: number;
+  site_size_x_m?: number;
+  site_size_y_m?: number;
 }
 
 export interface ZoneSpecBody {

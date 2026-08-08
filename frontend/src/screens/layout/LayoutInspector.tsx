@@ -1,25 +1,28 @@
 /**
- * Detail panel for the selected box — generic across all three levels (ADR
- * 0012). It shows the box's geometry and offers the edit-mode affordances (enter,
- * edit geometry, remove) plus its revision history. This is plan §10.2's
- * "React-side inspector" — the reason the canvas can stay on `@joint/core` alone
- * instead of needing the commercial Inspector component.
+ * Detail panel for the selected box — generic across all three levels (ADRs
+ * 0012/0014). It shows the box's (draft-aware) geometry and, in edit mode, the
+ * staged affordances: edit geometry and remove (both recorded in the draft, not
+ * written until Save). In inspect mode it offers Enter, since drilling is a level
+ * change and level changes only happen in inspect mode. This is plan §10.2's
+ * "React-side inspector" — the reason the canvas can stay on `@joint/core` alone.
  */
-
-import { useState } from "react";
 
 import { Button } from "../../components/Button";
 import { Field, FieldGroup, Inspector } from "../../components/Inspector";
 import { RevisionHistory } from "../topology/RevisionHistory";
-import type { LevelConfig } from "./levels";
+import type { BoxGeometry, LevelConfig } from "./levels";
 
 interface LayoutInspectorProps {
   level: LevelConfig;
   code: string | null;
+  /** Effective (draft-aware) geometry of the selected box, or null if none. */
+  geom: BoxGeometry | null;
+  /** True for a box that only exists in the draft (created, not yet saved). */
+  isNew: boolean;
   editable: boolean;
   onEnter: (code: string) => void;
   onEditGeometry: () => void;
-  onRemoved: () => void;
+  onRemove: () => void;
   onClose: () => void;
 }
 
@@ -28,22 +31,22 @@ const m = (v: number) => `${Math.round(v * 1000) / 1000} m`;
 export function LayoutInspector({
   level,
   code,
+  geom,
+  isNew,
   editable,
   onEnter,
   onEditGeometry,
-  onRemoved,
+  onRemove,
   onClose,
 }: LayoutInspectorProps) {
-  const geom = code ? level.geometryOf(code) : null;
-
   if (!code || !geom) {
     return (
       <Inspector
         kind="Layout inspector"
         placeholder={
           editable
-            ? `Add a ${level.childLabel}, or pick one to move, resize, enter or ${level.removeVerb.toLowerCase()} it.`
-            : `Select a ${level.childLabel} to see where it sits, or click it to enter.`
+            ? `Add a ${level.childLabel}, or pick one to move, resize, or ${level.removeVerb.toLowerCase()} it. Nothing is written until you Save.`
+            : `Select a ${level.childLabel} to see where it sits, or click its label to enter.`
         }
       />
     );
@@ -52,25 +55,27 @@ export function LayoutInspector({
   const canEnter = level.drillInto(code) !== null;
 
   return (
-    <Inspector kind={`${level.childLabel} inspector`} title={code} subtitle={level.level} onClose={onClose}>
-      {editable && (
-        <BoxActions
-          code={code}
-          canEnter={canEnter}
-          removeVerb={level.removeVerb}
-          onEnter={() => onEnter(code)}
-          onEditGeometry={onEditGeometry}
-          onRemove={() => level.remove(code)}
-          onRemoved={onRemoved}
-        />
-      )}
-
-      {!editable && canEnter && (
+    <Inspector
+      kind={`${level.childLabel} inspector`}
+      title={code}
+      subtitle={isNew ? `${level.level} · unsaved` : level.level}
+      onClose={onClose}
+    >
+      {editable ? (
         <div className="node-actions">
-          <Button variant="primary" onClick={() => onEnter(code)}>
-            Enter {code}
+          <Button onClick={onEditGeometry}>Edit geometry</Button>
+          <Button variant="danger" onClick={onRemove}>
+            {level.removeVerb}
           </Button>
         </div>
+      ) : (
+        canEnter && (
+          <div className="node-actions">
+            <Button variant="primary" onClick={() => onEnter(code)}>
+              Enter {code}
+            </Button>
+          </div>
+        )
       )}
 
       <FieldGroup title="Placement">
@@ -87,82 +92,8 @@ export function LayoutInspector({
         )}
       </FieldGroup>
 
-      <RevisionHistory kind={level.childKind} code={code} />
+      {/* A staged-new box has no persisted history yet. */}
+      {!isNew && <RevisionHistory kind={level.childKind} code={code} />}
     </Inspector>
-  );
-}
-
-/**
- * Enter / edit-geometry / remove row for the selected box (edit mode). Remove is
- * a two-step inline confirm owning its own busy/error state — a hard delete can
- * come back 409 (a lab that still holds stations), which is worth showing.
- */
-function BoxActions({
-  code,
-  canEnter,
-  removeVerb,
-  onEnter,
-  onEditGeometry,
-  onRemove,
-  onRemoved,
-}: {
-  code: string;
-  canEnter: boolean;
-  removeVerb: "Delete" | "Hide";
-  onEnter: () => void;
-  onEditGeometry: () => void;
-  onRemove: () => Promise<unknown>;
-  onRemoved: () => void;
-}) {
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function remove() {
-    setBusy(true);
-    setError(null);
-    try {
-      await onRemove();
-      onRemoved();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      setBusy(false);
-      setConfirming(false);
-    }
-  }
-
-  return (
-    <div className="node-actions">
-      {confirming ? (
-        <>
-          <span className="node-actions__prompt">
-            {removeVerb} {code}?
-          </span>
-          <Button variant="danger" onClick={remove} disabled={busy}>
-            {busy ? `${removeVerb}…` : "Confirm"}
-          </Button>
-          <Button onClick={() => setConfirming(false)} disabled={busy}>
-            Cancel
-          </Button>
-        </>
-      ) : (
-        <>
-          {canEnter && (
-            <Button variant="primary" onClick={onEnter}>
-              Enter
-            </Button>
-          )}
-          <Button onClick={onEditGeometry}>Edit geometry</Button>
-          <Button variant="danger" onClick={() => setConfirming(true)}>
-            {removeVerb}
-          </Button>
-        </>
-      )}
-      {error && (
-        <p className="create-form__error node-actions__error" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
   );
 }

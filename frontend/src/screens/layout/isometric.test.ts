@@ -12,8 +12,12 @@ import {
   DEFAULT_METRICS,
   boxProblems,
   canvasExtent,
+  clampToFloor,
   depth,
   metricsFor,
+  overlapsAny,
+  placeNextSlot,
+  rectsOverlap,
   snap,
   sortBoxes,
   toFloor,
@@ -145,5 +149,44 @@ describe("boxProblems", () => {
   test("flags two overlapping boxes but lets them touch edge-to-edge", () => {
     expect(boxProblems([box("A", 1, 1), box("B", 1.5, 1.5)], 6, 4)).toHaveLength(1);
     expect(boxProblems([box("A", 0, 0), box("B", 1, 0)], 6, 4)).toEqual([]);
+  });
+});
+
+const floor = { widthU: 6, depthU: 4, gridU: 1 };
+const geom = (x: number, y: number, sx = 1, sy = 1) => ({ pos: { x, y }, size: { x: sx, y: sy }, height: 0.5 });
+
+describe("clampToFloor (ADR 0014 border constraint)", () => {
+  test("pulls a box back inside the floor", () => {
+    const c = clampToFloor(geom(10, 10, 2, 2), floor);
+    expect(c.pos).toEqual({ x: 4, y: 2 }); // 6-2, 4-2
+    expect(c.size).toEqual({ x: 2, y: 2 });
+  });
+
+  test("shrinks a footprint larger than the floor and floors a negative height", () => {
+    const c = clampToFloor({ pos: { x: 0, y: 0 }, size: { x: 99, y: 99 }, height: -3 }, floor);
+    expect(c.size).toEqual({ x: 6, y: 4 });
+    expect(c.height).toBe(0);
+  });
+});
+
+describe("rectsOverlap / overlapsAny", () => {
+  test("overlap yes, edge-touch no", () => {
+    expect(rectsOverlap(geom(0, 0), geom(0.5, 0.5))).toBe(true);
+    expect(rectsOverlap(geom(0, 0), geom(1, 0))).toBe(false);
+    expect(overlapsAny(geom(0, 0), [geom(2, 2), geom(0.5, 0)])).toBe(true);
+    expect(overlapsAny(geom(0, 0), [geom(2, 2), geom(3, 3)])).toBe(false);
+  });
+});
+
+describe("placeNextSlot (ADR 0014 auto-tiling)", () => {
+  test("fills the origin when empty, then the next free grid slot", () => {
+    expect(placeNextSlot({ x: 1, y: 1 }, floor, [])).toEqual({ x: 0, y: 0 });
+    expect(placeNextSlot({ x: 1, y: 1 }, floor, [geom(0, 0)])).toEqual({ x: 1, y: 0 });
+  });
+
+  test("returns null when the floor is full", () => {
+    const packed = [];
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 6; x++) packed.push(geom(x, y));
+    expect(placeNextSlot({ x: 1, y: 1 }, floor, packed)).toBeNull();
   });
 });

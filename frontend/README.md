@@ -132,15 +132,21 @@ STATION`, where each `›` opens a dropdown of that level's options and a name j
 level. The `[floor]` chip is the site-floor view control (ADR 0013), shown only when the site has
 more than one floor — a layout-only concept that never appears in the Hierarchy tree.
 
-Editing (edit mode): **add** a standard-size child at the origin, **drag** to move, resize the
-**footprint/height with drag handles** (`useIsometricPaper.ts`, the isometric-diagram demo
-affordance on the free core) or numerically, **remove** (hard delete for labs, `virtual` soft-hide
-for stations/devices — ADR 0011), and **edit the floor/grid**. A **2D/isometric toggle**
-re-projects the same model.
+Editing (edit mode) is **staged (ADR 0014)**: **add** a child (it tiles into the next free slot),
+**drag** to move, resize the **footprint/height with drag handles** (`useIsometricPaper.ts`, the
+isometric-diagram demo affordance on the free core) or numerically, **remove** (hard delete for
+labs, `virtual` soft-hide for stations/devices — ADR 0011), and **edit the floor/grid** — but none
+of it is written until **Save**. **Cancel**, or trying to leave edit mode with unsaved changes,
+prompts a discard/save confirm. Level changes (drill-down, breadcrumb) are disabled while editing;
+in inspect mode, a click on a box's **label** drills into it. Placement is *constrained*: a box
+can't be dragged, resized or typed off its floor or onto another box (`clampToFloor` + `overlapsAny`
+in `isometric.ts`).
 
-The canvas holds no authoritative state, per §10.3: a drag or handle-resize reports new geometry,
-the screen PUTs it and refetches, and the redraw is what commits it. A rejected write snaps it back
-for free.
+The canvas still holds no authoritative state, per §10.3: while editing, the draft (in
+`LayoutScreen`) is the pending truth and the canvas renders base data + draft as an *effective
+model*; a rejected drag snaps back because the model didn't change. On Save the draft replays
+through the ADR 0010/0012 write endpoints and the refetch commits it — the same "reload is the
+commit" idea, batched.
 
 `@joint/core` is ~435 kB, so this screen is lazy-loaded (`App.tsx`) and the other three don't pay
 for it.

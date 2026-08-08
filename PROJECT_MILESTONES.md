@@ -189,7 +189,7 @@ import is explicitly deferred to a late stage (see M6).
   Device Status screen. Restoring a past revision (forward-revert) is a later capability and will
   get its own ADR. Still to come on the *other* subsections: the creation affordances on Device
   Status / Lab Layout.
-- [x] **Lab-layout editor — three levels, one implementation (ADRs 0009–0013)** —
+- [x] **Lab-layout editor — three levels, one implementation (ADRs 0009–0014)** —
   the isometric canvas is a *single* generic editor over three levels (Site → Lab → Station),
   all `@joint/core` only (no JointJS+ component). A level is just data: the site floor holds labs,
   a lab floor holds stations, a station floor holds devices/modules — each a box on a metric floor
@@ -207,8 +207,13 @@ import is explicitly deferred to a late stage (see M6).
   toggle** re-projects the same model. This needed backend geometry the old model lacked (ADR 0012):
   a Site canvas, a Lab's box on it, and a Device footprint. The site plane also gained a
   **layout-only floor selector** (ADR 0013): `Site.floors` + `Lab.floor` let a multi-storey building
-  show one floor's labs at a time — *not* a hierarchy level, absent from the tree. Verified: 80
-  frontend tests + typecheck + build; backend floors/geometry/virtual round-trip under pytest (101).
+  show one floor's labs at a time — *not* a hierarchy level, absent from the tree. Editing is now
+  **staged** (ADR 0014): add/move/resize/remove/floor changes accumulate in a draft and nothing
+  writes until **Save**; **Cancel**/mode-switch confirms a discard; level changes are disabled while
+  editing (a click on a box label drills in during inspect); and placement is *constrained* — a box
+  can't be dragged, resized or typed off its floor or onto another box, and Add tiles into the next
+  free slot. Verified: 85 frontend tests + typecheck + build; backend floors/geometry/virtual
+  round-trip under pytest (101).
   **Still not built:** zone rectangles (zones classify, they aren't placed), and the
   live-status/occupancy/utilisation layers (need live device state), plus multi-select /
   align-distribute / copy-paste / undo-redo and floorplan-image upload as UI polish.

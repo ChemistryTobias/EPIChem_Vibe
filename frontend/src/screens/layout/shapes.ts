@@ -55,7 +55,10 @@ export const BoxTile = dia.Element.define(
         fontSize: 10,
         textAnchor: "middle",
         textVerticalAnchor: "middle",
-        pointerEvents: "none",
+        // Clickable: a click on the label drills into the box's sublevel (inspect
+        // mode), which the canvas hook detects by the <text> target.
+        pointerEvents: "visiblePainted",
+        cursor: "pointer",
       },
       badge: { r: 4, stroke: "#FFFFFF", strokeWidth: 1, pointerEvents: "none" },
     },

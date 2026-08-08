@@ -37,33 +37,30 @@
   padding: var(--space-3);
 }
 
+/* All controls live on the upper-left, wrapping when narrow. The bar itself is
+ * click-through; only its real controls (below) take pointer events. */
 .canvas-overlay__bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
   pointer-events: none;
 }
 
-/* Re-enable interaction on the actual controls; the flexible spacer stays
- * click-through so the middle of the bar drops clicks onto the canvas. */
 .canvas-overlay__bar > .crumbs,
 .canvas-overlay__bar > .btn {
   pointer-events: auto;
 }
 
-.canvas-overlay__spacer {
-  flex: 1;
-  pointer-events: none;
-}
-
-/* Error / warning cards, floated under the bar. */
+/* Error / warning / info cards, floated under the bar. */
 .canvas-overlay__panel {
+  position: relative;
   pointer-events: auto;
   align-self: flex-start;
   max-width: 520px;
   border-left: 3px solid var(--color-danger);
   background: var(--color-bg);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-3);
   border-radius: var(--radius);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
   font-size: 12px;
@@ -73,9 +70,68 @@
   border-left-color: var(--color-accent-orange);
 }
 
+.canvas-overlay__panel--info {
+  border-left-color: var(--color-accent-blue);
+}
+
 .canvas-overlay__panel ul {
   margin: var(--space-1) 0 0;
   padding-left: var(--space-4);
+}
+
+/* The × that hides a dismissible panel (it reappears next time it's triggered). */
+.canvas-overlay__dismiss {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1.2;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.canvas-overlay__dismiss:hover {
+  color: var(--color-text);
+}
+
+/* The unsaved-changes confirm, over the canvas area. */
+.layout-confirm {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.layout-confirm__box {
+  max-width: 420px;
+  margin: var(--space-4);
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+  padding: var(--space-4);
+}
+
+.layout-confirm__title {
+  margin: 0 0 var(--space-2);
+  font-weight: 700;
+}
+
+.layout-confirm__body {
+  margin: 0 0 var(--space-4);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.layout-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 /* ---- breadcrumb ---------------------------------------------------------- */

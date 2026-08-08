@@ -78,6 +78,10 @@ export interface LevelConfig {
   removeVerb: "Delete" | "Hide";
   /** True at the deepest level (station → devices), where a box can't be entered. */
   isLeaf: boolean;
+  /** The footprint a newly-added child gets, in the level's canvas units. */
+  standardSize: { x: number; y: number };
+  /** The height a newly-added child gets (0 at the site level — labs have none). */
+  nominalHeight: number;
   /** Floor + boxes for the current context. */
   model: CanvasModel;
   /** The floor's own size, for the floor-resize form. */
@@ -86,8 +90,16 @@ export interface LevelConfig {
   ready: boolean;
   /** Move+reshape a box (drag, handles, or numeric form), in canvas units. */
   setGeometry: (code: string, geom: BoxGeometry) => Promise<unknown>;
-  /** Add a standard-size child at the origin; resolves to its new code. */
-  create: () => Promise<string>;
+  /**
+   * Persist a new child. With no args it lands at the origin at the standard
+   * size (the hierarchy-style create); the layout editor passes the code it
+   * pre-assigned and the geometry it was dropped at, so a staged create commits
+   * in one call. Resolves to the new code.
+   */
+  create: (opts?: { code?: string; geom?: BoxGeometry }) => Promise<string>;
+  /** Next free child code, avoiding both persisted rows and `alreadyStaged` ones
+   * — so the editor can pre-assign a real code to a staged create. */
+  nextChildCode: (alreadyStaged: string[]) => string;
   /** Remove a box — hard delete (labs) or soft-hide (stations/devices). */
   remove: (code: string) => Promise<unknown>;
   /** Resize the floor/grid itself. */
@@ -164,6 +176,8 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
     // level hard-deletes rather than soft-hides.
     removeVerb: "Delete",
     isLeaf: false,
+    standardSize: { x: 10, y: 10 },
+    nominalHeight: NOMINAL_LAB_HEIGHT_M,
     model: { ...floor, boxes },
     floor,
     ready: site !== null,
@@ -182,8 +196,9 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
         site_size_y_m: g.size.y,
       });
     },
-    create: async () => {
-      const code = nextCode("LAB", new Set(data.labs.map((l) => l.code)));
+    create: async (opts) => {
+      const code = opts?.code ?? nextCode("LAB", new Set(data.labs.map((l) => l.code)));
+      const g = opts?.geom;
       await createLab(code, `New lab ${code}`, {
         site: site!.code,
         room_number: null,
@@ -191,9 +206,16 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
         // Land on the floor being viewed (ADR 0013), not always floor 0 — else a
         // lab created on floor 2 would vanish from the current plan.
         floor: viewFloor,
+        ...(g && {
+          site_pos_x: g.pos.x,
+          site_pos_y: g.pos.y,
+          site_size_x_m: g.size.x,
+          site_size_y_m: g.size.y,
+        }),
       });
       return code;
     },
+    nextChildCode: (staged) => nextCode("LAB", new Set([...data.labs.map((l) => l.code), ...staged])),
     remove: (code) => deleteNode("Lab", code),
     resizeFloor: (f) => resizeSiteCanvas(site!, { width_m: f.widthU, depth_m: f.depthU, grid_size_m: f.gridU }),
     drillInto: (code) => {
@@ -237,6 +259,8 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
     childKind: "Station",
     removeVerb: "Hide",
     isLeaf: false,
+    standardSize: { x: 1, y: 1 },
+    nominalHeight: 0.5,
     model: { ...floor, boxes },
     floor,
     ready: true,
@@ -256,8 +280,9 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
         height_m: g.height,
       });
     },
-    create: async () => {
-      const code = nextCode("ST", new Set(data.stations.map((s) => s.code)));
+    create: async (opts) => {
+      const code = opts?.code ?? nextCode("ST", new Set(data.stations.map((s) => s.code)));
+      const g = opts?.geom;
       await createStation(code, `New station ${code}`, {
         lab: lab.code,
         zone: null,
@@ -265,9 +290,18 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
         capacity: 1,
         state: "active",
         owning_group: null,
+        ...(g && {
+          pos_x: g.pos.x,
+          pos_y: g.pos.y,
+          size_x_m: g.size.x,
+          size_y_m: g.size.y,
+          height_m: g.height,
+        }),
       });
       return code;
     },
+    nextChildCode: (staged) =>
+      nextCode("ST", new Set([...data.stations.map((s) => s.code), ...staged])),
     remove: (code) => {
       const s = byCode.get(code)!;
       return setStationVirtual(s, lab.code, zoneCodeOf(s), true);
@@ -315,6 +349,8 @@ function stationLevel(station: Station, _lab: Lab | null, data: LayoutData): Lev
     childKind: "Device",
     removeVerb: "Hide",
     isLeaf: true,
+    standardSize: { x: DEFAULT_DEVICE_SIZE_M, y: DEFAULT_DEVICE_SIZE_M },
+    nominalHeight: DEFAULT_DEVICE_SIZE_M,
     model: { ...floor, boxes },
     floor,
     ready: true,
@@ -332,8 +368,9 @@ function stationLevel(station: Station, _lab: Lab | null, data: LayoutData): Lev
         size_z_mm: g.height * MM_PER_M,
       });
     },
-    create: async () => {
-      const code = nextCode("DEV", new Set(data.devices.map((d) => d.code)));
+    create: async (opts) => {
+      const code = opts?.code ?? nextCode("DEV", new Set(data.devices.map((d) => d.code)));
+      const g = opts?.geom;
       await createDevice({
         code,
         name: `New device ${code}`,
@@ -341,9 +378,18 @@ function stationLevel(station: Station, _lab: Lab | null, data: LayoutData): Lev
         capability_class: null,
         station: station.code,
         operational_mode: "read_write",
+        ...(g && {
+          pose_x_mm: g.pos.x * MM_PER_M,
+          pose_y_mm: g.pos.y * MM_PER_M,
+          size_x_mm: g.size.x * MM_PER_M,
+          size_y_mm: g.size.y * MM_PER_M,
+          size_z_mm: g.height * MM_PER_M,
+        }),
       });
       return code;
     },
+    nextChildCode: (staged) =>
+      nextCode("DEV", new Set([...data.devices.map((d) => d.code), ...staged])),
     remove: (code) => {
       const d = byCode.get(code)!;
       return setDeviceVirtual(d, parentCodeOf(d), true);

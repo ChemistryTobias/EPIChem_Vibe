@@ -27,6 +27,9 @@ interface BreadcrumbProps {
   station: Station | null;
   floor: number;
   level: Level;
+  /** Edit mode: level changes are blocked; every crumb/arrow calls `onLocked`. */
+  locked?: boolean;
+  onLocked?: () => void;
   onPickSite: (code: string) => void;
   onPickFloor: (floor: number) => void;
   onEnterLab: (code: string) => void;
@@ -44,6 +47,8 @@ export function Breadcrumb({
   station,
   floor,
   level,
+  locked = false,
+  onLocked,
   onPickSite,
   onPickFloor,
   onEnterLab,
@@ -68,17 +73,19 @@ export function Breadcrumb({
   }));
 
   return (
-    <nav className="crumbs" aria-label="Layout location">
+    <nav className={`crumbs${locked ? " crumbs--locked" : ""}`} aria-label="Layout location">
       {/* Sites — only when there's more than one to switch between. */}
       {sites.length > 1 && (
         <Dropdown
           label="›"
           title="Switch site"
+          locked={locked}
+          onLocked={onLocked}
           options={sites.map((s) => ({ code: s.code, label: s.code, active: s.code === site.code }))}
           onPick={onPickSite}
         />
       )}
-      <Crumb current={level === "site"} onClick={onGoToSite}>
+      <Crumb current={level === "site"} locked={locked} onLocked={onLocked} onClick={onGoToSite}>
         {site.code}
       </Crumb>
       {/* Floor chip — a view control, only when the building has floors to pick. */}
@@ -87,6 +94,8 @@ export function Breadcrumb({
           label={`[${floor}]`}
           title="Switch floor"
           className="crumbs__floor"
+          locked={locked}
+          onLocked={onLocked}
           options={floorOptions}
           onPick={(code) => onPickFloor(Number(code))}
         />
@@ -94,36 +103,61 @@ export function Breadcrumb({
 
       {/* Labs — the arrow is always available (enter/switch a lab); the name only
           once a lab is selected. */}
-      <Dropdown label="›" title="Enter a lab" options={labOptions} onPick={onEnterLab} />
+      <Dropdown
+        label="›"
+        title="Enter a lab"
+        locked={locked}
+        onLocked={onLocked}
+        options={labOptions}
+        onPick={onEnterLab}
+      />
       {lab && (
-        <Crumb current={level === "lab"} onClick={onGoToLab}>
+        <Crumb current={level === "lab"} locked={locked} onLocked={onLocked} onClick={onGoToLab}>
           {lab.code}
         </Crumb>
       )}
 
       {/* Stations — only once inside a lab. */}
       {lab && (
-        <Dropdown label="›" title="Enter a station" options={stationOptions} onPick={onEnterStation} />
+        <Dropdown
+          label="›"
+          title="Enter a station"
+          locked={locked}
+          onLocked={onLocked}
+          options={stationOptions}
+          onPick={onEnterStation}
+        />
       )}
-      {station && <Crumb current>{station.code}</Crumb>}
+      {station && (
+        <Crumb current locked={locked} onLocked={onLocked}>
+          {station.code}
+        </Crumb>
+      )}
     </nav>
   );
 }
 
 function Crumb({
   current,
+  locked,
+  onLocked,
   onClick,
   children,
 }: {
   current: boolean;
+  locked?: boolean;
+  onLocked?: () => void;
   onClick?: () => void;
   children: ReactNode;
 }) {
-  if (current || !onClick) {
-    return <span className="crumb crumb--current">{children}</span>;
+  // Locked (edit mode): the crumb still reacts, but only to explain that level
+  // changes need inspect mode.
+  const handler = locked ? onLocked : current ? undefined : onClick;
+  if (!handler) {
+    return <span className={`crumb${current ? " crumb--current" : ""}`}>{children}</span>;
   }
   return (
-    <button type="button" className="crumb" onClick={onClick}>
+    <button type="button" className={`crumb${current ? " crumb--current" : ""}`} onClick={handler}>
       {children}
     </button>
   );
@@ -146,12 +180,16 @@ function Dropdown({
   options,
   onPick,
   className,
+  locked,
+  onLocked,
 }: {
   label: ReactNode;
   title: string;
   options: Option[];
   onPick: (code: string) => void;
   className?: string;
+  locked?: boolean;
+  onLocked?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -166,6 +204,15 @@ function Dropdown({
   }, [open]);
 
   const arrowClass = `crumb__arrow${className ? ` ${className}` : ""}`;
+
+  // Locked (edit mode): the arrow doesn't open — it explains the block instead.
+  if (locked) {
+    return (
+      <button type="button" className={arrowClass} title="Level changes need inspect mode" onClick={onLocked}>
+        {label}
+      </button>
+    );
+  }
 
   if (options.length === 0) {
     return (
