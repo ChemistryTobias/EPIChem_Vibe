@@ -15,7 +15,7 @@
  * discarded on release in favour of the reloaded model.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
 import type { Box, CanvasModel, FloorPos, Point, Projection, TileMetrics } from "./isometric";
@@ -49,6 +49,12 @@ const CELL_NAMESPACE = { ...shapes, epi: { FloorGrid, Box: BoxTile, Handle: Hand
 
 const MARGIN = 24;
 const HANDLE = 12; // handle square side (shapes.ts)
+const ZOOM_STEP = 1.2; // per button press; the wheel uses a gentler factor
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 4;
+
+/** The bits of a pointer/wheel event the pan/zoom handlers need. */
+type PointerLike = { clientX: number; clientY: number; preventDefault?: () => void };
 
 /** A handle drag in progress: which handle, and the box it resizes. */
 interface Drag {
@@ -78,6 +84,13 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
   // The metrics the last redraw fitted to the container; the drag handlers read
   // it so their floor↔screen inversion matches what's on screen.
   const metricsRef = useRef<TileMetrics>(DEFAULT_METRICS);
+  // User view transform layered on top of the fit: `scale` (wheel / ± buttons)
+  // and `pan` (dragging the floor or the blank around it), in screen px. `base`
+  // is the fit that centres the drawing — the redraw recomputes it, and every
+  // view change is expressed relative to it so a redraw preserves zoom/pan.
+  const scaleRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+  const baseRef = useRef({ tx: 0, ty: 0, dimW: 1, dimH: 1 });
 
   // Handlers live in a ref so the paper's listeners always call the latest
   // ones without the paper itself having to be rebuilt on every render.
@@ -126,6 +139,33 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     });
     return shape;
   };
+
+  // Push the current scale+pan onto the paper. Final transform (JointJS applies
+  // translate·scale, so screen = scale·content + translate): zoom is around the
+  // viewport centre, then pan shifts it. At scale 1 / pan 0 this is just the fit.
+  const applyView = useCallback(() => {
+    const paper = paperRef.current;
+    if (!paper) return;
+    const s = scaleRef.current;
+    const { tx, ty, dimW, dimH } = baseRef.current;
+    const pan = panRef.current;
+    paper.scale(s, s);
+    paper.translate((1 - s) * (dimW / 2) + s * tx + pan.x, (1 - s) * (dimH / 2) + s * ty + pan.y);
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    scaleRef.current = Math.min(scaleRef.current * ZOOM_STEP, ZOOM_MAX);
+    applyView();
+  }, [applyView]);
+  const zoomOut = useCallback(() => {
+    scaleRef.current = Math.max(scaleRef.current / ZOOM_STEP, ZOOM_MIN);
+    applyView();
+  }, [applyView]);
+  const resetView = useCallback(() => {
+    scaleRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
+    applyView();
+  }, [applyView]);
 
   // Create the paper once the container exists.
   useEffect(() => {
@@ -256,6 +296,58 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       handlers.current.onMove(code, next);
     });
 
+    // ---- pan (drag the floor or the blank around it) ------------------------
+    //
+    // Panning shifts the view, not the model, so it's pure screen-px translation
+    // (independent of scale). Tracked on the document so a fast drag that leaves
+    // the paper doesn't drop the gesture. Boxes/handles keep their own drag — pan
+    // only starts on the blank paper or the floor tile.
+    const startPan = (down: PointerLike) => {
+      const start = { x: down.clientX, y: down.clientY, pan: { ...panRef.current } };
+      const onMove = (e: PointerEvent) => {
+        panRef.current = { x: start.pan.x + (e.clientX - start.x), y: start.pan.y + (e.clientY - start.y) };
+        applyView();
+      };
+      const onUp = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    };
+    paper.on("blank:pointerdown", (evt) => startPan(evt as unknown as PointerLike));
+    paper.on("element:pointerdown", (view, evt) => {
+      if (view.model.get("type") === "epi.FloorGrid") startPan(evt as unknown as PointerLike);
+    });
+
+    // ---- zoom (mouse wheel, around the cursor) ------------------------------
+    const onWheel = (evt: PointerLike, delta: number) => {
+      evt.preventDefault?.();
+      const p = paperRef.current;
+      if (!p) return;
+      const rect = (p.el as HTMLElement).getBoundingClientRect();
+      const q = { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+      const s = scaleRef.current;
+      const ns = Math.min(Math.max(s * (delta > 0 ? 1.1 : 0.9), ZOOM_MIN), ZOOM_MAX);
+      if (ns === s) return;
+      const b = baseRef.current;
+      const pan = panRef.current;
+      // Keep the content point under the cursor fixed: invert to content, rescale,
+      // solve for the pan that lands it back under the cursor.
+      const trX = (1 - s) * (b.dimW / 2) + s * b.tx + pan.x;
+      const trY = (1 - s) * (b.dimH / 2) + s * b.ty + pan.y;
+      const mX = (q.x - trX) / s;
+      const mY = (q.y - trY) / s;
+      panRef.current = {
+        x: q.x - ns * mX - (1 - ns) * (b.dimW / 2) - ns * b.tx,
+        y: q.y - ns * mY - (1 - ns) * (b.dimH / 2) - ns * b.ty,
+      };
+      scaleRef.current = ns;
+      applyView();
+    };
+    paper.on("blank:mousewheel", (evt, _x, _y, delta) => onWheel(evt as unknown as PointerLike, delta));
+    paper.on("cell:mousewheel", (_view, evt, _x, _y, delta) => onWheel(evt as unknown as PointerLike, delta));
+
     graphRef.current = graph;
     paperRef.current = paper;
 
@@ -287,7 +379,14 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     const dimW = Math.max(paperW, size.w || paperW);
     const dimH = Math.max(paperH, size.h || paperH);
     paper.setDimensions(dimW, dimH);
-    paper.translate(MARGIN + (dimW - paperW) / 2, lift + MARGIN + (dimH - paperH) / 2);
+    // The fit (centred) transform; the user's zoom/pan is layered on in applyView.
+    baseRef.current = {
+      tx: MARGIN + (dimW - paperW) / 2,
+      ty: lift + MARGIN + (dimH - paperH) / 2,
+      dimW,
+      dimH,
+    };
+    applyView();
 
     // Full rebuild rather than a diff: a level is tens of boxes, and a rebuild
     // can't drift out of sync with the data the way a diff can.
@@ -328,7 +427,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // the time this reads it.
   }, [container, model, projection, selectedCode, showLabels, editable, size]);
 
-  return setContainer;
+  return { containerRef: setContainer, zoomIn, zoomOut, resetView };
 }
 
 /**

@@ -214,7 +214,7 @@ export function LayoutScreen() {
     [effGeometry, constrain, stageGeometry, level.childLabel],
   );
 
-  const containerRef = useIsometricPaper({
+  const { containerRef, zoomIn, zoomOut, resetView } = useIsometricPaper({
     model: effModel,
     projection,
     selectedCode,
@@ -475,19 +475,19 @@ export function LayoutScreen() {
                       projection toggle. Location-path styling, but no border or
                       fill. (Zoom is wired in the next commit; 2D/ISO works now.) */}
                   <div className="zoombar">
-                    <button type="button" className="zoombar__btn" title="Zoom in" onClick={() => {}}>
+                    <button type="button" className="zoombar__btn" title="Zoom in" onClick={zoomIn}>
                       +
                     </button>
                     <span className="zoombar__sep" aria-hidden="true">
                       |
                     </span>
-                    <button type="button" className="zoombar__btn" title="Zoom out" onClick={() => {}}>
+                    <button type="button" className="zoombar__btn" title="Zoom out" onClick={zoomOut}>
                       −
                     </button>
                     <span className="zoombar__sep" aria-hidden="true">
                       |
                     </span>
-                    <button type="button" className="zoombar__btn" title="Reset view" onClick={() => {}}>
+                    <button type="button" className="zoombar__btn" title="Reset view" onClick={resetView}>
                       [ ]
                     </button>
                     <span className="zoombar__sep" aria-hidden="true">
