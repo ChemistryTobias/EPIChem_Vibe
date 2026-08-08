@@ -270,6 +270,14 @@ Deliberately **not** built:
   Kubernetes agent, or a runner with a kubeconfig?) — building against a guess would be worse
   than not building. The `deploy:prod` compose job covers the single-host case meanwhile.
 - [ ] A Python lockfile. Image builds are therefore not byte-reproducible; open question 3.
+- [ ] **Auto-refreshed screenshots in the README/docs.** Idea (deferred): have CI keep a recent
+  visual impression of the main screens embedded in the README, so the docs never drift from the
+  UI. Build on the existing `deploy/screenshots.mjs` (Playwright, already runs in the `verify`
+  stage) but drive a **simulated frontend** — mock the `/api` layer with seeded/random fixture data
+  and skip auth, so it needs no live backend or real records — capture each screen (Hierarchy,
+  Device Status, the three-level Lab Layout, Samples), and commit/publish the images as a docs
+  artefact the README references. Best framed as part of the UI-test story (the same fixtures
+  double as visual-regression baselines). Not started; no source touched for it yet.
 
 Sequenced deliberately *after* the isometric layout and the hardening pass: CI/CD makes a
 deployment reachable by other people, and until that pass the API had no auth, no migrations and
