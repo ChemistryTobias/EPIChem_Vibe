@@ -71,6 +71,32 @@ export const BoxTile = dia.Element.define(
   },
 );
 
+/**
+ * A drag handle (footprint or height), the isometric-diagram demo's affordance
+ * rebuilt on the free core: a small square the editor moves manually (it's
+ * non-interactive to JointJS, so no default translate fights the maths). One
+ * handle resizes the footprint from the far corner; one raises/lowers the box.
+ */
+export const HandleDot = dia.Element.define(
+  "epi.Handle",
+  {
+    size: { width: 12, height: 12 },
+    attrs: {
+      body: {
+        refWidth: "100%",
+        refHeight: "100%",
+        fill: "#FFFFFF",
+        stroke: "#00B1EA",
+        strokeWidth: 2,
+        cursor: "grab",
+      },
+    },
+  },
+  {
+    markup: util.svg`<rect @selector="body" />`,
+  },
+);
+
 /** The four projected corners of the floor, as an absolute-coords polygon. */
 export function floorSurfacePoints(
   widthU: number,

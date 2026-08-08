@@ -116,6 +116,21 @@ export function LayoutScreen() {
     [level, layout],
   );
 
+  const onReshape = useCallback(
+    async (code: string, size: { x: number; y: number }, height: number) => {
+      const current = level.geometryOf(code);
+      if (!current) return;
+      setError(null);
+      try {
+        await level.setGeometry(code, { pos: current.pos, size, height });
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
+      layout.reload();
+    },
+    [level, layout],
+  );
+
   const containerRef = useIsometricPaper({
     model: level.model,
     projection,
@@ -124,6 +139,7 @@ export function LayoutScreen() {
     editable,
     onSelect: selectBox,
     onMove,
+    onReshape,
   });
 
   // ---- navigation ----------------------------------------------------------
