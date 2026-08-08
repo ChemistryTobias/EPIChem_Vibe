@@ -90,8 +90,12 @@
 }
 
 /* Like the location path: on hover only the *text* changes colour (the white
- * fill and grey border stay put) — green normally, red for a destructive one. */
+ * fill and grey border stay put) — green normally, red for a destructive one.
+ * The fill/border are restated so a small button that is *also* `secondary`
+ * (the default variant) doesn't pick up `.btn--secondary:hover`'s grey fill. */
 .btn--sm:hover:not(:disabled) {
+  background: var(--color-bg);
+  border-color: var(--color-border);
   color: var(--color-primary);
 }
 

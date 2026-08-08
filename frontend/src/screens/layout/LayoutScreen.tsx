@@ -454,7 +454,7 @@ export function LayoutScreen() {
                             }}
                             disabled={saving}
                           >
-                            Edit floor
+                            Edit {level.level}
                           </Button>
                         )}
                       </>

@@ -15,6 +15,7 @@ export function TextField({
   placeholder,
   required,
   type = "text",
+  step,
 }: {
   label: string;
   value: string;
@@ -22,6 +23,8 @@ export function TextField({
   placeholder?: string;
   required?: boolean;
   type?: string;
+  /** `step="any"` on a number field so the browser accepts non-integer metres. */
+  step?: string;
 }) {
   return (
     <label className="create-form__field">
@@ -35,6 +38,7 @@ export function TextField({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         required={required}
+        step={step}
       />
     </label>
   );

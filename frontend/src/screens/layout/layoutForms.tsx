@@ -69,12 +69,12 @@ export function GeometryForm({
       onClose={onCancel}
     >
       <form className="create-form" onSubmit={submit}>
-        <TextField label="Position X (m)" value={posX} onChange={setPosX} type="number" />
-        <TextField label="Position Y (m)" value={posY} onChange={setPosY} type="number" />
-        <TextField label="Footprint X (m)" value={sizeX} onChange={setSizeX} type="number" />
-        <TextField label="Footprint Y (m)" value={sizeY} onChange={setSizeY} type="number" />
+        <TextField label="Position X (m)" value={posX} onChange={setPosX} type="number" step="any" />
+        <TextField label="Position Y (m)" value={posY} onChange={setPosY} type="number" step="any" />
+        <TextField label="Footprint X (m)" value={sizeX} onChange={setSizeX} type="number" step="any" />
+        <TextField label="Footprint Y (m)" value={sizeY} onChange={setSizeY} type="number" step="any" />
         {showHeight && (
-          <TextField label="Height (m)" value={height} onChange={setHeight} type="number" />
+          <TextField label="Height (m)" value={height} onChange={setHeight} type="number" step="any" />
         )}
         {error && (
           <p className="create-form__error" role="alert">
@@ -128,15 +128,15 @@ export function FloorForm({
 
   return (
     <Inspector
-      kind={`Edit ${levelName} floor`}
+      kind={`Edit ${levelName}`}
       title="Canvas & grid"
-      subtitle="Staged until you Save"
+      subtitle="Floor size and grid — staged until you Save"
       onClose={onCancel}
     >
       <form className="create-form" onSubmit={submit}>
-        <TextField label="Floor width (m)" value={width} onChange={setWidth} type="number" />
-        <TextField label="Floor depth (m)" value={depth} onChange={setDepth} type="number" />
-        <TextField label="Grid size (m)" value={grid} onChange={setGrid} type="number" />
+        <TextField label="Floor width (m)" value={width} onChange={setWidth} type="number" step="any" />
+        <TextField label="Floor depth (m)" value={depth} onChange={setDepth} type="number" step="any" />
+        <TextField label="Grid size (m)" value={grid} onChange={setGrid} type="number" step="any" />
         {error && (
           <p className="create-form__error" role="alert">
             {error}
