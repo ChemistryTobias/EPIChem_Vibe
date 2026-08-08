@@ -210,13 +210,26 @@ import is explicitly deferred to a late stage (see M6).
   show one floor's labs at a time — *not* a hierarchy level, absent from the tree. Editing is now
   **staged** (ADR 0014): add/move/resize/remove/floor changes accumulate in a draft and nothing
   writes until **Save**; **Cancel**/mode-switch confirms a discard; level changes are disabled while
-  editing (a click on a box label drills in during inspect); and placement is *constrained* — a box
-  can't be dragged, resized or typed off its floor or onto another box, and Add tiles into the next
-  free slot. Verified: 85 frontend tests + typecheck + build; backend floors/geometry/virtual
-  round-trip under pytest (101).
-  **Still not built:** zone rectangles (zones classify, they aren't placed), and the
-  live-status/occupancy/utilisation layers (need live device state), plus multi-select /
-  align-distribute / copy-paste / undo-redo and floorplan-image upload as UI polish.
+  editing (a click on a box label drills in during inspect); and placement is *constrained* — but a
+  dragged box now **slides** flush against the wall/neighbour it hits instead of snapping back
+  (`slidePos`, axis-swept), the footprint handle sits at the box's **bottom** vertex, dimensions
+  accept **floats** (`step="any"`), and Add tiles into the next free slot. Each canvas also draws
+  the **grandchildren one level down as weak outlines** (stations in labs, devices in stations),
+  and the layout inspector shows the **same registry record** as the Hierarchy inspector
+  (`registryDetails.tsx`) — no separate placement-only panel, no "Enter" button.
+- [x] **Zones as 2D areas at site or lab scope (ADR 0015)** — a `Zone` gained a rectangle
+  (`pos_x/pos_y/width_m/depth_m`), a `purpose`, and an optional `site_id` (`lab_id` now nullable;
+  migration 0005, model↔migration parity green). Both scopes round-trip through the generic
+  descriptor path (required parent → `None`, `lab`/`site` optional refs, exactly-one validator).
+  The layout canvas draws zones as a **flat translucent labelled layer** under the boxes at the
+  site and lab levels, selectable into their own inspector; **membership is geometric/computed** —
+  the labs/stations whose footprint is fully inside (`rectContainsBox`). Add/Edit-rectangle/Delete
+  are **immediate** writes (a separate layer from the box draft), gated on a clean draft. Verified:
+  91 frontend tests + typecheck + build; 101 backend pytest + ruff; zone create/validate/round-trip
+  checked against a running stack.
+  **Still not built:** the live-status/occupancy/utilisation layers (need live device state), plus
+  multi-select / align-distribute / copy-paste / undo-redo and floorplan-image upload as UI polish;
+  and mouse-drag create/resize for zones (they're numeric-form + immediate for now).
 **M2 device plane proper (unchanged from the plan, still not started):** real devices behind IOCs,
 queueserver per cell, the `plans_allowed`/`devices_allowed` introspection service (the
 palette-generation mechanism the plan calls "the single highest-leverage integration in the

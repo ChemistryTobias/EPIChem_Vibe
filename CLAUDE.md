@@ -8,7 +8,14 @@
 > is now a single **full-bleed** generic canvas over **three levels** (Site → Lab → Station) with a
 > drill-down breadcrumb, a 2D/isometric toggle, drag-resize handles, a `virtual` soft-hide delete
 > (ADRs 0011–0012), a layout-only site-floor selector (ADR 0013), and **staged editing** with
-> constrained placement (ADR 0014 — nothing writes until Save). The Device-Management shell
+> constrained placement (ADR 0014 — nothing writes until Save). A dragged box now **slides**
+> against walls/neighbours instead of snapping back, the footprint handle sits at the box's
+> bottom vertex, dimensions accept **floats** (snap-but-not-bound), each canvas shows the
+> grandchildren one level down as **weak outlines**, and the layout inspector shows the **same
+> registry record** as the Hierarchy inspector (no "Enter" button). **Zones are now 2D areas
+> at site or lab scope with geometric membership (ADR 0015)** — a drawn rectangle a lab/station
+> is *fully inside* to count; the Zone model gained geometry + `site_id` (migration 0005), and
+> the layout canvas draws/selects/edits them as a flat layer. The Device-Management shell
 > (Device Status + New-Device-first creation flow) and NetBox/CSV import are next.
 > (The old `docs/SESSION_HANDOFF.md` was deleted 2026-08-07 — it had gone stale, pinned to a
 > commit six commits behind `main`.)
@@ -71,7 +78,15 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
   nothing writes until **Save**; **Cancel**/mode-switch confirms a discard; level changes are
   disabled while editing. Placement is *constrained* — `clampToFloor`/`overlapsAny`/`placeNextSlot`
   in `isometric.ts` keep a box on its floor and off other boxes (drag, handle, and numeric alike),
-  and Add tiles into the next free slot. Read ADRs 0007–0014 before touching `models/topology.py`,
+  and Add tiles into the next free slot. **Zones (ADR 0015)** are a *flat 2D* layer on the site
+  and lab canvases — a `Zone` now carries a rectangle (`pos_x/pos_y/width_m/depth_m`), a
+  `purpose`, and an optional `site_id` (so a zone scopes to a site *or* a lab; `lab_id` is
+  nullable). Membership is **geometric and computed, not stored** — a lab/station belongs to a
+  zone when its footprint is fully inside the rectangle (`rectContainsBox`); `Station.zone_id`
+  is untouched. Both scopes round-trip through the generic descriptor path (Zone's required
+  parent became `None`; `lab`/`site` are optional refs, exactly one enforced). Zone edits are
+  *immediate* (not part of the box draft), gated on a clean draft. Read ADRs 0007–0015 before
+  touching `models/topology.py`,
   `importer.py`, the descriptor schemas, or the layout/topology frontend screens — don't reintroduce
   the old six-level model, don't duplicate the canvas per level, don't turn the floor into a
   hierarchy level, and don't make edit-mode writes immediate again (Save is the write boundary).
