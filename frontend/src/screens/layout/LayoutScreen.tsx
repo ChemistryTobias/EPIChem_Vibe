@@ -373,7 +373,10 @@ export function LayoutScreen() {
               <>
                 <Button
                   variant="primary"
-                  onClick={() => save(level, draft)}
+                  onClick={async () => {
+                    const ok = await save(level, draft);
+                    if (ok) exitToInspect();
+                  }}
                   disabled={!isDirty || saving}
                 >
                   {saving ? "Saving…" : "Save"}

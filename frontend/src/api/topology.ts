@@ -89,7 +89,10 @@ export interface LabSpecBody {
   floor?: number;
   // Optional box on the site canvas (ADR 0012), in metres. The layout editor sets
   // these so a created lab lands where it was dropped; omitted → backend default
-  // 10×10 m at the origin.
+  // 10×10 m at the origin. `width_m`/`depth_m` (the lab's own floor) are set to
+  // match, so a new lab's floor equals its footprint.
+  width_m?: number;
+  depth_m?: number;
   site_pos_x?: number;
   site_pos_y?: number;
   site_size_x_m?: number;
@@ -294,10 +297,13 @@ export interface LabSiteGeometry {
 }
 
 /**
- * Place/resize a lab's box on the site canvas: the site box is set, everything
- * else (own floor, room, environment, access) is preserved off the row. Shared by
- * the Site level's drag-move and handle-resize. `siteCode` can't be read off the
- * lab (it carries site_id, not the code the descriptor wants), so the caller passes it.
+ * Place/resize a lab's box on the site canvas. The lab's **own floor**
+ * (`width_m`/`depth_m`) tracks its footprint here — a lab that occupies an
+ * 8×6 m box on the site *is* an 8×6 m floor — so resizing the box on the site
+ * adapts the floor you see when you drill in (a pure move leaves the size, so the
+ * floor is unchanged). The descriptive fields and grid are preserved off the row.
+ * `siteCode` can't be read off the lab (it carries site_id, not the code the
+ * descriptor wants), so the caller passes it.
  */
 export const placeLabOnSite = (row: Lab, siteCode: string, geom: LabSiteGeometry) =>
   put<Lab>("Lab", row.code, row.name, {
@@ -305,8 +311,8 @@ export const placeLabOnSite = (row: Lab, siteCode: string, geom: LabSiteGeometry
     room_number: row.room_number,
     environment_class: row.environment_class,
     access_control_group: row.access_control_group,
-    width_m: row.width_m,
-    depth_m: row.depth_m,
+    width_m: geom.site_size_x_m,
+    depth_m: geom.site_size_y_m,
     grid_size_m: row.grid_size_m,
     site_pos_x: geom.site_pos_x,
     site_pos_y: geom.site_pos_y,

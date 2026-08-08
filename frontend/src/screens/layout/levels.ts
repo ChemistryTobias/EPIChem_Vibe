@@ -207,6 +207,10 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
         // lab created on floor 2 would vanish from the current plan.
         floor: viewFloor,
         ...(g && {
+          // Floor tracks the footprint (see placeLabOnSite) — a new lab's own
+          // floor equals the box it occupies on the site.
+          width_m: g.size.x,
+          depth_m: g.size.y,
           site_pos_x: g.pos.x,
           site_pos_y: g.pos.y,
           site_size_x_m: g.size.x,
