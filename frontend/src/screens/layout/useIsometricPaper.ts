@@ -251,8 +251,9 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       const py = centreScreen.y + HANDLE / 2;
 
       if (drag.kind === "foot") {
-        // The far corner sits on the top face (height = box height); invert there.
-        const far = toFloor({ x: px, y: py }, drag.origin, drag.metrics, drag.box.height, projection);
+        // The footprint handle sits at the far corner at height 0 (the box's
+        // lowest vertex — "at the bottom"), so invert there, not on the top face.
+        const far = toFloor({ x: px, y: py }, drag.origin, drag.metrics, 0, projection);
         drag.size = {
           x: Math.max(gridU, roundTo(far.x - drag.box.pos.x, gridU)),
           y: Math.max(gridU, roundTo(far.y - drag.box.pos.y, gridU)),
@@ -417,7 +418,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       const tile = tilesRef.current.get(selected.code)!;
       const p = tile.position();
       const shape = boxShape(selected.pos, selected.size, selected.height, origin, metrics, projection);
-      handleRef.current.foot = addHandle(graph, "foot", p.x + shape.farCorner.x, p.y + shape.farCorner.y);
+      handleRef.current.foot = addHandle(graph, "foot", p.x + shape.farBottom.x, p.y + shape.farBottom.y);
       if (projection === "iso") {
         handleRef.current.height = addHandle(graph, "height", p.x + shape.apex.x, p.y + shape.apex.y);
       }

@@ -163,8 +163,11 @@ export interface BoxRender {
   /** Top-face centre, relative to `position` — where the label/badge sit. */
   label: Point;
   badge: Point;
-  /** Far top corner (pos+size), relative to `position` — the footprint handle sits here. */
+  /** Far top corner (pos+size) at box height, relative to `position`. */
   farCorner: Point;
+  /** Far corner (pos+size) at height 0 — the box's lowest vertex; the footprint
+   * handle sits here so it reads as "at the bottom" (in 2D this equals `farCorner`). */
+  farBottom: Point;
   /** Top-face centre at full height, relative to `position` — the height handle sits here. */
   apex: Point;
   /** The floor anchor (near corner at height 0), relative to `position` —
@@ -217,6 +220,7 @@ export function boxShape(
     label: { x: centreTop.x - minX, y: centreTop.y - minY },
     badge: { x: centreTop.x - minX, y: centreTop.y - minY - 12 },
     farCorner: { x: ct.x - minX, y: ct.y - minY },
+    farBottom: { x: cb.x - minX, y: cb.y - minY },
     apex: { x: centreTop.x - minX, y: centreTop.y - minY },
     anchor: { x: ab.x - minX, y: ab.y - minY },
   };
