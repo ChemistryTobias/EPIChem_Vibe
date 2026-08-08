@@ -18,6 +18,7 @@ import {
   overlapsAny,
   placeNextSlot,
   rectsOverlap,
+  slidePos,
   snap,
   sortBoxes,
   toFloor,
@@ -188,5 +189,28 @@ describe("placeNextSlot (ADR 0014 auto-tiling)", () => {
     const packed = [];
     for (let y = 0; y < 4; y++) for (let x = 0; x < 6; x++) packed.push(geom(x, y));
     expect(placeNextSlot({ x: 1, y: 1 }, floor, packed)).toBeNull();
+  });
+});
+
+describe("slidePos (slide against walls/boxes, don't snap back)", () => {
+  test("leaves a free move untouched", () => {
+    const from = { x: 0, y: 0 };
+    expect(slidePos(geom(3, 2), floor, [geom(0, 0)], from).pos).toEqual({ x: 3, y: 2 });
+  });
+
+  test("stops flush against a blocking neighbour instead of reverting", () => {
+    // Dragging A (at 0,0) rightward onto B (at 2,0) lands it flush at x=1, not back at 0.
+    const r = slidePos(geom(2.4, 0), floor, [geom(2, 0)], { x: 0, y: 0 });
+    expect(r.pos).toEqual({ x: 1, y: 0 });
+  });
+
+  test("clamps to the floor wall", () => {
+    expect(slidePos(geom(10, 0), floor, [], { x: 0, y: 0 }).pos).toEqual({ x: 5, y: 0 });
+  });
+
+  test("always resolves to an overlap-free position", () => {
+    const others = [geom(0, 1), geom(2, 1), geom(1, 0), geom(1, 2)];
+    const r = slidePos(geom(1.3, 1), floor, others, { x: 1, y: 1 });
+    expect(overlapsAny(r, others)).toBe(false);
   });
 });

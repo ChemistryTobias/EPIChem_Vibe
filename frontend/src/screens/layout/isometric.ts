@@ -307,6 +307,54 @@ export function overlapsAny(g: RectGeom, others: RectGeom[]): boolean {
 }
 
 /**
+ * Slide a *moved* box to the nearest overlap-free spot instead of snapping it
+ * back (the isometric-diagram demo affordance): the box stops against the wall
+ * or the neighbour it ran into rather than teleporting to where it started.
+ *
+ * The footprint and height are fixed (this is a move); only the position moves.
+ * We clamp to the floor, then while the footprint still overlaps a neighbour we
+ * push it out along the axis of least penetration and re-clamp — so it ends up
+ * flush against whatever blocked it. `from` is the box's position before the
+ * drag: if it stays trapped after a few pushes (wedged between boxes), we leave
+ * it there so nothing jumps across the floor.
+ */
+export function slidePos(g: RectGeom, floor: Floor, others: RectGeom[], from: FloorPos): RectGeom {
+  const size = g.size;
+  const target = clampToFloor(g, floor).pos; // desired position, inside the walls
+  const free = (x: number, y: number) => !overlapsAny({ pos: { x, y }, size, height: 0 }, others);
+
+  // Move along X from the previous position, then along Y from there — so the box
+  // stops flush where it first hits and can still slide along the wall/neighbour
+  // on the free axis (the tile-collision "move X then Y" resolution).
+  const x = sweep1D(from.x, target.x, (v) => free(v, from.y));
+  const y = sweep1D(from.y, target.y, (v) => free(x, v));
+  return { pos: { x: round4(x), y: round4(y) }, size, height: g.height };
+}
+
+/**
+ * The value furthest along `a → b` that still satisfies `ok`, assuming `ok(a)`
+ * holds and the blocked region (if any) is contiguous from some point onward
+ * (true for axis-aligned box obstacles). Binary-searches the a→blocked boundary.
+ */
+function sweep1D(a: number, b: number, ok: (v: number) => boolean): number {
+  if (ok(b)) return b;
+  if (!ok(a)) return a; // shouldn't happen (a is the last valid spot); hold still
+  let lo = a; // known free
+  let hi = b; // known blocked
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (ok(mid)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Trim float noise from a slid position to 0.1 mm, keeping real (off-grid) values. */
+function round4(v: number): number {
+  return Math.round(v * 1e4) / 1e4;
+}
+
+/**
  * The first free slot for a `size` footprint, scanning the floor grid row by row
  * (left→right, top→bottom), so a new box lands next to the last rather than on
  * top of it (req: fill the canvas, don't stack). Null when nothing fits — the

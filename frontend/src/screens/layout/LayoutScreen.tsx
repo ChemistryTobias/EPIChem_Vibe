@@ -27,7 +27,7 @@ import { useNotify } from "../../components/Notifications";
 import { useAsync } from "../../hooks/useAsync";
 import { LocationPath } from "./LocationPath";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
-import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, sortBoxes } from "./isometric";
+import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, slidePos, sortBoxes } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
 import { FloorForm, GeometryForm } from "./layoutForms";
 import { buildLevel } from "./levels";
@@ -196,11 +196,13 @@ export function LayoutScreen() {
     (code: string, pos: FloorPos) => {
       const cur = effGeometry(code);
       if (!cur) return;
-      const next = constrain(code, { pos, size: cur.size, height: cur.height });
-      if (!next) return rejected("move", code);
+      // Slide the box up against whatever it ran into rather than snapping it
+      // back to where the drag started (the isometric-diagram affordance).
+      const others = effModel.boxes.filter((b) => b.code !== code).map(toRect);
+      const next = slidePos({ pos, size: cur.size, height: cur.height }, floorEff, others, cur.pos);
       stageGeometry(code, next);
     },
-    [effGeometry, constrain, stageGeometry, level.childLabel],
+    [effGeometry, effModel, floorEff, stageGeometry],
   );
 
   const onReshape = useCallback(
