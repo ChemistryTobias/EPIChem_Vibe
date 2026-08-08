@@ -23,6 +23,21 @@
   background: var(--color-surface-muted);
 }
 
+/* The JointJS paper is sized in px per redraw (`setDimensions`), which on the
+ * very first paint — before the ResizeObserver has measured the container — can
+ * be shorter than the pane, leaving a strip below it. Guarantee it always covers
+ * the pane; when the drawing is larger the explicit px size still wins. The
+ * `display: block` drops the inline-SVG baseline gap under the drawing. */
+.canvas .joint-paper {
+  min-width: 100%;
+  min-height: 100%;
+  background: var(--color-surface-muted);
+}
+
+.canvas .joint-paper svg {
+  display: block;
+}
+
 /* Everything that isn't the canvas — location path, buttons, warnings — lives here,
  * over the drawing. The layer itself is click-through; only its real controls
  * take pointer events, so the canvas stays draggable everywhere they aren't. */
