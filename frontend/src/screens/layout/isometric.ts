@@ -209,6 +209,21 @@ export interface Outline {
   size: { x: number; y: number };
 }
 
+/**
+ * A zone: a flat 2D area on the current floor (ADR 0015) — a walkable region, a
+ * keep-out, a robot cell. Drawn as a translucent labelled rectangle *under* the
+ * boxes, in both projections (no height). `members` are the codes of the boxes
+ * whose footprint is fully inside it — geometric membership, computed on read.
+ */
+export interface ZoneShape {
+  code: string;
+  label: string;
+  purpose: string;
+  pos: FloorPos;
+  size: { x: number; y: number };
+  members: string[];
+}
+
 /** A whole level's canvas: floor dimensions plus the boxes on it. */
 export interface CanvasModel {
   /** Floor width/depth/grid, in the level's canvas units. */
@@ -218,6 +233,23 @@ export interface CanvasModel {
   boxes: Box[];
   /** Weak footprints of the grandchildren (one level down); optional. */
   outlines?: Outline[];
+  /** Zones (flat 2D areas) on this floor; optional. */
+  zones?: ZoneShape[];
+}
+
+/** Is a box's footprint (pos, size) fully inside a zone rectangle? (⊆, ADR 0015) */
+export function rectContainsBox(
+  zonePos: FloorPos,
+  zoneSize: { x: number; y: number },
+  boxPos: FloorPos,
+  boxSize: { x: number; y: number },
+): boolean {
+  return (
+    boxPos.x >= zonePos.x - 1e-6 &&
+    boxPos.y >= zonePos.y - 1e-6 &&
+    boxPos.x + boxSize.x <= zonePos.x + zoneSize.x + 1e-6 &&
+    boxPos.y + boxSize.y <= zonePos.y + zoneSize.y + 1e-6
+  );
 }
 
 /** Back-to-front order (painter's algorithm, §10.3) — nearer boxes paint last. */

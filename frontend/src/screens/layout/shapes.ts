@@ -112,6 +112,42 @@ export const OutlineTile = dia.Element.define(
 );
 
 /**
+ * A zone (ADR 0015): a flat translucent 2D area with a label, drawn under the
+ * boxes. Selectable (a click reports its code) but not draggable — its rectangle
+ * is edited numerically. The fill is faint so boxes and grid read through it; the
+ * selected zone gets a solid accent border.
+ */
+export const ZoneArea = dia.Element.define(
+  "epi.Zone",
+  {
+    attrs: {
+      area: {
+        fill: "rgba(198, 211, 37, 0.16)",
+        stroke: "rgba(140, 149, 25, 0.9)",
+        strokeWidth: 1.5,
+        strokeDasharray: "6,4",
+        cursor: "pointer",
+      },
+      zlabel: {
+        fill: "#6E7414",
+        fontFamily: "var(--font-display), ui-sans-serif, sans-serif",
+        fontSize: 10,
+        fontWeight: 700,
+        textAnchor: "middle",
+        textVerticalAnchor: "middle",
+        pointerEvents: "none",
+      },
+    },
+  },
+  {
+    markup: util.svg`
+      <polygon @selector="area" />
+      <text @selector="zlabel" />
+    `,
+  },
+);
+
+/**
  * A drag handle (footprint or height), the isometric-diagram demo's affordance
  * rebuilt on the free core: a small square the editor moves manually (it's
  * non-interactive to JointJS, so no default translate fights the maths). One

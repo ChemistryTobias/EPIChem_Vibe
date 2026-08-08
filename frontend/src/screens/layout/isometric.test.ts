@@ -17,6 +17,7 @@ import {
   metricsFor,
   overlapsAny,
   placeNextSlot,
+  rectContainsBox,
   rectsOverlap,
   slidePos,
   snap,
@@ -189,6 +190,19 @@ describe("placeNextSlot (ADR 0014 auto-tiling)", () => {
     const packed = [];
     for (let y = 0; y < 4; y++) for (let x = 0; x < 6; x++) packed.push(geom(x, y));
     expect(placeNextSlot({ x: 1, y: 1 }, floor, packed)).toBeNull();
+  });
+});
+
+describe("rectContainsBox (zone membership, ADR 0015)", () => {
+  const zp = { x: 1, y: 1 };
+  const zs = { x: 4, y: 4 }; // zone spans [1,5]×[1,5]
+  test("a footprint fully inside counts", () => {
+    expect(rectContainsBox(zp, zs, { x: 2, y: 2 }, { x: 1, y: 1 })).toBe(true);
+    expect(rectContainsBox(zp, zs, { x: 1, y: 1 }, { x: 4, y: 4 })).toBe(true); // flush edges
+  });
+  test("a footprint that spills out, or only overlaps, does not", () => {
+    expect(rectContainsBox(zp, zs, { x: 4.5, y: 2 }, { x: 1, y: 1 })).toBe(false); // spills right
+    expect(rectContainsBox(zp, zs, { x: 0, y: 0 }, { x: 2, y: 2 })).toBe(false); // straddles corner
   });
 });
 

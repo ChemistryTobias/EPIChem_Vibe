@@ -25,6 +25,7 @@ import {
   FloorGrid,
   HandleDot,
   OutlineTile,
+  ZoneArea,
   boxShape,
   floorGridPath,
   floorSurfacePoints,
@@ -40,13 +41,20 @@ export interface IsometricPaperOptions {
   onSelect: (code: string | null) => void;
   /** The box's label was clicked — the screen may drill into it (inspect mode). */
   onActivate: (code: string) => void;
+  /** The currently-selected zone (ADR 0015), for the accent border. */
+  selectedZoneCode: string | null;
+  /** A zone area was clicked (or the blank, clearing it). */
+  onSelectZone: (code: string | null) => void;
   /** A box was dragged to a new floor position (snapped), in canvas units. */
   onMove: (code: string, pos: FloorPos) => void;
   /** A box was resized via a handle: new footprint + height, in canvas units. */
   onReshape: (code: string, size: { x: number; y: number }, height: number) => void;
 }
 
-const CELL_NAMESPACE = { ...shapes, epi: { FloorGrid, Box: BoxTile, Handle: HandleDot, Outline: OutlineTile } };
+const CELL_NAMESPACE = {
+  ...shapes,
+  epi: { FloorGrid, Box: BoxTile, Handle: HandleDot, Outline: OutlineTile, Zone: ZoneArea },
+};
 
 const MARGIN = 24;
 const HANDLE = 12; // handle square side (shapes.ts)
@@ -204,7 +212,13 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     ro.observe(container);
 
     paper.on("element:pointerclick", (view, evt) => {
-      if (view.model.get("type") === "epi.Handle") return; // a handle isn't a selection
+      const type = view.model.get("type");
+      if (type === "epi.Handle") return; // a handle isn't a selection
+      if (type === "epi.Zone") {
+        // A zone selects into the zone inspector; it never selects a box.
+        handlers.current.onSelectZone((view.model.get("zoneCode") as string) ?? null);
+        return;
+      }
       const code = (view.model.get("boxCode") as string) ?? null;
       // A click on the label is a drill request; anywhere else on the box selects.
       // The hit target is the transparent `labelHit` <rect> over the label (the
@@ -216,7 +230,10 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       if (code && isLabel) handlers.current.onActivate(code);
       else handlers.current.onSelect(code);
     });
-    paper.on("blank:pointerclick", () => handlers.current.onSelect(null));
+    paper.on("blank:pointerclick", () => {
+      handlers.current.onSelect(null);
+      handlers.current.onSelectZone(null);
+    });
 
     // ---- resize handles (ADR 0012, the isometric-diagram demo affordance) ---
     //
@@ -362,7 +379,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
   }, [container]);
 
   // Redraw whenever anything visible changes.
-  const { model, projection, selectedCode, showLabels, editable } = options;
+  const { model, projection, selectedCode, selectedZoneCode, showLabels, editable } = options;
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -403,6 +420,26 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     });
     graph.addCell(floor);
 
+    // Zones (ADR 0015): flat translucent areas under everything else, so boxes
+    // and outlines read over them. Selectable; the selected one gets a solid
+    // accent border.
+    for (const z of model.zones ?? []) {
+      const shape = boxShape(z.pos, z.size, 0, origin, metrics, projection);
+      const area = new ZoneArea({ position: shape.position, size: shape.size });
+      area.set("zoneCode", z.code);
+      const selected = z.code === selectedZoneCode;
+      area.attr({
+        area: {
+          points: shape.faces.top,
+          stroke: selected ? "#00B1EA" : "rgba(140, 149, 25, 0.9)",
+          strokeDasharray: selected ? "0" : "6,4",
+          strokeWidth: selected ? 2.5 : 1.5,
+        },
+        zlabel: { text: z.label, x: shape.label.x, y: shape.label.y },
+      });
+      graph.addCell(area);
+    }
+
     // Weak grandchild footprints, drawn flat on the floor beneath the boxes so
     // they read as context and never obscure a real box (non-interactive).
     for (const o of model.outlines ?? []) {
@@ -436,7 +473,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // `container` is a dep so this re-runs in the same commit the paper is
     // created in — effects fire in declaration order, so the paper exists by
     // the time this reads it.
-  }, [container, model, projection, selectedCode, showLabels, editable, size]);
+  }, [container, model, projection, selectedCode, selectedZoneCode, showLabels, editable, size]);
 
   return { containerRef: setContainer, zoomIn, zoomOut, resetView };
 }

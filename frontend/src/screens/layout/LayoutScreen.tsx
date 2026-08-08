@@ -12,13 +12,16 @@
  * another box, and a new box tiles into the first free slot rather than stacking.
  *
  * The canvas is full-bleed and re-fits to its container (`useIsometricPaper`); the
- * controls float over it in `.canvas-overlay`. Not here: zones (they classify, they
- * aren't placed), and the live-status layers (they need live device state).
+ * controls float over it in `.canvas-overlay`. Zones (ADR 0015) are a separate
+ * flat-2D layer here — drawn under the boxes, selected into their own inspector,
+ * and written immediately (not through the box draft), so they're only editable
+ * with a clean draft. Not here: the live-status layers (they need live device state).
  */
 
 import { useCallback, useMemo, useState } from "react";
 
-import { fetchTopology } from "../../api/topology";
+import { deleteNode, fetchTopology } from "../../api/topology";
+import type { ZoneRect } from "../../api/topology";
 import { listDevices } from "../../api/devices";
 import { AsyncBoundary } from "../../components/AsyncBoundary";
 import { Button } from "../../components/Button";
@@ -29,6 +32,7 @@ import { LocationPath } from "./LocationPath";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
 import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, slidePos, sortBoxes } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
+import { ZoneInspector, ZoneRectForm } from "./ZoneInspector";
 import { FloorForm, GeometryForm } from "./layoutForms";
 import { buildLevel } from "./levels";
 import type { BoxGeometry, FloorGeometry, LayoutData, LevelConfig, LevelContext } from "./levels";
@@ -76,6 +80,9 @@ export function LayoutScreen() {
   const [labCode, setLabCode] = useState<string | null>(null);
   const [stationCode, setStationCode] = useState<string | null>(null);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [selectedZoneCode, setSelectedZoneCode] = useState<string | null>(null);
+  const [editingZoneRect, setEditingZoneRect] = useState(false);
+  const [zoneBusy, setZoneBusy] = useState(false);
   const [projection, setProjection] = useState<Projection>("iso");
   const [editable, setEditable] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -132,6 +139,7 @@ export function LayoutScreen() {
       gridU: floorEff.gridU,
       boxes: sortBoxes([...base, ...created]),
       outlines: level.outlines,
+      zones: level.zones,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level, draft, floorEff.widthU, floorEff.depthU, floorEff.gridU, bump]);
@@ -191,6 +199,18 @@ export function LayoutScreen() {
     setSelectedCode(code);
     setEditingGeom(false);
     setEditingFloor(false);
+    setSelectedZoneCode(null);
+    setEditingZoneRect(false);
+  }, []);
+
+  const selectZone = useCallback((code: string | null) => {
+    setSelectedZoneCode(code);
+    setEditingZoneRect(false);
+    if (code) {
+      setSelectedCode(null);
+      setEditingGeom(false);
+      setEditingFloor(false);
+    }
   }, []);
 
   const onMove = useCallback(
@@ -221,9 +241,11 @@ export function LayoutScreen() {
     model: effModel,
     projection,
     selectedCode,
+    selectedZoneCode,
     showLabels: true,
     editable,
     onSelect: selectBox,
+    onSelectZone: selectZone,
     onActivate: (code) => {
       if (editable) return selectBox(code); // no drilling while editing
       if (level.drillInto(code)) enter(code);
@@ -315,6 +337,66 @@ export function LayoutScreen() {
     if (f.widthU <= 0 || f.depthU <= 0 || f.gridU <= 0) return "Floor width, depth and grid must be positive.";
     setDraft((d) => ({ ...d, floor: f }));
     return null;
+  };
+
+  // ---- zones (ADR 0015) ----------------------------------------------------
+  //
+  // Zones are a separate layer from the staged box draft: their writes are
+  // immediate (create/resize/delete then reload), so they're only allowed when
+  // the box draft is clean — otherwise a reload would fight the unsaved boxes.
+  const zoneRow = selectedZoneCode ? level.zoneRowOf(selectedZoneCode) : null;
+
+  async function runZoneWrite(fn: () => Promise<unknown>, after?: () => void): Promise<string | null> {
+    if (isDirty) {
+      const msg = "Save or cancel your layout changes before editing zones.";
+      notify({ kind: "info", key: "zone-lock", message: msg });
+      return msg;
+    }
+    setZoneBusy(true);
+    try {
+      await fn();
+      layout.reload();
+      after?.();
+      return null;
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : String(cause);
+      notify({ kind: "error", message: msg });
+      return msg;
+    } finally {
+      setZoneBusy(false);
+    }
+  }
+
+  const addZone = () => {
+    const code = level.nextZoneCode();
+    // A sensible starting rectangle: half the floor at the origin, at least a cell.
+    const w = Math.max(floorEff.gridU, floorEff.widthU / 2);
+    const d = Math.max(floorEff.gridU, floorEff.depthU / 2);
+    void runZoneWrite(
+      () => level.createZone(code, { pos_x: 0, pos_y: 0, width_m: w, depth_m: d }),
+      () => setSelectedZoneCode(code),
+    );
+  };
+
+  const removeZone = () => {
+    if (!selectedZoneCode) return;
+    void runZoneWrite(() => deleteNode("Zone", selectedZoneCode), () => selectZone(null));
+  };
+
+  // Clamp a zone rectangle inside the floor, then write it. Returns an error
+  // string (shown in the form) or null on success.
+  const saveZoneRect = async (rect: ZoneRect): Promise<string | null> => {
+    if (!selectedZoneCode) return "No zone selected.";
+    if (rect.width_m <= 0 || rect.depth_m <= 0) return "Zone width and depth must be positive.";
+    const clamped: ZoneRect = {
+      width_m: Math.min(rect.width_m, floorEff.widthU),
+      depth_m: Math.min(rect.depth_m, floorEff.depthU),
+      pos_x: Math.min(Math.max(rect.pos_x, 0), Math.max(floorEff.widthU - rect.width_m, 0)),
+      pos_y: Math.min(Math.max(rect.pos_y, 0), Math.max(floorEff.depthU - rect.depth_m, 0)),
+    };
+    const err = await runZoneWrite(() => level.placeZone(selectedZoneCode, clamped));
+    if (!err) setEditingZoneRect(false);
+    return err;
   };
 
   // ---- persist / mode transitions ------------------------------------------
@@ -460,6 +542,11 @@ export function LayoutScreen() {
                             Edit {level.level}
                           </Button>
                         )}
+                        {level.zonesEnabled && (
+                          <Button size="sm" onClick={addZone} disabled={saving || zoneBusy}>
+                            Add zone
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
@@ -539,6 +626,29 @@ export function LayoutScreen() {
             onStage={stageFloor}
             onDone={() => setEditingFloor(false)}
             onCancel={() => setEditingFloor(false)}
+          />
+        ) : editingZoneRect && zoneRow ? (
+          <ZoneRectForm
+            code={zoneRow.code}
+            initial={{
+              pos_x: zoneRow.pos_x,
+              pos_y: zoneRow.pos_y,
+              width_m: zoneRow.width_m,
+              depth_m: zoneRow.depth_m,
+            }}
+            busy={zoneBusy}
+            onSave={saveZoneRect}
+            onCancel={() => setEditingZoneRect(false)}
+          />
+        ) : selectedZoneCode ? (
+          <ZoneInspector
+            zone={level.zones.find((z) => z.code === selectedZoneCode) ?? null}
+            childLabel={level.childLabel}
+            editable={editable}
+            busy={zoneBusy}
+            onEditRect={() => setEditingZoneRect(true)}
+            onRemove={removeZone}
+            onClose={() => selectZone(null)}
           />
         ) : editingGeom && selectedCode ? (
           <GeometryForm

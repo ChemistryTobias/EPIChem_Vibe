@@ -16,18 +16,21 @@
 import {
   createLab,
   createStation,
+  createZoneArea,
   deleteNode,
   placeLabOnSite,
+  placeZoneArea,
   reshapeStation,
   resizeLabCanvas,
   resizeSiteCanvas,
   setStationVirtual,
 } from "../../api/topology";
+import type { ZoneRect } from "../../api/topology";
 import { createDevice, placeDeviceInStation, setDeviceVirtual } from "../../api/devices";
 import type { HierarchyKind } from "../../api/topology";
 import type { Device, Lab, Site, Station, Zone } from "../../api/types";
-import type { Box, BoxFill, CanvasModel, FloorPos, Outline } from "./isometric";
-import { sortBoxes } from "./isometric";
+import type { Box, BoxFill, CanvasModel, FloorPos, Outline, ZoneShape } from "./isometric";
+import { rectContainsBox, sortBoxes } from "./isometric";
 
 export type Level = "site" | "lab" | "station";
 
@@ -116,6 +119,39 @@ export interface LevelConfig {
   rowOf: (code: string) => Site | Lab | Zone | Station | Device | null;
   /** Codes of a child's own children, for the inspector's "contains" summary. */
   childCodesOf: (code: string) => string[];
+  // ---- zones (ADR 0015): flat 2D areas scoped to this level ----------------
+  /** Zones on this floor, with geometric membership; empty where zones don't
+   * apply (the station level). */
+  zones: ZoneShape[];
+  /** Whether this level supports zones at all (site + lab, not station). */
+  zonesEnabled: boolean;
+  /** The zone registry row, for the zone inspector. */
+  zoneRowOf: (code: string) => Zone | null;
+  /** Next free zone code, avoiding existing rows. */
+  nextZoneCode: () => string;
+  /** Create a zone at `rect`, scoped to this level. Resolves to the new code. */
+  createZone: (code: string, rect: ZoneRect) => Promise<unknown>;
+  /** Move/resize a zone's rectangle. */
+  placeZone: (code: string, rect: ZoneRect) => Promise<unknown>;
+}
+
+/**
+ * Build the zone shapes for a level: the level's zones plus, per zone, the codes
+ * of the boxes whose footprint is fully inside it (geometric membership, ADR
+ * 0015). Shared by the site and lab levels (the station level has no zones).
+ */
+function zoneShapes(rows: Zone[], boxes: Box[]): ZoneShape[] {
+  return rows
+    // 0×0 zones are classification-only (ADR 0015) — not drawn on the canvas.
+    .filter((z) => z.width_m > 0 && z.depth_m > 0)
+    .map((z) => {
+      const pos = { x: z.pos_x, y: z.pos_y };
+      const size = { x: z.width_m, y: z.depth_m };
+      const members = boxes
+        .filter((b) => rectContainsBox(pos, size, b.pos, b.size))
+        .map((b) => b.code);
+      return { code: z.code, label: z.code, purpose: z.purpose, pos, size, members };
+    });
 }
 
 // ---- fills (DESIGN.md brand palette) ---------------------------------------
@@ -175,6 +211,8 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
     gridU: site?.grid_size_m ?? 1,
   };
   const byCode = new Map(labs.map((l) => [l.code, l]));
+  // Site-scoped zones (ADR 0015) live on the site plan.
+  const zoneRows = site ? data.zones.filter((z) => z.site_id === site.id) : [];
 
   // One level down: each lab's stations, scaled from the lab's own floor into the
   // box the lab occupies on the site (site footprint can differ from lab floor).
@@ -259,6 +297,16 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
       const l = byCode.get(code);
       return l ? data.stations.filter((s) => s.lab_id === l.id && !s.virtual).map((s) => s.code) : [];
     },
+    zones: zoneShapes(zoneRows, boxes),
+    zonesEnabled: site !== null,
+    zoneRowOf: (code) => zoneRows.find((z) => z.code === code) ?? null,
+    nextZoneCode: () => nextCode("ZONE", new Set(data.zones.map((z) => z.code))),
+    createZone: (code, rect) =>
+      createZoneArea("site", site!.code, code, `Zone ${code}`, rect, "area"),
+    placeZone: (code, rect) => {
+      const z = zoneRows.find((zz) => zz.code === code)!;
+      return placeZoneArea(z, "site", site!.code, rect);
+    },
   };
 }
 
@@ -287,6 +335,8 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
   );
   const floor: FloorGeometry = { widthU: lab.width_m, depthU: lab.depth_m, gridU: lab.grid_size_m };
   const byCode = new Map(stations.map((s) => [s.code, s]));
+  // Lab-scoped zones (ADR 0015) live on the lab plan.
+  const zoneRows = data.zones.filter((z) => z.lab_id === lab.id);
 
   // One level down: each station's devices, placed by their mm pose within the
   // station's own footprint (station canvas units are metres, so mm ÷ 1000
@@ -372,6 +422,15 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
     childCodesOf: (code) => {
       const s = byCode.get(code);
       return s ? data.devices.filter((d) => d.station_code === s.code && !d.virtual).map((d) => d.code) : [];
+    },
+    zones: zoneShapes(zoneRows, boxes),
+    zonesEnabled: true,
+    zoneRowOf: (code) => zoneRows.find((z) => z.code === code) ?? null,
+    nextZoneCode: () => nextCode("ZONE", new Set(data.zones.map((z) => z.code))),
+    createZone: (code, rect) => createZoneArea("lab", lab.code, code, `Zone ${code}`, rect, "area"),
+    placeZone: (code, rect) => {
+      const z = zoneRows.find((zz) => zz.code === code)!;
+      return placeZoneArea(z, "lab", lab.code, rect);
     },
   };
 }
@@ -465,5 +524,12 @@ function stationLevel(station: Station, _lab: Lab | null, data: LayoutData): Lev
       const d = byCode.get(code);
       return d ? data.devices.filter((c) => c.parent_id === d.id && !c.virtual).map((c) => c.code) : [];
     },
+    // Zones are a site/lab concept (ADR 0015); the station level has none.
+    zones: [],
+    zonesEnabled: false,
+    zoneRowOf: () => null,
+    nextZoneCode: () => nextCode("ZONE", new Set(data.zones.map((z) => z.code))),
+    createZone: () => Promise.resolve(),
+    placeZone: () => Promise.resolve(),
   };
 }
