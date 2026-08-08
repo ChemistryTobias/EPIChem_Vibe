@@ -118,6 +118,7 @@ The brand system has no explicit screen-component spec (it's a print manual), so
 
 - Padding: generous horizontal padding relative to height (the manual's textboxes consistently favor width over height — "Kasten nicht ganz mit Text ausfüllen"), e.g. `10–12px vertical / 20–24px horizontal` for a standard button.
 - Label type: **Roboto Bold, uppercase, tracking ~+50–80** (matching the manual's headline/label tracking spec) for primary and secondary buttons — this is one of the more distinctive, transferable pieces of the brand voice. Reserve sentence-case/no-tracking labels for low-emphasis tertiary/text-only buttons, where all-caps would be visually too loud.
+- **Two sizes, one component.** All buttons come from the single `Button` primitive (`components/Button.tsx`) — never a restyled `<button>`. It has a **standard** size and a **compact** (`sm`) size (~`5px/12px` padding, ~10px label): use `sm` for the "non-main" companion buttons that sit next to a primary action in a toolbar or a canvas overlay (Back, 2D toggle, Cancel, Edit floor), so the primary action stays the largest thing in the group and the rest read as secondary by size, not by louder color. Keep the *variant* meaningful (primary = the one main action, secondary/text = the rest); use the size to express "smaller, alongside."
 
 ### Color by state
 
@@ -135,6 +136,18 @@ Destructive actions: don't invent a new red — none exists in the MPG palette. 
 
 - Same flat-fill, sharp-corner logic as buttons.
 - Status chips/tags are a good home for the accent colors (green light, blue light, orange) at small scale — this matches how the manual scopes those colors to illustrations, charts, and small-scale use rather than large fills.
+
+### Alerts & notifications (one schema)
+
+There is **one** alert look for the whole app — a flat card (`.notice`) with a coloured **left edge** carrying the meaning, white fill, sharp corners, no gloss (consistent with the button rules above). Don't invent per-screen alert boxes; raise everything through the shared component so warnings and errors look identical everywhere.
+
+- **Kinds → colour** (left edge only; the accents are used at small scale, as the manual intends):
+  - **info** → MPG blue light `#00B1EA`
+  - **success** → MPG green `#006C66`
+  - **warning** → MPG orange `#EF7C00`
+  - **error** → the one-off red `#C0392B`
+- **Placement:** transient, event-driven messages ("saved", "couldn't move that there", a network error) **pop out bottom-left** and stack there (`components/Notifications.tsx`, `useNotify()`); newest nearest the corner. Info/success/warning auto-dismiss; **errors stay** until dismissed. A repeated event (a hint fired on every attempt) reuses a stable key so it replaces rather than piles up.
+- **When _not_ to use a toast:** field-level validation stays **inline next to the field**, and a whole-screen load/error state stays in `AsyncBoundary`. Toasts are for events, not for form errors or page state. A persistent, live readout (e.g. the layout's "not drawn correctly" list) may reuse the same `.notice` card **inline** — same look, pinned in place rather than popped out.
 
 ---
 

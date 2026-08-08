@@ -20,6 +20,14 @@
   cursor: not-allowed;
 }
 
+/* Compact size — a smaller companion button for toolbars/overlays sitting next
+ * to a primary one (the layout overlay uses these next to Save/Edit). */
+.btn--sm {
+  gap: var(--space-1);
+  padding: 5px 12px;
+  font-size: 10px;
+}
+
 .btn--primary {
   background: var(--color-primary);
   color: #ffffff;

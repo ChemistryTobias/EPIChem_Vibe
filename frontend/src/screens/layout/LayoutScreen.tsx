@@ -23,6 +23,7 @@ import { listDevices } from "../../api/devices";
 import { AsyncBoundary } from "../../components/AsyncBoundary";
 import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
+import { useNotify } from "../../components/Notifications";
 import { useAsync } from "../../hooks/useAsync";
 import { Breadcrumb } from "./Breadcrumb";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
@@ -81,11 +82,9 @@ export function LayoutScreen() {
   const [bump, setBump] = useState(0); // forces a canvas redraw (snap-back on reject)
   const [editingGeom, setEditingGeom] = useState(false);
   const [editingFloor, setEditingFloor] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [levelHint, setLevelHint] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [saving, setSaving] = useState(false);
+  const notify = useNotify();
 
   const data: LayoutData = useMemo(
     () =>
@@ -178,7 +177,11 @@ export function LayoutScreen() {
 
   const rejected = (verb: string, code: string) => {
     setBump((b) => b + 1); // redraw from the draft → the box snaps back
-    setNotice(`Can't ${verb} ${code} there — it would leave the floor or overlap another ${level.childLabel}.`);
+    notify({
+      kind: "warning",
+      key: "placement",
+      message: `Can't ${verb} ${code} there — it would leave the floor or overlap another ${level.childLabel}.`,
+    });
   };
 
   // ---- canvas interactions (staged) ----------------------------------------
@@ -195,7 +198,6 @@ export function LayoutScreen() {
       if (!cur) return;
       const next = constrain(code, { pos, size: cur.size, height: cur.height });
       if (!next) return rejected("move", code);
-      setNotice(null);
       stageGeometry(code, next);
     },
     [effGeometry, constrain, stageGeometry, level.childLabel],
@@ -207,7 +209,6 @@ export function LayoutScreen() {
       if (!cur) return;
       const next = constrain(code, { pos: cur.pos, size, height });
       if (!next) return rejected("resize", code);
-      setNotice(null);
       stageGeometry(code, next);
     },
     [effGeometry, constrain, stageGeometry, level.childLabel],
@@ -276,7 +277,11 @@ export function LayoutScreen() {
     const size = level.standardSize;
     const pos = placeNextSlot(size, floorEff, effModel.boxes.map(toRect));
     if (!pos) {
-      setNotice(`No room for another ${level.childLabel} — the ${level.level} floor is full.`);
+      notify({
+        kind: "warning",
+        key: "placement",
+        message: `No room for another ${level.childLabel} — the ${level.level} floor is full.`,
+      });
       return;
     }
     const code = level.nextChildCode(draft.creates.map((c) => c.code));
@@ -284,7 +289,6 @@ export function LayoutScreen() {
       ...d,
       creates: [...d.creates, { code, geom: { pos, size: { ...size }, height: level.nominalHeight } }],
     }));
-    setNotice(null);
     selectBox(code);
   };
 
@@ -317,7 +321,6 @@ export function LayoutScreen() {
   // ---- persist / mode transitions ------------------------------------------
 
   async function save(l: LevelConfig, d: Draft): Promise<boolean> {
-    setError(null);
     setSaving(true);
     try {
       for (const c of d.creates) await l.create({ code: c.code, geom: c.geom });
@@ -330,9 +333,10 @@ export function LayoutScreen() {
       setDraft(EMPTY_DRAFT);
       setSelectedCode(null);
       layout.reload();
+      notify({ kind: "success", message: "Layout changes saved." });
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      notify({ kind: "error", message: cause instanceof Error ? cause.message : String(cause) });
       return false;
     } finally {
       setSaving(false);
@@ -342,8 +346,6 @@ export function LayoutScreen() {
   const enterEdit = () => {
     setEditable(true);
     setDraft(EMPTY_DRAFT);
-    setError(null);
-    setNotice(null);
     selectBox(null);
   };
   const exitToInspect = () => {
@@ -352,9 +354,6 @@ export function LayoutScreen() {
     setSelectedCode(null);
     setEditingGeom(false);
     setEditingFloor(false);
-    setLevelHint(false);
-    setNotice(null);
-    setError(null);
   };
   const cancel = () => {
     if (isDirty) setConfirmLeave(true);
@@ -402,7 +401,14 @@ export function LayoutScreen() {
                       floor={floor}
                       level={level.level}
                       locked={editable}
-                      onLocked={() => setLevelHint(true)}
+                      onLocked={() =>
+                        notify({
+                          kind: "info",
+                          key: "level-lock",
+                          message:
+                            "Changing level is only possible in inspect mode. Save your changes, or Cancel to switch to inspect mode.",
+                        })
+                      }
                       onPickSite={pickSite}
                       onPickFloor={pickFloor}
                       onEnterLab={enterLab}
@@ -416,14 +422,15 @@ export function LayoutScreen() {
                         <Button variant="primary" onClick={() => save(level, draft)} disabled={!isDirty || saving}>
                           {saving ? "Saving…" : "Save"}
                         </Button>
-                        <Button onClick={cancel} disabled={saving}>
-                          Cancel
-                        </Button>
                         <Button variant="primary" onClick={addChild} disabled={saving}>
                           + Add {level.childLabel}
                         </Button>
+                        <Button size="sm" onClick={cancel} disabled={saving}>
+                          Cancel
+                        </Button>
                         {canEditFloor && (
                           <Button
+                            size="sm"
                             onClick={() => {
                               selectBox(null);
                               setEditingFloor(true);
@@ -439,54 +446,19 @@ export function LayoutScreen() {
                         <Button variant="primary" onClick={enterEdit}>
                           Edit layout
                         </Button>
-                        <Button onClick={back} disabled={!lab && !station}>
+                        <Button size="sm" onClick={back} disabled={!lab && !station}>
                           ← Back
                         </Button>
                       </>
                     )}
 
-                    <Button onClick={() => setProjection((p) => (p === "iso" ? "2d" : "iso"))}>
+                    <Button size="sm" onClick={() => setProjection((p) => (p === "iso" ? "2d" : "iso"))}>
                       {projection === "iso" ? "2D view" : "Isometric"}
                     </Button>
                   </div>
 
-                  {levelHint && (
-                    <div className="canvas-overlay__panel canvas-overlay__panel--info" role="alert">
-                      <button
-                        type="button"
-                        className="canvas-overlay__dismiss"
-                        aria-label="Hide"
-                        onClick={() => setLevelHint(false)}
-                      >
-                        ×
-                      </button>
-                      Changing level is only possible in inspect mode. Save your changes, or Cancel to
-                      switch to inspect mode.
-                    </div>
-                  )}
-
-                  {notice && (
-                    <div className="canvas-overlay__panel canvas-overlay__panel--warn" role="alert">
-                      <button
-                        type="button"
-                        className="canvas-overlay__dismiss"
-                        aria-label="Hide"
-                        onClick={() => setNotice(null)}
-                      >
-                        ×
-                      </button>
-                      {notice}
-                    </div>
-                  )}
-
-                  {error && (
-                    <div className="canvas-overlay__panel canvas-overlay__panel--error" role="alert">
-                      {error}
-                    </div>
-                  )}
-
                   {problems.length > 0 && (
-                    <div className="canvas-overlay__panel canvas-overlay__panel--warn" role="alert">
+                    <div className="notice notice--warning canvas-overlay__note" role="status">
                       <p className="label">Not drawn correctly</p>
                       <ul>
                         {problems.map((p) => (

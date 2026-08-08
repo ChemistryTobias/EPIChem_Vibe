@@ -52,49 +52,13 @@
   pointer-events: auto;
 }
 
-/* Error / warning / info cards, floated under the bar. */
-.canvas-overlay__panel {
-  position: relative;
-  pointer-events: auto;
+/* The live "not drawn correctly" readout — a shared `.notice` (see
+ * Notifications.css) pinned into the overlay. Transient alerts (save errors,
+ * placement warnings, the level-lock hint) go through the bottom-left toasts
+ * instead, so there's one alert look everywhere. */
+.canvas-overlay__note {
   align-self: flex-start;
   max-width: 520px;
-  border-left: 3px solid var(--color-danger);
-  background: var(--color-bg);
-  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-3);
-  border-radius: var(--radius);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
-  font-size: 12px;
-}
-
-.canvas-overlay__panel--warn {
-  border-left-color: var(--color-accent-orange);
-}
-
-.canvas-overlay__panel--info {
-  border-left-color: var(--color-accent-blue);
-}
-
-.canvas-overlay__panel ul {
-  margin: var(--space-1) 0 0;
-  padding-left: var(--space-4);
-}
-
-/* The × that hides a dismissible panel (it reappears next time it's triggered). */
-.canvas-overlay__dismiss {
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  border: 0;
-  background: none;
-  padding: 0 4px;
-  font-size: 16px;
-  line-height: 1.2;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-
-.canvas-overlay__dismiss:hover {
-  color: var(--color-text);
 }
 
 /* The unsaved-changes confirm, over the canvas area. */

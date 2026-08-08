@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
+import { NotificationsProvider } from "./components/Notifications";
 
 // Global stylesheets, imported once here. tokens.css must come first —
 // everything else reads its custom properties.
@@ -13,6 +14,8 @@ if (!container) throw new Error("index.html is missing #root");
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <NotificationsProvider>
+      <App />
+    </NotificationsProvider>
   </StrictMode>,
 );

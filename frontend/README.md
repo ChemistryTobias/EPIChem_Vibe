@@ -69,7 +69,8 @@ src/
   hooks/
     useAsync.ts            {data, error, loading, reload} — the whole data layer
     useHashRoute.ts        ~30-line hash router
-  components/              shell + shared primitives (Button, StatusDot, Inspector, …)
+  components/              shell + shared primitives (Button, StatusDot, Inspector,
+                           Notifications = the app-wide alert/toast schema, …)
   screens/
     layout/                isometric floor plan — isometric.ts is pure geometry (plan §10.3) +
                            the generic Box/CanvasModel, useIsometricPaper.ts is all the JointJS

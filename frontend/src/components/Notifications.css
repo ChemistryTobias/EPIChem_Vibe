@@ -1,0 +1,94 @@
+/* The shared alert card and its bottom-left toast stack. `.notice` is the one
+ * alert look — a flat card with a coloured left edge by kind (DESIGN.md §5: flat
+ * fill, sharp corners, colour carries meaning). It's reusable on its own (e.g.
+ * an inline warning) — the toast container just pins a stack of them. */
+
+.toasts {
+  position: fixed;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column-reverse; /* newest nearest the corner, older stacking up */
+  gap: var(--space-2);
+  width: min(360px, calc(100vw - 2 * var(--space-4)));
+  pointer-events: none; /* only the cards are interactive */
+}
+
+.notice {
+  position: relative;
+  pointer-events: auto;
+  border-left: 3px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: var(--space-2) var(--space-5) var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notice--info {
+  border-left-color: var(--color-accent-blue);
+}
+
+.notice--success {
+  border-left-color: var(--color-primary);
+}
+
+.notice--warning {
+  border-left-color: var(--color-accent-orange);
+}
+
+.notice--error {
+  border-left-color: var(--color-danger);
+}
+
+/* A list of items inside a notice (e.g. the layout's "not drawn correctly"). */
+.notice ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+
+.notice .label {
+  display: block;
+  margin-bottom: var(--space-1);
+}
+
+.notice__dismiss {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1.2;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.notice__dismiss:hover {
+  color: var(--color-text);
+}
+
+.toasts .notice {
+  animation: notice-in 0.14s ease;
+}
+
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toasts .notice {
+    animation: none;
+  }
+}
