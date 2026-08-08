@@ -68,6 +68,43 @@
   max-width: 520px;
 }
 
+/* Bottom-right view controls (+ | − | [ ] | 2D/ISO). Same restraint as the
+ * location path — quiet grey, text turns green on hover — but with no border and
+ * no fill. The `|` separators are lighter and inert (they never change colour). */
+.zoombar {
+  margin-top: auto; /* push to the bottom of the overlay column */
+  align-self: flex-end; /* and to the right */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  pointer-events: none; /* only the buttons take clicks */
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+}
+
+.zoombar__btn {
+  pointer-events: auto;
+  border: 0;
+  background: none;
+  padding: 2px 5px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.zoombar__btn:hover {
+  color: var(--color-primary);
+}
+
+.zoombar__sep {
+  color: var(--color-border-soft);
+}
+
 /* The unsaved-changes confirm, over the canvas area. */
 .layout-confirm {
   position: absolute;

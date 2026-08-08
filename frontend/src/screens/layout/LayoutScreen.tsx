@@ -456,10 +456,6 @@ export function LayoutScreen() {
                         )}
                       </>
                     )}
-
-                    <Button size="sm" onClick={() => setProjection((p) => (p === "iso" ? "2d" : "iso"))}>
-                      {projection === "iso" ? "2D view" : "Isometric"}
-                    </Button>
                   </div>
 
                   {problems.length > 0 && (
@@ -474,6 +470,38 @@ export function LayoutScreen() {
                       </ul>
                     </div>
                   )}
+
+                  {/* Bottom-right view controls: zoom in / out / reset, then the
+                      projection toggle. Location-path styling, but no border or
+                      fill. (Zoom is wired in the next commit; 2D/ISO works now.) */}
+                  <div className="zoombar">
+                    <button type="button" className="zoombar__btn" title="Zoom in" onClick={() => {}}>
+                      +
+                    </button>
+                    <span className="zoombar__sep" aria-hidden="true">
+                      |
+                    </span>
+                    <button type="button" className="zoombar__btn" title="Zoom out" onClick={() => {}}>
+                      −
+                    </button>
+                    <span className="zoombar__sep" aria-hidden="true">
+                      |
+                    </span>
+                    <button type="button" className="zoombar__btn" title="Reset view" onClick={() => {}}>
+                      [ ]
+                    </button>
+                    <span className="zoombar__sep" aria-hidden="true">
+                      |
+                    </span>
+                    <button
+                      type="button"
+                      className="zoombar__btn"
+                      title={projection === "iso" ? "Switch to 2D" : "Switch to isometric"}
+                      onClick={() => setProjection((p) => (p === "iso" ? "2d" : "iso"))}
+                    >
+                      {projection === "iso" ? "2D" : "ISO"}
+                    </button>
+                  </div>
                 </div>
 
                 {confirmLeave && (
