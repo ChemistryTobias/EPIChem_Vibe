@@ -66,13 +66,30 @@ class LabSpec(BaseModel):
 
 
 class ZoneSpec(BaseModel):
-    lab: str  # Lab.code
+    # A zone is scoped to *exactly one* parent (ADR 0015): a lab region or a site
+    # region. Both optional in the schema; the validator enforces exactly one.
+    lab: str | None = None  # Lab.code
+    site: str | None = None  # Site.code
+    # The zone's 2D rectangle on the parent's canvas (metres, ADR 0015); 0×0 = a
+    # classification-only zone that isn't drawn.
+    pos_x: float = 0.0
+    pos_y: float = 0.0
+    width_m: float = 0.0
+    depth_m: float = 0.0
+    # Free-form "walkable | keep-out | …" (ADR 0015).
+    purpose: str = "area"
     atmosphere: Literal["air", "n2", "ar"] = "air"
     pressure: str | None = None
     temperature_class: str | None = None
     hazard_class: str | None = None
     # §12.2 human-vs-robot safety boundary; "shared" when unclassified.
     occupancy: Literal["human", "robot", "shared"] = "shared"
+
+    @model_validator(mode="after")
+    def _one_scope(self) -> "ZoneSpec":
+        if (self.lab is None) == (self.site is None):
+            raise ValueError("a zone must set exactly one of `lab` or `site`")
+        return self
 
 
 class StationSpec(BaseModel):

@@ -139,9 +139,25 @@ TOPOLOGY_WRITE = [
         "zones",
         Zone,
         ZoneOut,
-        "lab",
-        Lab,
-        ["atmosphere", "pressure", "temperature_class", "hazard_class", "occupancy"],
+        # A zone is scoped to *either* a lab or a site (ADR 0015), so it has no
+        # single required parent — both are optional refs, and ZoneSpec's
+        # validator enforces exactly one. This keeps the generic import/export
+        # path working for both scopes without a special case.
+        None,
+        None,
+        [
+            "pos_x",
+            "pos_y",
+            "width_m",
+            "depth_m",
+            "purpose",
+            "atmosphere",
+            "pressure",
+            "temperature_class",
+            "hazard_class",
+            "occupancy",
+        ],
+        [("lab", Lab), ("site", Site)],
     ),
     TopologyKind(
         "Station",

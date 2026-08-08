@@ -46,7 +46,16 @@ class ZoneOut(OutBase):
     id: uuid.UUID
     code: str
     name: str
-    lab_id: uuid.UUID
+    # A zone is scoped to exactly one of these (ADR 0015): a lab region or a
+    # site region. Both nullable so either scope round-trips.
+    lab_id: uuid.UUID | None
+    site_id: uuid.UUID | None
+    # The zone's 2D rectangle on its parent's canvas (metres, ADR 0015).
+    pos_x: float
+    pos_y: float
+    width_m: float
+    depth_m: float
+    purpose: str
     atmosphere: str
     pressure: str | None
     temperature_class: str | None

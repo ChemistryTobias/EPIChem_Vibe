@@ -50,6 +50,7 @@ class Site(RegistryEntity):
     floors: Mapped[int] = mapped_column(default=1)
 
     labs: Mapped[list["Lab"]] = relationship(back_populates="site")
+    zones: Mapped[list["Zone"]] = relationship(back_populates="site")
 
 
 class Lab(RegistryEntity):
@@ -86,7 +87,20 @@ class Lab(RegistryEntity):
 class Zone(RegistryEntity):
     __tablename__ = "zones"
 
-    lab_id: Mapped[uuid_mod.UUID] = mapped_column(ForeignKey("labs.id"))
+    # A zone is scoped to exactly one parent (ADR 0015): a Lab (a region of a
+    # room) or a Site (a region of the building). `lab_id` is therefore nullable
+    # now; a site-scoped zone sets `site_id` instead. Descriptor import only ever
+    # produces lab-scoped zones — site zones are UI/API-created (ADR 0015).
+    lab_id: Mapped[uuid_mod.UUID | None] = mapped_column(ForeignKey("labs.id"), default=None)
+    site_id: Mapped[uuid_mod.UUID | None] = mapped_column(ForeignKey("sites.id"), default=None)
+    # The zone's 2D rectangle on its parent's canvas (ADR 0015), in metres. Flat:
+    # zones have no height — they're drawn as translucent areas under the boxes.
+    pos_x: Mapped[float] = mapped_column(default=0.0)
+    pos_y: Mapped[float] = mapped_column(default=0.0)
+    width_m: Mapped[float] = mapped_column(default=0.0)
+    depth_m: Mapped[float] = mapped_column(default=0.0)
+    # Free-form "walkable | keep-out | …" — the "or anything" of ADR 0015.
+    purpose: Mapped[str] = mapped_column(default="area")
     atmosphere: Mapped[str] = mapped_column(default="air")
     pressure: Mapped[str | None] = mapped_column(default=None)
     temperature_class: Mapped[str | None] = mapped_column(default=None)
@@ -95,7 +109,8 @@ class Zone(RegistryEntity):
     # atmosphere — a safety boundary. human | robot | shared.
     occupancy: Mapped[str] = mapped_column(default="shared")
 
-    lab: Mapped[Lab] = relationship(back_populates="zones")
+    lab: Mapped[Lab | None] = relationship(back_populates="zones")
+    site: Mapped[Site | None] = relationship(back_populates="zones")
     stations: Mapped[list["Station"]] = relationship(back_populates="zone")
 
 
