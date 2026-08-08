@@ -117,11 +117,20 @@ plus React-side panels, which is what `LayoutInspector` is.
 Station: the site floor holds labs, a lab floor holds stations, a station floor holds
 devices/modules — each a box on a metric floor. `isometric.ts` deals only in a generic
 `Box`/`CanvasModel` and a projection (`toScreen`/`toFloor` take an `iso | 2d` flag; `metricsFor`
-auto-fits each level's floor, from a 40 m site to a 1 m station, to the viewport). **`levels.ts` is
+auto-fits each level's floor, from a 40 m site to a 1 m station, to a target px). **`levels.ts` is
 the only place the levels differ** — which rows become boxes, their unit (the station level
 converts device mm ↔ metres at its boundary), and which write endpoint each drag/create/delete
-calls. You drill down by clicking a box, back up via the breadcrumb. So: to add a level or change a
-write, edit `levels.ts`; don't branch in the canvas.
+calls. So: to add a level or change a write, edit `levels.ts`; don't branch in the canvas.
+
+**Full-bleed canvas + floating overlay.** The JointJS paper is `.canvas` and fills the whole
+content area (everything left after the header, nav and inspector); `useIsometricPaper` fits the
+drawing to that box with a `ResizeObserver` and re-fits on resize. Every control floats over it in a
+click-through `.canvas-overlay` — only the real buttons and the breadcrumb take pointer events, so
+the canvas stays draggable everywhere else. The screen header holds just the **Edit ↔ Inspect**
+toggle. Navigation is the drill-down **breadcrumb** (`Breadcrumb.tsx`): `› SITE [floor] › LAB ›
+STATION`, where each `›` opens a dropdown of that level's options and a name jumps back to its
+level. The `[floor]` chip is the site-floor view control (ADR 0013), shown only when the site has
+more than one floor — a layout-only concept that never appears in the Hierarchy tree.
 
 Editing (edit mode): **add** a standard-size child at the origin, **drag** to move, resize the
 **footprint/height with drag handles** (`useIsometricPaper.ts`, the isometric-diagram demo

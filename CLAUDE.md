@@ -5,10 +5,10 @@
 > describes. The delivery path (container stack + GitLab CI) has been executed end-to-end and is
 > green; the test suites, lint and typecheck are verified. Current work is **M2 — Device plane**:
 > the topology flatten and metric lab canvas are built (ADRs 0007–0010), and the Lab-layout editor
-> is now a single generic canvas over **three levels** (Site → Lab → Station) with drill-down, a
-> 2D/isometric toggle, drag-resize handles, and a `virtual` soft-hide delete (ADRs 0011–0012). The
-> Device-Management shell (Device Status + New-Device-first creation flow) and NetBox/CSV import
-> are next.
+> is now a single **full-bleed** generic canvas over **three levels** (Site → Lab → Station) with a
+> drill-down breadcrumb, a 2D/isometric toggle, drag-resize handles, a `virtual` soft-hide delete
+> (ADRs 0011–0012), and a layout-only site-floor selector (ADR 0013). The Device-Management shell
+> (Device Status + New-Device-first creation flow) and NetBox/CSV import are next.
 > (The old `docs/SESSION_HANDOFF.md` was deleted 2026-08-07 — it had gone stale, pinned to a
 > commit six commits behind `main`.)
 
@@ -51,16 +51,22 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
   `Lab.site_pos_*/site_size_*_m` (the lab's box on the site — distinct from its own floor), and
   `Device.size_*_mm` (a footprint within the station canvas, mm to match `pose_*_mm`). ADR 0011
   added a `virtual` soft-hide flag on `Station`/`Device` (the canvas "delete" that the revision
-  history can reverse). The UI renamed the Topology section to **Device Management** (Hierarchy /
-  Device Status / Lab Layout), though the frontend `screens/topology/` directory and
-  `api/topology.ts`/`TopologySnapshot` keep the data-model name on purpose. The Lab-layout editor
-  lives in `screens/layout/` — the generic canvas (`isometric.ts` geometry + `Box`/`CanvasModel`,
-  `shapes.ts`, `useIsometricPaper.ts`) is level-agnostic; **`levels.ts` is the only place the three
-  levels differ** (which rows become boxes, their unit, which write endpoint each action calls), so
-  add a level or change a write there, not by branching in the canvas. Read ADRs 0007–0012 before
-  touching `models/topology.py`, `importer.py`, the descriptor schemas, or the layout/topology
-  frontend screens — don't reintroduce the old six-level model, and don't duplicate the canvas
-  per level.
+  history can reverse). ADR 0013 gave `Site.floors` + `Lab.floor` — a **layout-only** notion of
+  building storeys that is *not* a hierarchy level (it never appears in the tree/importer/API tree);
+  the site plan draws only the selected floor's labs. The UI renamed the Topology section to
+  **Device Management** (Hierarchy / Device Status / Lab Layout), though the frontend
+  `screens/topology/` directory and `api/topology.ts`/`TopologySnapshot` keep the data-model name on
+  purpose. The Lab-layout editor lives in `screens/layout/` — the generic canvas (`isometric.ts`
+  geometry + `Box`/`CanvasModel`, `shapes.ts`, `useIsometricPaper.ts`) is level-agnostic;
+  **`levels.ts` is the only place the three levels differ** (which rows become boxes, their unit,
+  which write endpoint each action calls), so add a level or change a write there, not by branching
+  in the canvas. The editor is **full-bleed**: the JointJS paper is `.canvas` and fills the content
+  area (the hook fits the drawing to the container via a ResizeObserver — `metricsFor` takes a
+  target px); all controls float over it in `.canvas-overlay`. Navigation is a drill-down
+  **breadcrumb** (`Breadcrumb.tsx`) — `› SITE [floor] › LAB › STATION`, each `›` a dropdown of that
+  level's options. Read ADRs 0007–0013 before touching `models/topology.py`, `importer.py`, the
+  descriptor schemas, or the layout/topology frontend screens — don't reintroduce the old six-level
+  model, don't duplicate the canvas per level, and don't turn the floor into a hierarchy level.
 - Enumerated fields (environment_class, atmosphere, workcell state, ...) are plain strings
   validated at the pydantic descriptor layer, not DB enums — see the module docstring in
   `models/topology.py` for why.
