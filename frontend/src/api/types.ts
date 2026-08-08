@@ -23,6 +23,8 @@ export interface Site {
   width_m: number;
   depth_m: number;
   grid_size_m: number;
+  /** Building storeys (ADR 0013); layout-only. >1 shows a floor selector. */
+  floors: number;
 }
 
 export interface Lab {
@@ -44,6 +46,8 @@ export interface Lab {
   site_pos_y: number;
   site_size_x_m: number;
   site_size_y_m: number;
+  /** Which site floor this lab sits on (ADR 0013), 0-based; layout-only. */
+  floor: number;
 }
 
 export interface Zone {

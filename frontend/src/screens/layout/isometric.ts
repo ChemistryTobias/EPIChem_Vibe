@@ -41,23 +41,25 @@ export interface TileMetrics {
 const BASE = { mHalfW: 46, mHalfH: 27, heightUnit: 40 };
 export const DEFAULT_METRICS: TileMetrics = { ...BASE, scale2d: 60 };
 
-/** Roughly how many px the drawing should span, so every level fits the viewport. */
-const TARGET_PX = 860;
+/** Default drawing span in px, so every level fits before the canvas measures itself. */
+export const TARGET_PX = 860;
 
 /**
- * Metrics scaled so a `widthU × depthU` floor draws at ~`TARGET_PX`, whatever
- * the level's unit magnitude. Isometric scales `BASE` uniformly; 2D sets a plain
+ * Metrics scaled so a `widthU × depthU` floor draws at ~`targetPx`, whatever the
+ * level's unit magnitude. Isometric scales `BASE` uniformly; 2D sets a plain
  * px-per-metre. Both projections' fields are always returned (the canvas may
- * toggle between them without re-deriving).
+ * toggle between them without re-deriving). `targetPx` lets the canvas fit the
+ * drawing to its actual size — the full-bleed editor feeds it the container's
+ * measured extent so a resize re-fits (extent is linear in `targetPx`).
  */
-export function metricsFor(widthU: number, depthU: number): TileMetrics {
+export function metricsFor(widthU: number, depthU: number, targetPx: number = TARGET_PX): TileMetrics {
   const span = Math.max(widthU + depthU, 1e-6);
-  const k = TARGET_PX / (span * BASE.mHalfW);
+  const k = targetPx / (span * BASE.mHalfW);
   return {
     mHalfW: BASE.mHalfW * k,
     mHalfH: BASE.mHalfH * k,
     heightUnit: BASE.heightUnit * k,
-    scale2d: TARGET_PX / Math.max(widthU, depthU, 1e-6),
+    scale2d: targetPx / Math.max(widthU, depthU, 1e-6),
   };
 }
 

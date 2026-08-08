@@ -83,6 +83,10 @@ export interface LabSpecBody {
   site: string;
   room_number: string | null;
   environment_class: string;
+  // Which site floor the lab sits on (ADR 0013). The hierarchy create form omits
+  // it (backend defaults 0); the Site-level layout editor sets it so a lab
+  // created while viewing floor N lands on floor N.
+  floor?: number;
 }
 
 export interface ZoneSpecBody {
@@ -180,6 +184,8 @@ export const labEditSpec = (row: Lab, e: LabEdit) => ({
   site_pos_y: row.site_pos_y,
   site_size_x_m: row.site_size_x_m,
   site_size_y_m: row.site_size_y_m,
+  // Preserved — the site floor (ADR 0013) is the Site-level layout editor's job.
+  floor: row.floor,
 });
 
 export const zoneEditSpec = (row: Zone, e: ZoneEdit) => ({
@@ -249,6 +255,7 @@ export const resizeLabCanvas = (row: Lab, siteCode: string, canvas: LabCanvas) =
     site_pos_y: row.site_pos_y,
     site_size_x_m: row.site_size_x_m,
     site_size_y_m: row.site_size_y_m,
+    floor: row.floor,
   });
 
 /** The site's own metric canvas (ADR 0012), the level above the lab. */
@@ -267,6 +274,8 @@ export const resizeSiteCanvas = (row: Site, canvas: SiteCanvas) =>
     width_m: canvas.width_m,
     depth_m: canvas.depth_m,
     grid_size_m: canvas.grid_size_m,
+    // Preserved — floor count (ADR 0013) isn't edited by the canvas-resize form.
+    floors: row.floors,
   });
 
 /** A lab's box on the site canvas, in metres (ADR 0012). */
@@ -296,6 +305,7 @@ export const placeLabOnSite = (row: Lab, siteCode: string, geom: LabSiteGeometry
     site_pos_y: geom.site_pos_y,
     site_size_x_m: geom.site_size_x_m,
     site_size_y_m: geom.site_size_y_m,
+    floor: row.floor,
   });
 export const updateZone = (row: Zone, e: ZoneEdit) =>
   put<Zone>("Zone", row.code, e.name, zoneEditSpec(row, e));

@@ -45,6 +45,8 @@ export interface LevelContext {
   site: Site | null;
   lab: Lab | null;
   station: Station | null;
+  /** Which site floor the site level is showing (ADR 0013); 0 for single-floor. */
+  floor: number;
 }
 
 /** A box's full geometry in the level's canvas units (metres on screen). */
@@ -129,11 +131,13 @@ function nextCode(prefix: string, taken: Set<string>): string {
 export function buildLevel(ctx: LevelContext, data: LayoutData): LevelConfig {
   if (ctx.station) return stationLevel(ctx.station, ctx.lab, data);
   if (ctx.lab) return labLevel(ctx.lab, ctx.site, data);
-  return siteLevel(ctx.site, data);
+  return siteLevel(ctx.site, data, ctx.floor);
 }
 
-function siteLevel(site: Site | null, data: LayoutData): LevelConfig {
-  const labs = site ? data.labs.filter((l) => l.site_id === site.id) : [];
+function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): LevelConfig {
+  // Only the current floor's labs are boxes on the plan (ADR 0013): a single-floor
+  // site has every lab on floor 0, so this is a no-op there.
+  const labs = site ? data.labs.filter((l) => l.site_id === site.id && l.floor === viewFloor) : [];
   const boxes: Box[] = sortBoxes(
     labs.map((lab) => ({
       code: lab.code,
@@ -184,6 +188,9 @@ function siteLevel(site: Site | null, data: LayoutData): LevelConfig {
         site: site!.code,
         room_number: null,
         environment_class: "ambient",
+        // Land on the floor being viewed (ADR 0013), not always floor 0 — else a
+        // lab created on floor 2 would vanish from the current plan.
+        floor: viewFloor,
       });
       return code;
     },

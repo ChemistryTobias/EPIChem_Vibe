@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
 import type { Box, CanvasModel, FloorPos, Point, Projection, TileMetrics } from "./isometric";
-import { canvasExtent, metricsFor, snap, toFloor, toScreen } from "./isometric";
+import { DEFAULT_METRICS, TARGET_PX, canvasExtent, metricsFor, snap, toFloor, toScreen } from "./isometric";
 import {
   BoxTile,
   FloorGrid,
@@ -68,8 +68,14 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
   // the paper would never be created at all. State makes the arrival of the
   // node itself the thing that triggers creation.
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  // The container's measured size, so the drawing fits the full-bleed canvas and
+  // re-fits when it resizes (a ResizeObserver feeds this — see below).
+  const [size, setSize] = useState({ w: 0, h: 0 });
   const paperRef = useRef<dia.Paper | null>(null);
   const graphRef = useRef<dia.Graph | null>(null);
+  // The metrics the last redraw fitted to the container; the drag handlers read
+  // it so their floor↔screen inversion matches what's on screen.
+  const metricsRef = useRef<TileMetrics>(DEFAULT_METRICS);
 
   // Handlers live in a ref so the paper's listeners always call the latest
   // ones without the paper itself having to be rebuilt on every render.
@@ -139,11 +145,20 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       },
     });
 
+    // Drags invert screen→floor with the *fitted* metrics the last redraw used,
+    // not a fresh fixed-target one, or a resized canvas would drop boxes off-place.
     const dimsFor = (model: CanvasModel, projection: Projection) => {
-      const metrics = metricsFor(model.widthU, model.depthU);
+      const metrics = metricsRef.current;
       const { origin } = canvasExtent(model.widthU, model.depthU, metrics, projection);
       return { metrics, origin };
     };
+
+    // Re-fit whenever the container resizes (window, inspector open/close, …).
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r) setSize({ w: Math.round(r.width), h: Math.round(r.height) });
+    });
+    ro.observe(container);
 
     paper.on("element:pointerclick", (view) => {
       if (view.model.get("type") === "epi.Handle") return; // a handle isn't a selection
@@ -234,6 +249,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     paperRef.current = paper;
 
     return () => {
+      ro.disconnect();
       paper.remove();
       graphRef.current = null;
       paperRef.current = null;
@@ -248,12 +264,19 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     const paper = paperRef.current;
     if (!graph || !paper) return;
 
-    const metrics = metricsFor(model.widthU, model.depthU);
+    const metrics = fitMetrics(model, projection, size.w, size.h);
+    metricsRef.current = metrics;
     const { width, height, origin } = canvasExtent(model.widthU, model.depthU, metrics, projection);
     const tallest = model.boxes.reduce((max, b) => Math.max(max, b.height), 0);
     const lift = projection === "2d" ? 0 : tallest * metrics.heightUnit;
-    paper.setDimensions(width + MARGIN * 2, height + lift + MARGIN * 2);
-    paper.translate(MARGIN, lift + MARGIN);
+    // The drawing is `paperW × paperH`; make the paper at least the container so
+    // it fills the full-bleed canvas, and centre the drawing in the slack.
+    const paperW = width + MARGIN * 2;
+    const paperH = height + lift + MARGIN * 2;
+    const dimW = Math.max(paperW, size.w || paperW);
+    const dimH = Math.max(paperH, size.h || paperH);
+    paper.setDimensions(dimW, dimH);
+    paper.translate(MARGIN + (dimW - paperW) / 2, lift + MARGIN + (dimH - paperH) / 2);
 
     // Full rebuild rather than a diff: a level is tens of boxes, and a rebuild
     // can't drift out of sync with the data the way a diff can.
@@ -292,9 +315,31 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // `container` is a dep so this re-runs in the same commit the paper is
     // created in — effects fire in declaration order, so the paper exists by
     // the time this reads it.
-  }, [container, model, projection, selectedCode, showLabels, editable]);
+  }, [container, model, projection, selectedCode, showLabels, editable, size]);
 
   return setContainer;
+}
+
+/**
+ * Metrics scaled so the whole drawing fits the container (minus margins), in
+ * either projection. The extent is linear in the target px, so we measure the
+ * drawing at the default target and rescale the target by the fit ratio. Falls
+ * back to the default target before the container has been measured.
+ */
+function fitMetrics(
+  model: CanvasModel,
+  projection: Projection,
+  cw: number,
+  ch: number,
+): TileMetrics {
+  const availW = Math.max((cw || TARGET_PX) - MARGIN * 2, 80);
+  const availH = Math.max((ch || TARGET_PX) - MARGIN * 2, 80);
+  const base = metricsFor(model.widthU, model.depthU);
+  const be = canvasExtent(model.widthU, model.depthU, base, projection);
+  const tallest = model.boxes.reduce((max, b) => Math.max(max, b.height), 0);
+  const baseLift = projection === "2d" ? 0 : tallest * base.heightUnit;
+  const scale = Math.min(availW / be.width, availH / (be.height + baseLift));
+  return metricsFor(model.widthU, model.depthU, TARGET_PX * scale);
 }
 
 /** Round to the nearest multiple of `step` (no-op for a non-positive step). */

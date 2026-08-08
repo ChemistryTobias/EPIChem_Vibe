@@ -1,85 +1,192 @@
+/* The Lab-layout screen is full-bleed: the canvas fills the whole content area
+ * (everything the shell leaves after header, nav and inspector) and the controls
+ * float over it. So this pane drops the usual screen padding and clips. */
 .layout__content {
-  display: flex;
-  flex-direction: column;
   position: relative;
+  padding: 0;
+  overflow: hidden;
   min-height: 0;
 }
 
-/* The floating control bar over the top-left of the canvas — breadcrumb, back,
- * add/edit, and the projection hint. Everything else is chrome the shell owns. */
-.layout__toolbar {
+/* The loading / empty / error placeholders still want breathing room. */
+.layout__content > .async {
+  margin: var(--space-5);
+}
+
+/* The JointJS paper (.joint-paper) mounts in here and the hook fits the drawing
+ * to this box, re-fitting on resize. It fills the pane edge to edge. */
+.canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: var(--color-surface-muted);
+}
+
+/* Everything that isn't the canvas — breadcrumb, buttons, warnings — lives here,
+ * over the drawing. The layer itself is click-through; only its real controls
+ * take pointer events, so the canvas stays draggable everywhere they aren't. */
+.canvas-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.canvas-overlay__bar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  pointer-events: none;
 }
 
-.layout__crumbs {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+/* Re-enable interaction on the actual controls; the flexible spacer stays
+ * click-through so the middle of the bar drops clicks onto the canvas. */
+.canvas-overlay__bar > .crumbs,
+.canvas-overlay__bar > .btn {
+  pointer-events: auto;
 }
 
-.layout__crumb {
-  border: none;
-  background: none;
-  padding: 2px var(--space-1);
-  border-radius: var(--radius);
-  font: inherit;
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 13px;
-  color: var(--color-accent);
-  cursor: pointer;
-}
-
-.layout__crumb:hover {
-  background: var(--color-surface-muted);
-}
-
-.layout__crumb--current {
-  color: var(--color-text);
-  cursor: default;
-}
-
-.layout__crumb-sep {
-  color: var(--color-text-muted);
-}
-
-.layout__site-select {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 13px;
-}
-
-.layout__hint {
-  margin-left: auto;
-}
-
-/* The JointJS paper mounts here and fills the whole content area (minus the
- * floating toolbar), so the editor is as large as the screen allows. */
-.layout__paper {
+.canvas-overlay__spacer {
   flex: 1;
-  min-height: 420px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius);
-  background: var(--color-surface-muted);
-  overflow: auto;
+  pointer-events: none;
 }
 
-.layout__error,
-.layout__problems {
-  margin: 0 0 var(--space-2);
+/* Error / warning cards, floated under the bar. */
+.canvas-overlay__panel {
+  pointer-events: auto;
+  align-self: flex-start;
+  max-width: 520px;
   border-left: 3px solid var(--color-danger);
-  background: var(--color-surface-muted);
+  background: var(--color-bg);
   padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
   font-size: 12px;
 }
 
-.layout__problems {
+.canvas-overlay__panel--warn {
   border-left-color: var(--color-accent-orange);
 }
 
-.layout__problems ul {
+.canvas-overlay__panel ul {
   margin: var(--space-1) 0 0;
   padding-left: var(--space-4);
+}
+
+/* ---- breadcrumb ---------------------------------------------------------- */
+
+/* A floating pill so the crumbs read over the grey canvas. Same typeface as the
+ * main menu (--font-display, uppercase), just greyed. */
+.crumbs {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius);
+  padding: 4px var(--space-2);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+}
+
+/* A name in the trail. Ancestors are clickable (a shade darker); the current
+ * level is the quietest and inert — "you are here". */
+.crumb {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  border-radius: var(--radius);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.crumb:hover {
+  color: var(--color-primary);
+}
+
+.crumb--current {
+  color: var(--color-border);
+  cursor: default;
+}
+
+/* The `›` (and the `[N]` floor chip) that opens a level's option menu. */
+.crumb__dd {
+  position: relative;
+  display: inline-flex;
+}
+
+.crumb__arrow {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  border-radius: var(--radius);
+  font: inherit;
+  letter-spacing: inherit;
+  color: var(--color-border);
+  cursor: pointer;
+}
+
+.crumb__arrow:hover {
+  color: var(--color-primary);
+}
+
+/* Nothing to pick at this level: keep the arrow for spacing, but inert. */
+.crumb__arrow--empty {
+  color: var(--color-border-soft);
+  cursor: default;
+}
+
+.crumbs__floor {
+  color: var(--color-text-secondary);
+}
+
+.crumb__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  min-width: 140px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.crumb__menu-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 6px var(--space-2);
+  border-radius: var(--radius);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.crumb__menu-item:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-primary);
+}
+
+.crumb__menu-item--active {
+  color: var(--color-text);
 }

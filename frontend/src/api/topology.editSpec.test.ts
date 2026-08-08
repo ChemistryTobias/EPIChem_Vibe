@@ -26,6 +26,7 @@ const lab: Lab = {
   site_pos_y: 4,
   site_size_x_m: 12,
   site_size_y_m: 9,
+  floor: 2,
 };
 
 const zone: Zone = {
@@ -90,6 +91,7 @@ describe("labEditSpec", () => {
       site_pos_y: 4,
       site_size_x_m: 12,
       site_size_y_m: 9,
+      floor: 2,
     });
   });
 });

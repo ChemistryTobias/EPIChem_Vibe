@@ -29,6 +29,7 @@ const site = (id: string, code: string): Site => ({
   width_m: 40,
   depth_m: 40,
   grid_size_m: 1,
+  floors: 1,
 });
 
 const lab = (id: string, code: string, site_id: string): Lab => ({
@@ -46,6 +47,7 @@ const lab = (id: string, code: string, site_id: string): Lab => ({
   site_pos_y: 0,
   site_size_x_m: 10,
   site_size_y_m: 10,
+  floor: 0,
 });
 
 const zone = (id: string, code: string, lab_id: string): Zone => ({

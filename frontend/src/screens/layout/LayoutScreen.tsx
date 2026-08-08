@@ -1,19 +1,25 @@
 /**
- * Lab layout (plan §10): the isometric floor plan, now one editor over three
- * levels (ADR 0012) — Site → Lab → Station, drilling down by clicking a box and
- * back up with the breadcrumb. Each level is the *same* canvas; only the data and
- * the write endpoints differ (`levels.ts`).
+ * Lab layout (plan §10): the isometric floor plan, one editor over three levels
+ * (ADR 0012) — Site → Lab → Station, drilling down by clicking a box and back up
+ * via the breadcrumb. Each level is the *same* canvas; only the data and the
+ * write endpoints differ (`levels.ts`).
+ *
+ * The canvas is full-bleed: it fills everything the shell leaves it (header, nav,
+ * inspector) and re-fits as that space changes (`useIsometricPaper`). The
+ * controls — a drill-down breadcrumb, Back, add/edit-floor, and the 2D/isometric
+ * toggle — float over the canvas in a `.canvas-overlay`, so the drawing owns the
+ * whole area. The one thing in the screen header is the Edit ↔ Inspect toggle.
  *
  * Scope, stated plainly:
  * - Renders one level's floor at a time (a metric canvas, ADR 0010): the site
  *   holds labs, a lab holds stations, a station holds devices/modules — each a
  *   box placed in metres (the station level converts device mm at its boundary).
+ *   A multi-floor site (ADR 0013) shows a floor picker; only that floor's labs
+ *   draw.
  * - The editor (edit mode) does the §10.3 affordances: add a standard-size child
  *   at the origin; drag a box to move it; edit a box's geometry (position,
  *   footprint, height) numerically or with drag handles; remove a box (hard for
- *   labs, soft-hide for stations/devices, ADR 0011); resize the floor/grid. A
- *   2D/isometric toggle switches the projection. All full-replace writes through
- *   the same registry the tree writes to.
+ *   labs, soft-hide for stations/devices, ADR 0011); resize the floor/grid.
  * - Not here: zones (they classify, they aren't placed — ADR 0010/0012), and the
  *   live-status/occupancy/utilisation layers, which need live device state.
  */
@@ -26,6 +32,7 @@ import { AsyncBoundary } from "../../components/AsyncBoundary";
 import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useAsync } from "../../hooks/useAsync";
+import { Breadcrumb } from "./Breadcrumb";
 import type { FloorPos, Projection } from "./isometric";
 import { boxProblems } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
@@ -52,6 +59,7 @@ const EMPTY: LayoutData = { sites: [], labs: [], zones: [], stations: [], device
 export function LayoutScreen() {
   const layout = useAsync(useCallback(fetchLayout, []));
   const [siteCode, setSiteCode] = useState<string | null>(null);
+  const [floor, setFloor] = useState(0);
   const [labCode, setLabCode] = useState<string | null>(null);
   const [stationCode, setStationCode] = useState<string | null>(null);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
@@ -79,7 +87,7 @@ export function LayoutScreen() {
   const site = data.sites.find((s) => s.code === siteCode) ?? data.sites[0] ?? null;
   const lab = labCode ? (data.labs.find((l) => l.code === labCode) ?? null) : null;
   const station = stationCode ? (data.stations.find((s) => s.code === stationCode) ?? null) : null;
-  const ctx: LevelContext = { site, lab, station };
+  const ctx: LevelContext = { site, lab, station, floor };
 
   const level = useMemo(() => buildLevel(ctx, data), [ctx, data]);
 
@@ -166,6 +174,28 @@ export function LayoutScreen() {
     else if (lab) goToSite();
   };
 
+  // Breadcrumb jumps: pick a site/floor resets to that site's plan; enter a lab
+  // or a station descends there directly (the breadcrumb can cross levels, so it
+  // sets context rather than going through `drillInto`).
+  const pickSite = (code: string) => {
+    setSiteCode(code);
+    setFloor(0);
+    goToSite();
+  };
+  const pickFloor = (f: number) => {
+    setFloor(f);
+    goToSite();
+  };
+  const enterLab = (code: string) => {
+    setLabCode(code);
+    setStationCode(null);
+    selectBox(null);
+  };
+  const enterStation = (code: string) => {
+    setStationCode(code);
+    selectBox(null);
+  };
+
   const addChild = async () => {
     setError(null);
     try {
@@ -189,25 +219,17 @@ export function LayoutScreen() {
             : "Isometric floor plan (§10)"
         }
         actions={
-          <>
-            <Button
-              variant={editable ? "primary" : "secondary"}
-              onClick={() =>
-                setEditable((on) => {
-                  if (on) closeForms();
-                  return !on;
-                })
-              }
-            >
-              {editable ? "Editing" : "Operations"}
-            </Button>
-            <Button
-              onClick={() => setProjection((p) => (p === "iso" ? "2d" : "iso"))}
-            >
-              {projection === "iso" ? "2D view" : "Isometric"}
-            </Button>
-            <Button onClick={layout.reload}>Refresh</Button>
-          </>
+          <Button
+            variant={editable ? "primary" : "secondary"}
+            onClick={() =>
+              setEditable((on) => {
+                if (on) closeForms();
+                return !on;
+              })
+            }
+          >
+            {editable ? "Inspect layout" : "Edit layout"}
+          </Button>
         }
       />
 
@@ -225,93 +247,73 @@ export function LayoutScreen() {
           >
             {() => (
               <>
-                <div className="layout__toolbar">
-                  <nav className="layout__crumbs" aria-label="Breadcrumb">
-                    {data.sites.length > 1 ? (
-                      <select
-                        className="layout__site-select"
-                        value={site?.code ?? ""}
-                        onChange={(e) => {
-                          setSiteCode(e.target.value);
-                          goToSite();
-                        }}
-                      >
-                        {data.sites.map((s) => (
-                          <option key={s.id} value={s.code}>
-                            {s.code}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <button className="layout__crumb" onClick={goToSite}>
-                        {site?.code ?? "Site"}
-                      </button>
-                    )}
-                    {lab && (
-                      <>
-                        <span className="layout__crumb-sep">›</span>
-                        <button className="layout__crumb" onClick={goToLab}>
-                          {lab.code}
-                        </button>
-                      </>
-                    )}
-                    {station && (
-                      <>
-                        <span className="layout__crumb-sep">›</span>
-                        <span className="layout__crumb layout__crumb--current">{station.code}</span>
-                      </>
-                    )}
-                  </nav>
+                <div className="canvas" ref={containerRef} />
 
-                  <Button onClick={back} disabled={!lab && !station}>
-                    ← Back
-                  </Button>
+                <div className="canvas-overlay">
+                  <div className="canvas-overlay__bar">
+                    <Breadcrumb
+                      sites={data.sites}
+                      labs={data.labs}
+                      stations={data.stations}
+                      site={site}
+                      lab={lab}
+                      station={station}
+                      floor={floor}
+                      level={level.level}
+                      onPickSite={pickSite}
+                      onPickFloor={pickFloor}
+                      onEnterLab={enterLab}
+                      onEnterStation={enterStation}
+                      onGoToSite={goToSite}
+                      onGoToLab={goToLab}
+                    />
 
-                  {editable && (
-                    <>
-                      <Button variant="primary" onClick={addChild}>
-                        + Add {level.childLabel}
-                      </Button>
-                      {canEditFloor && (
-                        <Button
-                          onClick={() => {
-                            selectBox(null);
-                            setEditingFloor(true);
-                          }}
-                        >
-                          Edit floor
+                    <span className="canvas-overlay__spacer" />
+
+                    <Button onClick={back} disabled={!lab && !station}>
+                      ← Back
+                    </Button>
+                    {editable && (
+                      <>
+                        <Button variant="primary" onClick={addChild}>
+                          + Add {level.childLabel}
                         </Button>
-                      )}
-                    </>
+                        {canEditFloor && (
+                          <Button
+                            onClick={() => {
+                              selectBox(null);
+                              setEditingFloor(true);
+                            }}
+                          >
+                            Edit floor
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    <Button onClick={() => setProjection((p) => (p === "iso" ? "2d" : "iso"))}>
+                      {projection === "iso" ? "2D view" : "Isometric"}
+                    </Button>
+                  </div>
+
+                  {error && (
+                    <div className="canvas-overlay__panel canvas-overlay__panel--error" role="alert">
+                      {error}
+                    </div>
                   )}
 
-                  <span className="layout__hint label">
-                    {editable
-                      ? `Drag to move · click to ${level.isLeaf ? "select" : "enter"}`
-                      : "Read-only"}
-                  </span>
+                  {problems.length > 0 && (
+                    <div className="canvas-overlay__panel canvas-overlay__panel--warn" role="alert">
+                      <p className="label">Not drawn correctly</p>
+                      <ul>
+                        {problems.map((p) => (
+                          <li key={p.code} className="mono">
+                            {p.code}: {p.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-
-                {error && (
-                  <p className="layout__error" role="alert">
-                    {error}
-                  </p>
-                )}
-
-                {problems.length > 0 && (
-                  <div className="layout__problems" role="alert">
-                    <p className="label">Not drawn correctly</p>
-                    <ul>
-                      {problems.map((p) => (
-                        <li key={p.code} className="mono">
-                          {p.code}: {p.reason}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <div className="layout__paper" ref={containerRef} />
               </>
             )}
           </AsyncBoundary>
