@@ -368,10 +368,25 @@ export function LayoutScreen() {
             : "Isometric floor plan (§10)"
         }
         actions={
-          site && !editable ? (
-            <Button variant="primary" onClick={enterEdit}>
-              Edit layout
-            </Button>
+          site ? (
+            editable ? (
+              <>
+                <Button
+                  variant="primary"
+                  onClick={() => save(level, draft)}
+                  disabled={!isDirty || saving}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </Button>
+                <Button variant="secondary" onClick={cancel} disabled={saving}>
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <Button variant="primary" onClick={enterEdit}>
+                Edit layout
+              </Button>
+            )
           ) : undefined
         }
       />
@@ -439,12 +454,6 @@ export function LayoutScreen() {
                             Edit floor
                           </Button>
                         )}
-                        <Button size="sm" onClick={() => save(level, draft)} disabled={!isDirty || saving}>
-                          {saving ? "Saving…" : "Save"}
-                        </Button>
-                        <Button size="sm" onClick={cancel} disabled={saving}>
-                          Cancel
-                        </Button>
                       </>
                     )}
 
