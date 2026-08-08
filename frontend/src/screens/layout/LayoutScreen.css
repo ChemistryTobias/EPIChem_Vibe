@@ -52,6 +52,13 @@
   pointer-events: auto;
 }
 
+/* Pushes the buttons to the right of the bar — breadcrumb left, controls right.
+ * Click-through so the gap between them drops onto the canvas. */
+.canvas-overlay__spacer {
+  flex: 1 1 auto;
+  pointer-events: none;
+}
+
 /* The live "not drawn correctly" readout — a shared `.notice` (see
  * Notifications.css) pinned into the overlay. Transient alerts (save errors,
  * placement warnings, the level-lock hint) go through the bottom-left toasts

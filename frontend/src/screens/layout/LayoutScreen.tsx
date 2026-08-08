@@ -248,10 +248,6 @@ export function LayoutScreen() {
     setStationCode(null);
     selectBox(null);
   };
-  const back = () => {
-    if (station) goToLab();
-    else if (lab) goToSite();
-  };
   const pickSite = (code: string) => {
     setSiteCode(code);
     setFloor(0);
@@ -371,6 +367,13 @@ export function LayoutScreen() {
             ? `${level.level} · ${effModel.widthU}×${effModel.depthU} m · ${effModel.boxes.length} ${level.childLabel}s${isDirty ? " · unsaved changes" : ""}`
             : "Isometric floor plan (§10)"
         }
+        actions={
+          site ? (
+            <Button variant={editable ? "primary" : "secondary"} onClick={editable ? cancel : enterEdit}>
+              {editable ? "Inspect layout" : "Edit layout"}
+            </Button>
+          ) : undefined
+        }
       />
 
       <div className="screen">
@@ -417,16 +420,12 @@ export function LayoutScreen() {
                       onGoToLab={goToLab}
                     />
 
-                    {editable ? (
+                    <span className="canvas-overlay__spacer" />
+
+                    {editable && (
                       <>
-                        <Button variant="primary" onClick={() => save(level, draft)} disabled={!isDirty || saving}>
-                          {saving ? "Saving…" : "Save"}
-                        </Button>
-                        <Button variant="primary" onClick={addChild} disabled={saving}>
-                          + Add {level.childLabel}
-                        </Button>
-                        <Button size="sm" onClick={cancel} disabled={saving}>
-                          Cancel
+                        <Button size="sm" onClick={addChild} disabled={saving}>
+                          Add {level.childLabel}
                         </Button>
                         {canEditFloor && (
                           <Button
@@ -440,14 +439,11 @@ export function LayoutScreen() {
                             Edit floor
                           </Button>
                         )}
-                      </>
-                    ) : (
-                      <>
-                        <Button variant="primary" onClick={enterEdit}>
-                          Edit layout
+                        <Button size="sm" onClick={() => save(level, draft)} disabled={!isDirty || saving}>
+                          {saving ? "Saving…" : "Save"}
                         </Button>
-                        <Button size="sm" onClick={back} disabled={!lab && !station}>
-                          ← Back
+                        <Button size="sm" onClick={cancel} disabled={saving}>
+                          Cancel
                         </Button>
                       </>
                     )}
