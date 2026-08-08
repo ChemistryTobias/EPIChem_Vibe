@@ -46,8 +46,9 @@
   --tracking-heading: 0.03em; /* headings */
   --tracking-button: 0.1em; /* DESIGN.md §5: button labels, +50–80 */
 
-  /* Geometry. DESIGN.md §5: sharp to minimally rounded, 4px is the ceiling. */
-  --radius: 2px;
+  /* Geometry. DESIGN.md §5: sharp to minimally rounded. Kept at the sharp end —
+   * a single hairline radius so corners read as clean rectangles. */
+  --radius: 1px;
 
   --space-1: 4px;
   --space-2: 8px;

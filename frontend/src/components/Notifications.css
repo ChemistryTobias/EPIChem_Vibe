@@ -3,15 +3,19 @@
  * fill, sharp corners, colour carries meaning). It's reusable on its own (e.g.
  * an inline warning) — the toast container just pins a stack of them. */
 
+/* Pinned to the bottom-left of the *screen content* — right of the sidebar, with
+ * padding — not the page, because a message is specific to the screen you're on
+ * and should read that way. (The shell's sidebar is a fixed width, so this offset
+ * lands inside the content column.) */
 .toasts {
   position: fixed;
-  left: var(--space-4);
-  bottom: var(--space-4);
+  left: calc(var(--sidebar-width) + var(--space-5));
+  bottom: var(--space-5);
   z-index: 1000;
   display: flex;
   flex-direction: column-reverse; /* newest nearest the corner, older stacking up */
   gap: var(--space-2);
-  width: min(360px, calc(100vw - 2 * var(--space-4)));
+  width: min(360px, calc(100vw - var(--sidebar-width) - 2 * var(--space-5)));
   pointer-events: none; /* only the cards are interactive */
 }
 

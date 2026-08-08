@@ -20,13 +20,6 @@
   cursor: not-allowed;
 }
 
-/* Compact size — a smaller companion button for toolbars/overlays sitting next
- * to a primary one (the layout overlay uses these next to Save/Edit). */
-.btn--sm {
-  gap: var(--space-1);
-  padding: 5px 12px;
-  font-size: 10px;
-}
 
 .btn--primary {
   background: var(--color-primary);
@@ -80,4 +73,35 @@
 
 .btn--text:hover:not(:disabled) {
   text-decoration: underline;
+}
+
+/* Compact companion button (`size="sm"`) — the "non-main" buttons that sit next
+ * to a primary action in a toolbar/overlay. White fill, quiet grey by default;
+ * the action colour appears only on hover — MPG green normally, red for a
+ * destructive (danger) action. Placed last so it wins over the variant colours
+ * on equal specificity. */
+.btn--sm {
+  gap: var(--space-1);
+  padding: 5px 12px;
+  font-size: 10px;
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.btn--sm:hover:not(:disabled) {
+  background: var(--color-bg);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn--sm.btn--danger:hover:not(:disabled) {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.btn--sm:disabled {
+  background: var(--color-bg);
+  border-color: var(--color-border-soft);
+  color: var(--color-border);
 }

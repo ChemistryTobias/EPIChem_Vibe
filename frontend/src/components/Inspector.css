@@ -78,6 +78,15 @@
   border-top: 0;
 }
 
+/* When an actions row precedes the first data group, its own bottom divider is
+ * the single line before the data — don't stack the group's top hairline on top
+ * of it (the "two lines before the data starts" that read as redundant). */
+.node-actions + .field-group {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .field-group__title {
   margin: 0 0 var(--space-3);
   color: var(--color-primary-dark);

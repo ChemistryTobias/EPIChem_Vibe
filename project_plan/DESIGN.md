@@ -110,7 +110,7 @@ The brand system has no explicit screen-component spec (it's a print manual), so
 
 ### Shape
 
-- **Corner radius: sharp to minimally rounded.** The brand's core motif is squares and circles used as pure geometric fields (Quadrateraster grid, Circles), never soft blends between the two — so buttons should read as clean rectangles, not pill-shaped. Use `0–4px` radius; `4px` is the practical ceiling for a "soft but still geometric" feel. Avoid fully rounded/pill buttons — they contradict the square-grid identity.
+- **Corner radius: sharp to minimally rounded.** The brand's core motif is squares and circles used as pure geometric fields (Quadrateraster grid, Circles), never soft blends between the two — so buttons should read as clean rectangles, not pill-shaped. Use `0–4px` radius; `4px` is the practical ceiling for a "soft but still geometric" feel. This app sits at the **sharp end** — `--radius: 1px`, a single hairline softening — applied uniformly to buttons, cards, inputs and alerts. Avoid fully rounded/pill buttons — they contradict the square-grid identity.
 - **Fill, not outline, for primary actions.** The manual explicitly rejects glossy/gradient print finishes ("von Glanzlack-Veredelungen raten wir ab") in favor of flat, matte color — translate that to flat, single-color fills with no gradient, no drop shadow, no inner glow. A 1–2px flat border in the same hue (darker shade) is acceptable for secondary/outline buttons.
 - **No skeuomorphism.** No 3D bevels, no glossy highlight, no soft elevation shadows on hover — state changes should be communicated by flat color shift and/or a thin focus ring, not by depth effects.
 
@@ -119,6 +119,7 @@ The brand system has no explicit screen-component spec (it's a print manual), so
 - Padding: generous horizontal padding relative to height (the manual's textboxes consistently favor width over height — "Kasten nicht ganz mit Text ausfüllen"), e.g. `10–12px vertical / 20–24px horizontal` for a standard button.
 - Label type: **Roboto Bold, uppercase, tracking ~+50–80** (matching the manual's headline/label tracking spec) for primary and secondary buttons — this is one of the more distinctive, transferable pieces of the brand voice. Reserve sentence-case/no-tracking labels for low-emphasis tertiary/text-only buttons, where all-caps would be visually too loud.
 - **Two sizes, one component.** All buttons come from the single `Button` primitive (`components/Button.tsx`) — never a restyled `<button>`. It has a **standard** size and a **compact** (`sm`) size (~`5px/12px` padding, ~10px label): use `sm` for the "non-main" companion buttons that sit next to a primary action in a toolbar or a canvas overlay (Back, 2D toggle, Cancel, Edit floor), so the primary action stays the largest thing in the group and the rest read as secondary by size, not by louder color. Keep the *variant* meaningful (primary = the one main action, secondary/text = the rest); use the size to express "smaller, alongside."
+- **Compact buttons stay quiet until hovered.** A `sm` button reads **white fill, grey text/border** at rest and reveals its action colour **only on hover** — MPG green normally, the one-off red for a destructive action. This keeps a toolbar of companions calm next to the single filled primary, and still signals intent (green = go, red = careful) on interaction.
 
 ### Color by state
 
