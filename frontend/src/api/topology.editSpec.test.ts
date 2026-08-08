@@ -34,6 +34,12 @@ const zone: Zone = {
   code: "ZONE-1",
   name: "Zone 1",
   lab_id: "l1",
+  site_id: null,
+  pos_x: 1,
+  pos_y: 2,
+  width_m: 3,
+  depth_m: 4,
+  purpose: "walkable",
   atmosphere: "n2",
   pressure: "1.1 bar",
   temperature_class: "T3",
@@ -97,7 +103,7 @@ describe("labEditSpec", () => {
 });
 
 describe("zoneEditSpec", () => {
-  test("preserves pressure/temperature/hazard", () => {
+  test("preserves pressure/temperature/hazard and the drawn rectangle (ADR 0015)", () => {
     const spec = zoneEditSpec(zone, { name: "x", lab: "LAB-1", atmosphere: "ar", occupancy: "shared" });
     expect(spec).toMatchObject({
       atmosphere: "ar",
@@ -105,6 +111,12 @@ describe("zoneEditSpec", () => {
       pressure: "1.1 bar",
       temperature_class: "T3",
       hazard_class: "ATEX-2",
+      // Geometry must ride along or a classification edit would zero the rectangle.
+      pos_x: 1,
+      pos_y: 2,
+      width_m: 3,
+      depth_m: 4,
+      purpose: "walkable",
     });
   });
 });

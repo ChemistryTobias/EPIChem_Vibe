@@ -118,7 +118,11 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
 
   const orphans: TopologyTree["orphans"] = [
     ...labs.filter((l) => !known.Site.has(l.site_id)).map((l) => orphan("Lab", l.code, l.site_id)),
-    ...zones.filter((z) => !known.Lab.has(z.lab_id)).map((z) => orphan("Zone", z.code, z.lab_id)),
+    // Only lab-scoped zones belong in the lab hierarchy; site-scoped zones
+    // (lab_id null, ADR 0015) are a layout concept and simply aren't in the tree.
+    ...zones
+      .filter((z) => z.lab_id !== null && !known.Lab.has(z.lab_id))
+      .map((z) => orphan("Zone", z.code, z.lab_id as string)),
     // A station is misplaced if its lab is missing, or if it names a zone that
     // isn't in the registry.
     ...stations

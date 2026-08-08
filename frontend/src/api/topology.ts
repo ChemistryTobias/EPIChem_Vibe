@@ -100,9 +100,17 @@ export interface LabSpecBody {
 }
 
 export interface ZoneSpecBody {
-  lab: string;
-  atmosphere: string;
-  occupancy: string;
+  // Exactly one of these — a lab region or a site region (ADR 0015).
+  lab?: string;
+  site?: string;
+  // The zone's 2D rectangle (metres, ADR 0015); omitted → 0×0 (undrawn).
+  pos_x?: number;
+  pos_y?: number;
+  width_m?: number;
+  depth_m?: number;
+  purpose?: string;
+  atmosphere?: string;
+  occupancy?: string;
 }
 
 export interface StationSpecBody {
@@ -202,7 +210,13 @@ export const zoneEditSpec = (row: Zone, e: ZoneEdit) => ({
   lab: e.lab,
   atmosphere: e.atmosphere,
   occupancy: e.occupancy,
-  // Preserved:
+  // Preserved — the hierarchy edit form doesn't touch geometry/purpose, but a
+  // PUT replaces the whole spec (ADR 0015), so carry them or they'd reset to 0.
+  pos_x: row.pos_x,
+  pos_y: row.pos_y,
+  width_m: row.width_m,
+  depth_m: row.depth_m,
+  purpose: row.purpose,
   pressure: row.pressure,
   temperature_class: row.temperature_class,
   hazard_class: row.hazard_class,
@@ -322,6 +336,42 @@ export const placeLabOnSite = (row: Lab, siteCode: string, geom: LabSiteGeometry
   });
 export const updateZone = (row: Zone, e: ZoneEdit) =>
   put<Zone>("Zone", row.code, e.name, zoneEditSpec(row, e));
+
+/** A zone's 2D rectangle on its parent canvas (metres, ADR 0015). */
+export interface ZoneRect {
+  pos_x: number;
+  pos_y: number;
+  width_m: number;
+  depth_m: number;
+}
+
+/**
+ * Zone writes for the layout editor (ADR 0015). A zone is scoped to a lab *or* a
+ * site (`scope`/`parentCode`); the classification fields are preserved off the
+ * row so drawing the rectangle never disturbs the safety metadata. The parent
+ * code can't be read off the row (it carries ids), so the caller passes it.
+ */
+export const createZoneArea = (
+  scope: "lab" | "site",
+  parentCode: string,
+  code: string,
+  name: string,
+  rect: ZoneRect,
+  purpose: string,
+) =>
+  apiPost<Zone>(
+    "/zones",
+    descriptor("Zone", code, name, { [scope]: parentCode, ...rect, purpose }),
+  );
+
+export const placeZoneArea = (row: Zone, scope: "lab" | "site", parentCode: string, rect: ZoneRect) =>
+  put<Zone>("Zone", row.code, row.name, {
+    [scope]: parentCode,
+    ...rect,
+    purpose: row.purpose,
+    atmosphere: row.atmosphere,
+    occupancy: row.occupancy,
+  });
 export const updateStation = (row: Station, e: StationEdit) =>
   put<Station>("Station", row.code, e.name, stationEditSpec(row, e));
 

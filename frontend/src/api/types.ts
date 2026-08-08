@@ -54,7 +54,17 @@ export interface Zone {
   id: string;
   code: string;
   name: string;
-  lab_id: string;
+  /** A zone is scoped to exactly one parent (ADR 0015): a lab region or a site
+   * region. Exactly one of these is set. */
+  lab_id: string | null;
+  site_id: string | null;
+  /** The zone's 2D rectangle on its parent's canvas (metres, ADR 0015). */
+  pos_x: number;
+  pos_y: number;
+  width_m: number;
+  depth_m: number;
+  /** Free-form "walkable | keep-out | …" (ADR 0015). */
+  purpose: string;
   atmosphere: string;
   pressure: string | null;
   temperature_class: string | null;
