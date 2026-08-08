@@ -556,7 +556,6 @@ export function LayoutScreen() {
             geom={selectedCode ? effGeometry(selectedCode) : null}
             isNew={selectedCode ? isNew(selectedCode) : false}
             editable={editable}
-            onEnter={enter}
             onEditGeometry={() => setEditingGeom(true)}
             onRemove={() => selectedCode && removeSelected(selectedCode)}
             onClose={() => selectBox(null)}

@@ -111,6 +111,11 @@ export interface LevelConfig {
   /** Weak footprints one level down (stations in labs / devices in stations),
    * projected into this level's canvas — context only, never interactive. */
   outlines: Outline[];
+  /** The full registry row for a child box, so the layout inspector can show the
+   * *same* record the Hierarchy inspector does (null for a not-yet-saved box). */
+  rowOf: (code: string) => Site | Lab | Zone | Station | Device | null;
+  /** Codes of a child's own children, for the inspector's "contains" summary. */
+  childCodesOf: (code: string) => string[];
 }
 
 // ---- fills (DESIGN.md brand palette) ---------------------------------------
@@ -249,6 +254,11 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
       return l ? { lab: l } : null;
     },
     outlines,
+    rowOf: (code) => byCode.get(code) ?? null,
+    childCodesOf: (code) => {
+      const l = byCode.get(code);
+      return l ? data.stations.filter((s) => s.lab_id === l.id && !s.virtual).map((s) => s.code) : [];
+    },
   };
 }
 
@@ -358,6 +368,11 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
       return s ? { station: s } : null;
     },
     outlines,
+    rowOf: (code) => byCode.get(code) ?? null,
+    childCodesOf: (code) => {
+      const s = byCode.get(code);
+      return s ? data.devices.filter((d) => d.station_code === s.code && !d.virtual).map((d) => d.code) : [];
+    },
   };
 }
 
@@ -445,5 +460,10 @@ function stationLevel(station: Station, _lab: Lab | null, data: LayoutData): Lev
     resizeFloor: () => Promise.resolve(),
     drillInto: () => null, // devices are the leaf level
     outlines: [], // nothing below a device is drawn (only one level down)
+    rowOf: (code) => byCode.get(code) ?? null,
+    childCodesOf: (code) => {
+      const d = byCode.get(code);
+      return d ? data.devices.filter((c) => c.parent_id === d.id && !c.virtual).map((c) => c.code) : [];
+    },
   };
 }
