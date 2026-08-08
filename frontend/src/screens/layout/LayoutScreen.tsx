@@ -368,9 +368,9 @@ export function LayoutScreen() {
             : "Isometric floor plan (§10)"
         }
         actions={
-          site ? (
-            <Button variant={editable ? "primary" : "secondary"} onClick={editable ? cancel : enterEdit}>
-              {editable ? "Inspect layout" : "Edit layout"}
+          site && !editable ? (
+            <Button variant="primary" onClick={enterEdit}>
+              Edit layout
             </Button>
           ) : undefined
         }
@@ -482,7 +482,6 @@ export function LayoutScreen() {
                       setConfirmLeave(false);
                       exitToInspect();
                     }}
-                    onKeep={() => setConfirmLeave(false)}
                   />
                 )}
               </>
@@ -525,36 +524,33 @@ export function LayoutScreen() {
   );
 }
 
-/** The discard/save confirm shown when leaving edit mode with unsaved changes. */
+/** Save-or-discard confirm shown when leaving edit mode with unsaved changes. */
 function ConfirmLeave({
   childLabel,
   saving,
   onSave,
   onDiscard,
-  onKeep,
 }: {
   childLabel: string;
   saving: boolean;
   onSave: () => void;
   onDiscard: () => void;
-  onKeep: () => void;
 }) {
   return (
-    <div className="layout-confirm" role="dialog" aria-modal="true" aria-label="Unsaved changes">
+    <div className="layout-confirm" role="dialog" aria-modal="true" aria-label="Save changes?">
       <div className="layout-confirm__box">
-        <p className="layout-confirm__title">Unsaved changes</p>
+        <p className="layout-confirm__title">Save changes?</p>
         <p className="layout-confirm__body">
-          You have unsaved {childLabel} changes. Save them, or discard and switch to inspect mode?
+          You have unsaved {childLabel} changes. <strong>Yes</strong> writes them to the registry as
+          a new revision (reversible from the history). <strong>Discard</strong> throws away
+          everything changed since you entered edit mode.
         </p>
         <div className="layout-confirm__actions">
           <Button variant="primary" onClick={onSave} disabled={saving}>
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? "Saving…" : "Yes"}
           </Button>
           <Button variant="danger" onClick={onDiscard} disabled={saving}>
             Discard
-          </Button>
-          <Button onClick={onKeep} disabled={saving}>
-            Keep editing
           </Button>
         </div>
       </div>
