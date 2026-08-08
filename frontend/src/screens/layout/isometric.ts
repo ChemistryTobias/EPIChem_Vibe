@@ -1,42 +1,65 @@
 /**
- * Isometric projection in metres, from plan §10.3 and ADR 0010.
+ * The layout canvas geometry — one metric model, three levels (plan §10.3, ADRs
+ * 0010/0012). Every level (site → labs, lab → stations, station → devices) is
+ * the *same* thing: boxes on a metric floor. So this file knows nothing about
+ * sites/labs/stations/devices — it deals in a generic `Box` and a `CanvasModel`,
+ * and the per-level adapters (`levels.ts`) turn registry rows into boxes.
  *
- * The lab is a metric canvas: a width_m × depth_m floor with a grid_size_m
- * raster. A station is a box placed on it at (pos_x, pos_y) metres, with a
- * size_x_m × size_y_m footprint and a height_m box height. Everything here is
- * metres in, screen pixels out.
+ *     iso:  screen.x = origin.x + (x - y) * mHalfW
+ *           screen.y = origin.y + (x + y) * mHalfH - heightU * heightUnit
+ *     2d:   screen.x = origin.x + x * scale2d
+ *           screen.y = origin.y + y * scale2d          (height not drawn)
+ *     depth = x + y            // painter's algorithm: render ascending
  *
- *     screen.x = origin.x + (x - y) * mHalfW
- *     screen.y = origin.y + (x + y) * mHalfH - heightM * heightUnit
- *     depth    = x + y            // painter's algorithm: render ascending
- *
- * Pure functions, no JointJS and no React — the geometry is the part that's
- * easy to get subtly wrong and hard to eyeball on a canvas, so it lives apart
- * from the rendering and is tested directly (`isometric.test.ts`).
- *
- * `toFloor` is the inverse, and it's what makes dragging work: a box dropped
- * at some pixel position becomes a metric (pos_x, pos_y) the registry accepts.
- * `snap` rounds that to the grid — the editor snaps by default but nothing
- * forces it (snap-but-not-bound, ADR 0010).
+ * Pure functions, no JointJS and no React — the geometry is the part that's easy
+ * to get subtly wrong and hard to eyeball on a canvas, so it lives apart from
+ * the rendering and is tested directly (`isometric.test.ts`). `toFloor` is the
+ * inverse of `toScreen` and is what makes dragging work; `snap` rounds to the
+ * grid (snap-but-not-bound, ADR 0010).
  */
 
-import type { Device, Lab, Station } from "../../api/types";
+/** How the canvas projects floor metres to screen pixels. */
+export type Projection = "iso" | "2d";
 
 /**
- * Scale, in screen pixels. Per metre rather than per cell now (ADR 0010), so
- * the projection is independent of the lab's grid_size_m — a finer grid just
- * draws more lines, it doesn't rescale the room.
+ * Scale, in screen pixels. `metricsFor` derives these per level so a 40 m site
+ * and a 1 m station both fill roughly the same space — the levels span three
+ * orders of magnitude, so a fixed px-per-metre would make one tiny and one huge.
  */
 export interface TileMetrics {
-  /** Screen px per metre along the horizontal (x−y) spread. */
+  /** Screen px per metre along the isometric horizontal (x−y) spread. */
   mHalfW: number;
-  /** Screen px per metre along the vertical (x+y) spread. */
+  /** Screen px per metre along the isometric vertical (x+y) spread. */
   mHalfH: number;
-  /** Screen px a box rises per metre of height_m. */
+  /** Screen px a box rises per unit of height (isometric only). */
   heightUnit: number;
+  /** Screen px per metre in the flat 2D projection. */
+  scale2d: number;
 }
 
-export const DEFAULT_METRICS: TileMetrics = { mHalfW: 46, mHalfH: 27, heightUnit: 40 };
+/** The isometric aspect the classic view was tuned to; `metricsFor` scales it. */
+const BASE = { mHalfW: 46, mHalfH: 27, heightUnit: 40 };
+export const DEFAULT_METRICS: TileMetrics = { ...BASE, scale2d: 60 };
+
+/** Roughly how many px the drawing should span, so every level fits the viewport. */
+const TARGET_PX = 860;
+
+/**
+ * Metrics scaled so a `widthU × depthU` floor draws at ~`TARGET_PX`, whatever
+ * the level's unit magnitude. Isometric scales `BASE` uniformly; 2D sets a plain
+ * px-per-metre. Both projections' fields are always returned (the canvas may
+ * toggle between them without re-deriving).
+ */
+export function metricsFor(widthU: number, depthU: number): TileMetrics {
+  const span = Math.max(widthU + depthU, 1e-6);
+  const k = TARGET_PX / (span * BASE.mHalfW);
+  return {
+    mHalfW: BASE.mHalfW * k,
+    mHalfH: BASE.mHalfH * k,
+    heightUnit: BASE.heightUnit * k,
+    scale2d: TARGET_PX / Math.max(widthU, depthU, 1e-6),
+  };
+}
 
 /** A screen position, in pixels. */
 export interface Point {
@@ -44,39 +67,47 @@ export interface Point {
   y: number;
 }
 
-/** A position on the lab floor, in metres. */
+/** A position on the floor, in the level's canvas units (metres). */
 export interface FloorPos {
   x: number;
   y: number;
 }
 
-/** Floor metres → the screen position of that point (raised by heightM). */
+/** Floor units → the screen position of that point (raised by `heightU` in iso). */
 export function toScreen(
   pos: FloorPos,
   origin: Point,
   metrics: TileMetrics = DEFAULT_METRICS,
-  heightM = 0,
+  heightU = 0,
+  projection: Projection = "iso",
 ): Point {
+  if (projection === "2d") {
+    return { x: origin.x + pos.x * metrics.scale2d, y: origin.y + pos.y * metrics.scale2d };
+  }
   return {
     x: origin.x + (pos.x - pos.y) * metrics.mHalfW,
-    y: origin.y + (pos.x + pos.y) * metrics.mHalfH - heightM * metrics.heightUnit,
+    y: origin.y + (pos.x + pos.y) * metrics.mHalfH - heightU * metrics.heightUnit,
   };
 }
 
 /**
- * Screen position → the floor metres it lands on. The inverse of `toScreen`.
+ * Screen position → the floor units it lands on. The inverse of `toScreen`.
  *
- * `heightM` must match the value `toScreen` was given, or a raised point reads
- * as being further back on the floor than it is.
+ * `heightU` must match the value `toScreen` was given (iso only), or a raised
+ * point reads as being further back on the floor than it is.
  */
 export function toFloor(
   point: Point,
   origin: Point,
   metrics: TileMetrics = DEFAULT_METRICS,
-  heightM = 0,
+  heightU = 0,
+  projection: Projection = "iso",
 ): FloorPos {
+  if (projection === "2d") {
+    return { x: (point.x - origin.x) / metrics.scale2d, y: (point.y - origin.y) / metrics.scale2d };
+  }
   const dx = (point.x - origin.x) / metrics.mHalfW;
-  const dy = (point.y - origin.y + heightM * metrics.heightUnit) / metrics.mHalfH;
+  const dy = (point.y - origin.y + heightU * metrics.heightUnit) / metrics.mHalfH;
   return {
     x: (dx + dy) / 2,
     y: (dy - dx) / 2,
@@ -84,11 +115,11 @@ export function toFloor(
 }
 
 /** Round a floor position to the nearest grid intersection (soft snap). */
-export function snap(pos: FloorPos, gridSizeM: number): FloorPos {
-  if (gridSizeM <= 0) return pos;
+export function snap(pos: FloorPos, gridSizeU: number): FloorPos {
+  if (gridSizeU <= 0) return pos;
   return {
-    x: Math.round(pos.x / gridSizeM) * gridSizeM,
-    y: Math.round(pos.y / gridSizeM) * gridSizeM,
+    x: Math.round(pos.x / gridSizeU) * gridSizeU,
+    y: Math.round(pos.y / gridSizeU) * gridSizeU,
   };
 }
 
@@ -97,128 +128,122 @@ export function depth(pos: FloorPos): number {
   return pos.x + pos.y;
 }
 
-/** A drawn footprint: a near corner (metres) and a metric size. */
-export interface DrawnRect {
-  pos: FloorPos;
-  size: { x: number; y: number };
-}
-
 /**
- * Turn a drag between two floor points into a snapped station footprint: the
- * near corner is the min of the two (snapped), the size is their snapped extent,
- * floored at one grid cell so a click or a tiny drag still yields a real box
- * (the Lab Layout editor's "draw a station" gesture, ADR 0010).
- */
-export function drawnRect(a: FloorPos, b: FloorPos, gridSizeM: number): DrawnRect {
-  const cell = gridSizeM > 0 ? gridSizeM : 1;
-  const x0 = snap({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, cell);
-  const x1 = snap({ x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) }, cell);
-  return {
-    pos: x0,
-    size: {
-      x: Math.max(cell, x1.x - x0.x),
-      y: Math.max(cell, x1.y - x0.y),
-    },
-  };
-}
-
-/**
- * How big the drawing is, in screen px, for a width_m × depth_m floor.
- * Used to size the paper and to place the origin so nothing is clipped: the
- * leftmost point of the diamond is the far corner (x=0, y=depth_m).
+ * How big the drawing is, in screen px, for a `widthU × depthU` floor, plus the
+ * origin that keeps the far-left corner from clipping. Iso is a diamond shifted
+ * right by the depth; 2D is an axis-aligned rectangle at the origin.
  */
 export function canvasExtent(
-  widthM: number,
-  depthM: number,
+  widthU: number,
+  depthU: number,
   metrics: TileMetrics = DEFAULT_METRICS,
+  projection: Projection = "iso",
 ): { width: number; height: number; origin: Point } {
+  if (projection === "2d") {
+    return {
+      width: widthU * metrics.scale2d,
+      height: depthU * metrics.scale2d,
+      origin: { x: 0, y: 0 },
+    };
+  }
   return {
-    width: (widthM + depthM) * metrics.mHalfW,
-    height: (widthM + depthM) * metrics.mHalfH,
-    // Shift right by the depth so the far-left corner (0, depth_m) sits at x=0.
-    origin: { x: depthM * metrics.mHalfW, y: 0 },
+    width: (widthU + depthU) * metrics.mHalfW,
+    height: (widthU + depthU) * metrics.mHalfH,
+    // Shift right by the depth so the far-left corner (0, depthU) sits at x=0.
+    origin: { x: depthU * metrics.mHalfW, y: 0 },
   };
 }
 
-/** Grid-line intersections along each axis, as metre offsets 0..extent. */
-export function gridLines(extentM: number, gridSizeM: number): number[] {
+/** Grid-line intersections along each axis, as unit offsets 0..extent. */
+export function gridLines(extentU: number, gridSizeU: number): number[] {
   const lines: number[] = [];
-  if (gridSizeM <= 0) return [0, extentM];
+  if (gridSizeU <= 0) return [0, extentU];
   // A tiny epsilon so a floor that divides evenly still gets its far edge line.
-  for (let v = 0; v <= extentM + 1e-9; v += gridSizeM) lines.push(Math.min(v, extentM));
-  if (lines[lines.length - 1] < extentM) lines.push(extentM);
+  for (let v = 0; v <= extentU + 1e-9; v += gridSizeU) lines.push(Math.min(v, extentU));
+  if (lines[lines.length - 1] < extentU) lines.push(extentU);
   return lines;
 }
 
+// ---- the generic model: boxes on a floor -----------------------------------
+
+/** Face fills for a box; in 2D only `top` is drawn. */
+export interface BoxFill {
+  top: string;
+  left: string;
+  right: string;
+}
+
 /**
- * What the canvas draws: one lab's stations, each with whatever device it
- * holds, sorted back-to-front (ADR 0007: the grid is the lab's, and a station
- * belongs to a lab).
- *
- * The pairing is by `Device.station_code`, which the API derives from the
- * station FK — the canvas doesn't re-implement that relationship, it reads it.
- * A station holds several devices; the canvas shows the first as its badge.
+ * One box on the canvas, in the level's canvas units. The adapter (`levels.ts`)
+ * decides everything level-specific — the fill, the label, whether a badge shows
+ * — so the canvas renderer stays ignorant of what a box *is*.
  */
-export interface PlacedStation {
-  station: Station;
-  device: Device | null;
-  /** The station box's near corner on the floor, in metres. */
+export interface Box {
+  /** The registry code of the row this box stands for — the selection key. */
+  code: string;
+  /** Near corner on the floor. */
   pos: FloorPos;
+  /** Footprint. */
+  size: { x: number; y: number };
+  /** Isometric box height (units); 0 draws flat. Ignored in 2D. */
+  height: number;
+  fill: BoxFill;
+  label: string;
+  /** Draw the small "has a child bound" dot. */
+  badge: boolean;
 }
 
-export function placeStations(
-  stations: Station[],
-  devices: Device[],
-  lab: Lab,
-): PlacedStation[] {
-  const deviceByStation = new Map<string, Device>();
-  for (const d of devices) {
-    if (d.station_code && !deviceByStation.has(d.station_code)) {
-      deviceByStation.set(d.station_code, d);
-    }
-  }
-
-  return stations
-    .filter((s) => s.lab_id === lab.id)
-    .map((station) => ({
-      station,
-      device: deviceByStation.get(station.code) ?? null,
-      pos: { x: station.pos_x, y: station.pos_y },
-    }))
-    .sort((a, b) => depth(a.pos) - depth(b.pos));
+/** A whole level's canvas: floor dimensions plus the boxes on it. */
+export interface CanvasModel {
+  /** Floor width/depth/grid, in the level's canvas units. */
+  widthU: number;
+  depthU: number;
+  gridU: number;
+  boxes: Box[];
 }
 
-/** Stations whose box falls off the lab canvas, or overlaps another. */
-export interface PlacementProblem {
+/** Back-to-front order (painter's algorithm, §10.3) — nearer boxes paint last. */
+export function sortBoxes(boxes: Box[]): Box[] {
+  return [...boxes].sort((a, b) => depth(a.pos) - depth(b.pos));
+}
+
+/** A box that falls off its canvas, or overlaps another. */
+export interface BoxProblem {
   code: string;
   reason: string;
 }
 
-export function placementProblems(placed: PlacedStation[], lab: Lab): PlacementProblem[] {
-  const problems: PlacementProblem[] = [];
+/** Off-canvas / overlap warnings — soft, like the rest of placement (ADR 0010). */
+export function boxProblems(boxes: Box[], widthU: number, depthU: number): BoxProblem[] {
+  const problems: BoxProblem[] = [];
   const seen: { code: string; x0: number; y0: number; x1: number; y1: number }[] = [];
 
-  for (const { station, pos } of placed) {
-    const x0 = pos.x;
-    const y0 = pos.y;
-    const x1 = pos.x + station.size_x_m;
-    const y1 = pos.y + station.size_y_m;
+  for (const box of boxes) {
+    const x0 = box.pos.x;
+    const y0 = box.pos.y;
+    const x1 = box.pos.x + box.size.x;
+    const y1 = box.pos.y + box.size.y;
 
-    if (x0 < -1e-6 || y0 < -1e-6 || x1 > lab.width_m + 1e-6 || y1 > lab.depth_m + 1e-6) {
+    if (x0 < -1e-6 || y0 < -1e-6 || x1 > widthU + 1e-6 || y1 > depthU + 1e-6) {
       problems.push({
-        code: station.code,
-        reason: `box at (${x0}, ${y0}) m spills outside the ${lab.width_m}×${lab.depth_m} m floor`,
+        code: box.code,
+        reason: `box at (${round(x0)}, ${round(y0)}) spills outside the ${round(widthU)}×${round(depthU)} floor`,
       });
       continue;
     }
 
     const hit = seen.find((s) => x0 < s.x1 - 1e-6 && x1 > s.x0 + 1e-6 && y0 < s.y1 - 1e-6 && y1 > s.y0 + 1e-6);
     if (hit) {
-      problems.push({ code: station.code, reason: `overlaps ${hit.code}` });
+      problems.push({ code: box.code, reason: `overlaps ${hit.code}` });
     } else {
-      seen.push({ code: station.code, x0, y0, x1, y1 });
+      seen.push({ code: box.code, x0, y0, x1, y1 });
     }
   }
 
   return problems;
+}
+
+/** Trim float noise in warning text without rounding real values away. */
+function round(v: number): number {
+  return Math.round(v * 100) / 100;
 }

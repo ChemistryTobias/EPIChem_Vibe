@@ -1,48 +1,44 @@
 /**
- * All the JointJS lifecycle in one place: create a graph and paper, redraw
- * when the data changes, tear both down on unmount.
+ * All the JointJS lifecycle in one place, generic over the level (ADR 0012): it
+ * renders a `CanvasModel` — a floor plus boxes — in either projection, and
+ * reports drags back as new floor positions. It knows nothing about
+ * sites/labs/stations/devices; `levels.ts` turns rows into boxes.
  *
  * The rule from plan §10.3 — "never let the canvas hold authoritative state;
  * reload it from the model and it must render identically" — is what shapes
  * this hook. It renders *from* props on every change and owns nothing. A drag
- * doesn't update the canvas's idea of where a station is; it reports a new
- * metric position, the screen writes it to the registry and refetches, and the
- * redraw is what moves the box. If the write fails, the box snaps back, because
- * the canvas never believed the drag in the first place (ADR 0010).
+ * doesn't update the canvas's idea of where a box is; it reports a new position,
+ * the screen writes it to the registry and refetches, and the redraw is what
+ * moves the box. If the write fails, the box snaps back, because the canvas
+ * never believed the drag in the first place (ADR 0010).
  */
 
 import { useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
-import type { Lab, Station } from "../../api/types";
-import type { DrawnRect, FloorPos, PlacedStation, TileMetrics } from "./isometric";
-import { DEFAULT_METRICS, canvasExtent, drawnRect, snap, toFloor } from "./isometric";
+import type { CanvasModel, FloorPos, Projection } from "./isometric";
+import { canvasExtent, metricsFor, snap, toFloor } from "./isometric";
 import {
+  BoxTile,
   FloorGrid,
-  StationTile,
+  boxShape,
   floorGridPath,
   floorSurfacePoints,
-  stationBox,
-  stationFill,
 } from "./shapes";
 
 export interface IsometricPaperOptions {
-  lab: Lab | null;
-  placed: PlacedStation[];
-  metrics?: TileMetrics;
+  model: CanvasModel;
+  projection: Projection;
   selectedCode: string | null;
   showLabels: boolean;
-  showFloor: boolean;
   /** False puts the canvas in read-only "operations" mode (§10.3). */
   editable: boolean;
   onSelect: (code: string | null) => void;
-  onMove: (placed: PlacedStation, pos: FloorPos) => void;
-  /** A footprint was drawn on empty floor in edit mode (ADR 0010): create a
-   * station there. Omitted disables drawing. */
-  onDrawStation?: (rect: DrawnRect) => void;
+  /** A box was dragged to a new floor position (snapped), in canvas units. */
+  onMove: (code: string, pos: FloorPos) => void;
 }
 
-const CELL_NAMESPACE = { ...shapes, epi: { FloorGrid, Station: StationTile } };
+const CELL_NAMESPACE = { ...shapes, epi: { FloorGrid, Box: BoxTile } };
 
 const MARGIN = 24;
 
@@ -74,122 +70,39 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       height: "100%",
       background: { color: "transparent" },
       gridSize: 1,
-      // Only stations move, and only in edit mode. The floor is scenery.
+      // Only boxes move, and only in edit mode. The floor is scenery.
       interactive: (cellView) =>
-        handlers.current.editable && cellView.model.get("type") === "epi.Station",
+        handlers.current.editable && cellView.model.get("type") === "epi.Box",
     });
 
     paper.on("element:pointerclick", (view) => {
-      handlers.current.onSelect((view.model.get("stationCode") as string) ?? null);
+      handlers.current.onSelect((view.model.get("boxCode") as string) ?? null);
     });
     paper.on("blank:pointerclick", () => handlers.current.onSelect(null));
 
-    // ---- draw-a-station on empty floor (edit mode, ADR 0010) ---------------
-    //
-    // A drag on the blank floor rubber-bands a footprint with a live isometric
-    // preview; releasing it hands the snapped rectangle up to create a station.
-    // A plain click (no meaningful drag) makes no preview and falls through to
-    // blank:pointerclick above, which deselects.
-    let drawStart: FloorPos | null = null;
-    let preview: dia.Element | null = null;
-
-    const floorAt = (x: number, y: number): FloorPos | null => {
-      const { lab, metrics = DEFAULT_METRICS } = handlers.current;
-      if (!lab) return null;
-      const { origin } = canvasExtent(lab.width_m, lab.depth_m, metrics);
-      return toFloor({ x, y }, origin, metrics, 0);
-    };
-
-    const clearPreview = () => {
-      if (preview) {
-        preview.remove();
-        preview = null;
-      }
-    };
-
-    paper.on("blank:pointerdown", (_evt, x, y) => {
-      if (!handlers.current.editable || !handlers.current.onDrawStation) return;
-      drawStart = floorAt(x, y);
-    });
-
-    paper.on("blank:pointermove", (_evt, x, y) => {
-      if (!drawStart) return;
-      const { lab, metrics = DEFAULT_METRICS } = handlers.current;
-      const cur = floorAt(x, y);
-      if (!lab || !cur) return;
-      const cell = lab.grid_size_m > 0 ? lab.grid_size_m : 1;
-      // Ignore jitter: only draw once the cursor has left the starting cell.
-      if (Math.abs(cur.x - drawStart.x) < cell / 2 && Math.abs(cur.y - drawStart.y) < cell / 2) {
-        clearPreview();
-        return;
-      }
-      const rect = drawnRect(drawStart, cur, lab.grid_size_m);
-      const { origin } = canvasExtent(lab.width_m, lab.depth_m, metrics);
-      // stationBox only reads these five fields; a partial stands in for a row.
-      const box = stationBox(
-        {
-          pos_x: rect.pos.x,
-          pos_y: rect.pos.y,
-          size_x_m: rect.size.x,
-          size_y_m: rect.size.y,
-          height_m: 0.5,
-        } as unknown as Station,
-        origin,
-        metrics,
-      );
-      if (!preview) {
-        preview = new StationTile({ position: box.position, size: box.size });
-        graph.addCell(preview);
-      } else {
-        preview.position(box.position.x, box.position.y);
-        preview.resize(box.size.width, box.size.height);
-      }
-      preview.attr({
-        top: { points: box.faces.top, fill: "#00B1EA", fillOpacity: 0.35, stroke: "#00B1EA", strokeWidth: 2, strokeDasharray: "4,3" },
-        left: { points: box.faces.left, fill: "#00B1EA", fillOpacity: 0.2, stroke: "#00B1EA" },
-        right: { points: box.faces.right, fill: "#00B1EA", fillOpacity: 0.15, stroke: "#00B1EA" },
-        label: { text: "" },
-        badge: { fill: "transparent", stroke: "transparent" },
-      });
-    });
-
-    paper.on("blank:pointerup", (_evt, x, y) => {
-      const start = drawStart;
-      const drew = preview !== null;
-      drawStart = null;
-      clearPreview();
-      if (!start || !drew) return; // a click, not a draw — leave it to pointerclick
-      const { lab } = handlers.current;
-      const cur = floorAt(x, y);
-      if (!lab || !cur) return;
-      handlers.current.onDrawStation?.(drawnRect(start, cur, lab.grid_size_m));
-    });
-
     paper.on("element:pointerup", (view) => {
-      const { lab, metrics = DEFAULT_METRICS, placed } = handlers.current;
-      const code = view.model.get("stationCode") as string | undefined;
-      const target = placed.find((p) => p.station.code === code);
-      if (!lab || !code || !target) return;
+      const { model, projection } = handlers.current;
+      const code = view.model.get("boxCode") as string | undefined;
+      const box = model.boxes.find((b) => b.code === code);
+      if (!code || !box) return;
 
-      const { origin } = canvasExtent(lab.width_m, lab.depth_m, metrics);
+      const metrics = metricsFor(model.widthU, model.depthU);
+      const { origin } = canvasExtent(model.widthU, model.depthU, metrics, projection);
       const anchor = view.model.get("anchor") as { x: number; y: number };
       const position = view.model.position();
-      // The floor anchor moved with the box; invert it back to metres, then
-      // snap to the grid (soft — the write stores whatever we send).
+      // The floor anchor moved with the box; invert it back to units, then snap
+      // to the grid (soft — the write stores whatever we send).
       const dropped = toFloor(
         { x: position.x + anchor.x, y: position.y + anchor.y },
         origin,
         metrics,
+        0,
+        projection,
       );
-      const next = snap(dropped, lab.grid_size_m);
+      const next = snap(dropped, model.gridU);
 
-      if (
-        Math.abs(next.x - target.station.pos_x) < 1e-6 &&
-        Math.abs(next.y - target.station.pos_y) < 1e-6
-      ) {
-        return;
-      }
-      handlers.current.onMove(target, next);
+      if (Math.abs(next.x - box.pos.x) < 1e-6 && Math.abs(next.y - box.pos.y) < 1e-6) return;
+      handlers.current.onMove(code, next);
     });
 
     graphRef.current = graph;
@@ -203,58 +116,56 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
   }, [container]);
 
   // Redraw whenever anything visible changes.
-  const { lab, placed, metrics = DEFAULT_METRICS, selectedCode, showLabels, showFloor } = options;
+  const { model, projection, selectedCode, showLabels } = options;
 
   useEffect(() => {
     const graph = graphRef.current;
     const paper = paperRef.current;
-    if (!graph || !paper || !lab) return;
+    if (!graph || !paper) return;
 
-    const { width, height, origin } = canvasExtent(lab.width_m, lab.depth_m, metrics);
-    // Extra headroom for the tallest station box, so nothing is clipped.
-    const tallest = placed.reduce((max, p) => Math.max(max, p.station.height_m), 0);
-    const lift = tallest * metrics.heightUnit;
+    const metrics = metricsFor(model.widthU, model.depthU);
+    const { width, height, origin } = canvasExtent(model.widthU, model.depthU, metrics, projection);
+    // Extra headroom for the tallest box, so nothing is clipped (iso only).
+    const tallest = model.boxes.reduce((max, b) => Math.max(max, b.height), 0);
+    const lift = projection === "2d" ? 0 : tallest * metrics.heightUnit;
     paper.setDimensions(width + MARGIN * 2, height + lift + MARGIN * 2);
     paper.translate(MARGIN, lift + MARGIN);
 
-    // Full rebuild rather than a diff: a lab is tens of cells, and a rebuild
+    // Full rebuild rather than a diff: a level is tens of boxes, and a rebuild
     // can't drift out of sync with the data the way a diff can.
     graph.clear();
 
-    if (showFloor) {
-      const floor = new FloorGrid({ position: { x: 0, y: 0 }, size: { width, height } });
-      floor.attr({
-        surface: { points: floorSurfacePoints(lab, origin, metrics) },
-        grid: { d: floorGridPath(lab, origin, metrics) },
-      });
-      graph.addCell(floor);
-    }
+    const floor = new FloorGrid({ position: { x: 0, y: 0 }, size: { width, height } });
+    floor.attr({
+      surface: { points: floorSurfacePoints(model.widthU, model.depthU, origin, metrics, projection) },
+      grid: { d: floorGridPath(model.widthU, model.depthU, model.gridU, origin, metrics, projection) },
+    });
+    graph.addCell(floor);
 
-    // `placed` is already sorted back-to-front (painter's algorithm, §10.3),
+    // `boxes` are already sorted back-to-front (painter's algorithm, §10.3),
     // and JointJS paints in insertion order.
-    for (const item of placed) {
-      const box = stationBox(item.station, origin, metrics);
-      const fill = stationFill(item.device?.operational_mode ?? null);
-      const selected = item.station.code === selectedCode;
+    for (const box of model.boxes) {
+      const shape = boxShape(box.pos, box.size, box.height, origin, metrics, projection);
+      const selected = box.code === selectedCode;
 
-      const tile = new StationTile({ position: box.position, size: box.size });
-      tile.set("stationCode", item.station.code);
-      tile.set("anchor", box.anchor);
+      const tile = new BoxTile({ position: shape.position, size: shape.size });
+      tile.set("boxCode", box.code);
+      tile.set("anchor", shape.anchor);
       tile.attr({
         top: {
-          points: box.faces.top,
-          fill: fill.top,
+          points: shape.faces.top,
+          fill: box.fill.top,
           stroke: selected ? "#00B1EA" : "#FFFFFF",
           strokeWidth: selected ? 3 : 1,
         },
-        left: { points: box.faces.left, fill: fill.left },
-        right: { points: box.faces.right, fill: fill.right },
-        label: { text: showLabels ? item.station.code : "", x: box.label.x, y: box.label.y },
+        left: { points: shape.faces.left, fill: box.fill.left },
+        right: { points: shape.faces.right, fill: box.fill.right },
+        label: { text: showLabels ? box.label : "", x: shape.label.x, y: shape.label.y },
         badge: {
-          cx: box.badge.x,
-          cy: box.badge.y,
-          fill: item.device ? "#C6D325" : "transparent",
-          stroke: item.device ? "#FFFFFF" : "transparent",
+          cx: shape.badge.x,
+          cy: shape.badge.y,
+          fill: box.badge ? "#C6D325" : "transparent",
+          stroke: box.badge ? "#FFFFFF" : "transparent",
         },
       });
       graph.addCell(tile);
@@ -262,7 +173,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // `container` is a dep so this re-runs in the same commit the paper is
     // created in — effects fire in declaration order, so the paper exists by
     // the time this reads it.
-  }, [container, lab, placed, metrics, selectedCode, showLabels, showFloor]);
+  }, [container, model, projection, selectedCode, showLabels]);
 
   return setContainer;
 }

@@ -1,141 +1,118 @@
 /**
- * Detail panel for the selected station: where it is, what it accepts, and
- * whatever device is bound to it.
- *
- * This is plan §10.2's "React-side inspector" — the reason the canvas can
- * stay on `@joint/core` alone instead of needing the commercial Inspector
- * component.
+ * Detail panel for the selected box — generic across all three levels (ADR
+ * 0012). It shows the box's geometry and offers the edit-mode affordances (enter,
+ * edit geometry, remove) plus its revision history. This is plan §10.2's
+ * "React-side inspector" — the reason the canvas can stay on `@joint/core` alone
+ * instead of needing the commercial Inspector component.
  */
 
 import { useState } from "react";
 
-import { deleteNode } from "../../api/topology";
 import { Button } from "../../components/Button";
 import { Field, FieldGroup, Inspector } from "../../components/Inspector";
-import { StatusDot } from "../../components/StatusDot";
-import { deviceTone } from "../devices/deviceTone";
-import type { PlacedStation } from "./isometric";
+import { RevisionHistory } from "../topology/RevisionHistory";
+import type { LevelConfig } from "./levels";
 
 interface LayoutInspectorProps {
-  placed: PlacedStation | null;
-  labCode: string;
+  level: LevelConfig;
+  code: string | null;
+  editable: boolean;
+  onEnter: (code: string) => void;
+  onEditGeometry: () => void;
+  onRemoved: () => void;
   onClose: () => void;
-  /** Edit mode: offer geometry-edit and delete affordances. */
-  editable?: boolean;
-  onEditGeometry?: () => void;
-  onDeleted?: () => void;
 }
 
+const m = (v: number) => `${Math.round(v * 1000) / 1000} m`;
+
 export function LayoutInspector({
-  placed,
-  labCode,
-  onClose,
-  editable = false,
+  level,
+  code,
+  editable,
+  onEnter,
   onEditGeometry,
-  onDeleted,
+  onRemoved,
+  onClose,
 }: LayoutInspectorProps) {
-  if (!placed) {
+  const geom = code ? level.geometryOf(code) : null;
+
+  if (!code || !geom) {
     return (
       <Inspector
         kind="Layout inspector"
         placeholder={
           editable
-            ? "Drag on the floor to draw a new station, or pick one to move, resize or delete it."
-            : "Select a station on the floor plan to see what's there."
+            ? `Add a ${level.childLabel}, or pick one to move, resize, enter or ${level.removeVerb.toLowerCase()} it.`
+            : `Select a ${level.childLabel} to see where it sits, or click it to enter.`
         }
       />
     );
   }
 
-  const { station, device } = placed;
+  const canEnter = level.drillInto(code) !== null;
 
   return (
-    <Inspector
-      kind="Station inspector"
-      title={station.name}
-      subtitle={station.code}
-      onClose={onClose}
-    >
-      {editable && onEditGeometry && onDeleted && (
-        <StationActions code={station.code} onEditGeometry={onEditGeometry} onDeleted={onDeleted} />
+    <Inspector kind={`${level.childLabel} inspector`} title={code} subtitle={level.level} onClose={onClose}>
+      {editable && (
+        <BoxActions
+          code={code}
+          canEnter={canEnter}
+          removeVerb={level.removeVerb}
+          onEnter={() => onEnter(code)}
+          onEditGeometry={onEditGeometry}
+          onRemove={() => level.remove(code)}
+          onRemoved={onRemoved}
+        />
       )}
 
-      <FieldGroup title="Position">
-        <Field label="Lab" mono>
-          {labCode}
-        </Field>
+      {!editable && canEnter && (
+        <div className="node-actions">
+          <Button variant="primary" onClick={() => onEnter(code)}>
+            Enter {code}
+          </Button>
+        </div>
+      )}
+
+      <FieldGroup title="Placement">
         <Field label="Position" mono>
-          {station.pos_x} m, {station.pos_y} m
+          {m(geom.pos.x)}, {m(geom.pos.y)}
         </Field>
         <Field label="Footprint" mono>
-          {station.size_x_m} × {station.size_y_m} m
+          {m(geom.size.x)} × {m(geom.size.y)}
         </Field>
-        <Field label="Height" mono>
-          {station.height_m} m
-        </Field>
-      </FieldGroup>
-
-      <FieldGroup title="Station">
-        <Field label="Kind">{station.kind}</Field>
-        <Field label="Capacity" mono>
-          {station.capacity}
-        </Field>
-        <Field label="Accepted labware">
-          {station.accepted_labware_types.length
-            ? station.accepted_labware_types.join(", ")
-            : null}
-        </Field>
-      </FieldGroup>
-
-      <FieldGroup title="Device">
-        {device ? (
-          <>
-            <Field label="Code" mono>
-              {device.code}
-            </Field>
-            <Field label="Name">{device.name}</Field>
-            <Field label="Mode">
-              <StatusDot tone={deviceTone(device.operational_mode)} label={device.operational_mode} />
-            </Field>
-            <Field label="Capabilities">
-              {device.capabilities.length ? device.capabilities.join(", ") : null}
-            </Field>
-            <Field label="Transport" mono>
-              {device.transport_protocol}
-            </Field>
-          </>
-        ) : (
-          <p className="inspector__note muted">
-            No device bound to this station. Bind one by setting{" "}
-            <code className="mono">spec.location.station</code> on a device descriptor.
-          </p>
+        {level.level !== "site" && (
+          <Field label="Height" mono>
+            {m(geom.height)}
+          </Field>
         )}
       </FieldGroup>
 
-      {/* Honest about what this view can't show yet. */}
-      <FieldGroup title="Not shown">
-        <p className="inspector__note muted">
-          Live status, sample occupancy, transport routes and utilisation are §10.3 layers that
-          need the M2 device plane — there is no live state to draw yet.
-        </p>
-      </FieldGroup>
+      <RevisionHistory kind={level.childKind} code={code} />
     </Inspector>
   );
 }
 
 /**
- * Edit-geometry / delete row for the selected station (edit mode). Delete is a
- * two-step inline confirm owning its own busy/error state — a 409 comes back if
- * the station still holds devices, which is worth showing, not swallowing.
+ * Enter / edit-geometry / remove row for the selected box (edit mode). Remove is
+ * a two-step inline confirm owning its own busy/error state — a hard delete can
+ * come back 409 (a lab that still holds stations), which is worth showing.
  */
-function StationActions({
+function BoxActions({
   code,
+  canEnter,
+  removeVerb,
+  onEnter,
   onEditGeometry,
-  onDeleted,
+  onRemove,
+  onRemoved,
 }: {
   code: string;
+  canEnter: boolean;
+  removeVerb: "Delete" | "Hide";
+  onEnter: () => void;
   onEditGeometry: () => void;
-  onDeleted: () => void;
+  onRemove: () => Promise<unknown>;
+  onRemoved: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -145,8 +122,8 @@ function StationActions({
     setBusy(true);
     setError(null);
     try {
-      await deleteNode("Station", code);
-      onDeleted();
+      await onRemove();
+      onRemoved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setBusy(false);
@@ -158,9 +135,11 @@ function StationActions({
     <div className="node-actions">
       {confirming ? (
         <>
-          <span className="node-actions__prompt">Delete {code}?</span>
+          <span className="node-actions__prompt">
+            {removeVerb} {code}?
+          </span>
           <Button variant="danger" onClick={remove} disabled={busy}>
-            {busy ? "Deleting…" : "Confirm"}
+            {busy ? `${removeVerb}…` : "Confirm"}
           </Button>
           <Button onClick={() => setConfirming(false)} disabled={busy}>
             Cancel
@@ -168,11 +147,14 @@ function StationActions({
         </>
       ) : (
         <>
-          <Button variant="primary" onClick={onEditGeometry}>
-            Edit geometry
-          </Button>
+          {canEnter && (
+            <Button variant="primary" onClick={onEnter}>
+              Enter
+            </Button>
+          )}
+          <Button onClick={onEditGeometry}>Edit geometry</Button>
           <Button variant="danger" onClick={() => setConfirming(true)}>
-            Delete
+            {removeVerb}
           </Button>
         </>
       )}

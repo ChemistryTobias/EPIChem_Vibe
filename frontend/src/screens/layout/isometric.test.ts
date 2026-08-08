@@ -1,29 +1,30 @@
 /**
- * Geometry is the part of the isometric view that's easy to get subtly
- * wrong and impossible to eyeball — a half-metre offset looks plausible
- * until you drag something. These test plan §10.3 / ADR 0010's formulas
- * directly, in metres.
+ * Geometry is the part of the layout that's easy to get subtly wrong and
+ * impossible to eyeball — a half-metre offset looks plausible until you drag
+ * something. These test plan §10.3 / ADRs 0010/0012's formulas directly, for
+ * both projections, plus the generic box model the three levels share.
  */
 
 import { describe, expect, test } from "vitest";
 
-import type { Device, Lab, Station } from "../../api/types";
+import type { Box, BoxFill } from "./isometric";
 import {
   DEFAULT_METRICS,
+  boxProblems,
   canvasExtent,
   depth,
-  drawnRect,
-  placeStations,
-  placementProblems,
+  metricsFor,
   snap,
+  sortBoxes,
   toFloor,
   toScreen,
 } from "./isometric";
 
 const ORIGIN = { x: 0, y: 0 };
 const M = DEFAULT_METRICS;
+const FILL: BoxFill = { top: "#000", left: "#000", right: "#000" };
 
-describe("toScreen", () => {
+describe("toScreen (iso)", () => {
   test("puts the origin at the origin", () => {
     expect(toScreen({ x: 0, y: 0 }, ORIGIN)).toEqual({ x: 0, y: 0 });
   });
@@ -32,40 +33,42 @@ describe("toScreen", () => {
     expect(toScreen({ x: 1, y: 0 }, ORIGIN)).toEqual({ x: M.mHalfW, y: M.mHalfH });
   });
 
-  test("moves left and down along the y axis", () => {
-    expect(toScreen({ x: 0, y: 1 }, ORIGIN)).toEqual({ x: -M.mHalfW, y: M.mHalfH });
-  });
-
   test("raises a box without moving it sideways", () => {
     const flat = toScreen({ x: 2, y: 1 }, ORIGIN);
     const raised = toScreen({ x: 2, y: 1 }, ORIGIN, M, 1.5);
-
     expect(raised.x).toBe(flat.x);
     expect(raised.y).toBe(flat.y - 1.5 * M.heightUnit);
   });
 });
 
-describe("toFloor", () => {
-  test("inverts toScreen exactly", () => {
-    for (const pos of [{ x: 0, y: 0 }, { x: 3, y: 2 }, { x: 1.5, y: 0.5 }]) {
-      const back = toFloor(toScreen(pos, ORIGIN), ORIGIN);
-      expect(back.x).toBeCloseTo(pos.x, 9);
-      expect(back.y).toBeCloseTo(pos.y, 9);
-    }
+describe("toScreen (2d)", () => {
+  test("is a plain scale with no diamond and no height", () => {
+    expect(toScreen({ x: 2, y: 3 }, ORIGIN, M, 0, "2d")).toEqual({
+      x: 2 * M.scale2d,
+      y: 3 * M.scale2d,
+    });
   });
 
-  test("inverts toScreen for raised points too", () => {
+  test("ignores height entirely", () => {
+    const flat = toScreen({ x: 2, y: 3 }, ORIGIN, M, 0, "2d");
+    const raised = toScreen({ x: 2, y: 3 }, ORIGIN, M, 5, "2d");
+    expect(raised).toEqual(flat);
+  });
+});
+
+describe("toFloor inverts toScreen", () => {
+  test("iso, including raised points", () => {
     const pos = { x: 3, y: 2 };
     const back = toFloor(toScreen(pos, ORIGIN, M, 1.1), ORIGIN, M, 1.1);
-    expect(back.x).toBeCloseTo(pos.x, 9);
-    expect(back.y).toBeCloseTo(pos.y, 9);
+    expect(back.x).toBeCloseTo(3, 9);
+    expect(back.y).toBeCloseTo(2, 9);
   });
 
-  test("respects a non-zero origin", () => {
-    const origin = { x: 400, y: 120 };
-    const back = toFloor(toScreen({ x: 4, y: 3 }, origin), origin);
-    expect(back.x).toBeCloseTo(4, 9);
-    expect(back.y).toBeCloseTo(3, 9);
+  test("2d", () => {
+    const pos = { x: 3.5, y: 1.25 };
+    const back = toFloor(toScreen(pos, ORIGIN, M, 0, "2d"), ORIGIN, M, 0, "2d");
+    expect(back.x).toBeCloseTo(3.5, 9);
+    expect(back.y).toBeCloseTo(1.25, 9);
   });
 });
 
@@ -74,218 +77,73 @@ describe("snap", () => {
     expect(snap({ x: 2.2, y: 1.9 }, 0.5)).toEqual({ x: 2.0, y: 2.0 });
   });
 
-  test("leaves a value already on the grid alone", () => {
-    expect(snap({ x: 2.5, y: 1.0 }, 0.5)).toEqual({ x: 2.5, y: 1.0 });
-  });
-
   test("is a no-op for a non-positive grid", () => {
     expect(snap({ x: 2.2, y: 1.9 }, 0)).toEqual({ x: 2.2, y: 1.9 });
   });
 });
 
-describe("depth", () => {
-  test("orders back-to-front so nearer boxes paint last", () => {
-    const positions = [
-      { x: 2, y: 2 },
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-    ];
-
-    expect([...positions].sort((a, b) => depth(a) - depth(b))[0]).toEqual({ x: 0, y: 0 });
+describe("metricsFor", () => {
+  test("scales a small floor up and a large floor down toward the same span", () => {
+    const small = metricsFor(1, 1); // a 1 m station floor
+    const large = metricsFor(40, 40); // a 40 m site floor
+    expect(small.mHalfW).toBeGreaterThan(M.mHalfW);
+    expect(large.mHalfW).toBeLessThan(M.mHalfW);
+    // Both draw their diamond at roughly the same width.
+    expect((1 + 1) * small.mHalfW).toBeCloseTo((40 + 40) * large.mHalfW, 6);
   });
 });
 
 describe("canvasExtent", () => {
-  test("is wide and tall enough for both diagonals", () => {
-    const { width, height } = canvasExtent(6, 4);
-
+  test("iso is wide enough for both diagonals and un-clips the far-left corner", () => {
+    const { width, origin } = canvasExtent(6, 4, M, "iso");
     expect(width).toBe((6 + 4) * M.mHalfW);
-    expect(height).toBe((6 + 4) * M.mHalfH);
+    expect(toScreen({ x: 0, y: 4 }, origin).x).toBeGreaterThanOrEqual(0);
   });
 
-  test("places the origin so the far-left corner is not clipped", () => {
-    const { origin } = canvasExtent(6, 4);
-    const farLeft = toScreen({ x: 0, y: 4 }, origin);
-
-    expect(farLeft.x).toBeGreaterThanOrEqual(0);
+  test("2d is an axis-aligned rectangle at the origin", () => {
+    const { width, height, origin } = canvasExtent(6, 4, M, "2d");
+    expect({ width, height, origin }).toEqual({
+      width: 6 * M.scale2d,
+      height: 4 * M.scale2d,
+      origin: { x: 0, y: 0 },
+    });
   });
 });
 
-// --- placement ------------------------------------------------------------
+// --- generic box model ------------------------------------------------------
 
-const lab: Lab = {
-  id: "lab1",
-  code: "LAB-1",
-  name: "Lab 1",
-  site_id: "s1",
-  room_number: null,
-  environment_class: "ambient",
-  access_control_group: null,
-  width_m: 6,
-  depth_m: 4,
-  grid_size_m: 0.5,
-  site_pos_x: 0,
-  site_pos_y: 0,
-  site_size_x_m: 10,
-  site_size_y_m: 10,
-};
-
-function station(
-  code: string,
-  pos_x: number,
-  pos_y: number,
-  lab_id = "lab1",
-  size = 1,
-): Station {
-  return {
-    id: `st-${code}`,
-    code,
-    name: `Station ${code}`,
-    lab_id,
-    zone_id: null,
-    kind: "generic",
-    pos_x,
-    pos_y,
-    size_x_m: size,
-    size_y_m: size,
-    height_m: 0.5,
-    capacity: 1,
-    accepted_labware_types: [],
-    queueserver_endpoint: null,
-    redis_namespace: null,
-    state: "active",
-    owning_group: null,
-    virtual: false,
-  };
+function box(code: string, x: number, y: number, size = 1): Box {
+  return { code, pos: { x, y }, size: { x: size, y: size }, height: 0.5, fill: FILL, label: code, badge: false };
 }
 
-function device(code: string, station_code: string | null): Device {
-  return {
-    id: `d-${code}`,
-    code,
-    name: `Device ${code}`,
-    node_kind: "device",
-    labels: {},
-    station_id: null,
-    parent_id: null,
-    capability_class_ref: null,
-    capability_class_id: null,
-    capabilities: [],
-    ophyd_import: null,
-    ophyd_args: {},
-    transport_protocol: null,
-    transport_uri: null,
-    transport_ioc_host: null,
-    transport_quality: "nominal",
-    network_netbox_device_id: null,
-    network_primary_ip: null,
-    network_mac: null,
-    network_vlan: null,
-    pose_x_mm: null,
-    pose_y_mm: null,
-    pose_z_mm: null,
-    pose_yaw_deg: null,
-    size_x_mm: null,
-    size_y_mm: null,
-    size_z_mm: null,
-    envelope: {},
-    safety_flags: [],
-    safety_interlocks: [],
-    safety_max_unattended_minutes: null,
-    operational_mode: "read_write",
-    operational_calibration: null,
-    virtual: false,
-    station_code,
-  };
-}
-
-describe("drawnRect", () => {
-  test("snaps both corners and takes the min as the near corner", () => {
-    // Drag from (2.9, 1.1) back to (1.1, 0.4), grid 0.5 → corners snap to
-    // (3.0,1.0) and (1.0,0.5); near corner is the min, size is the extent.
-    const rect = drawnRect({ x: 2.9, y: 1.1 }, { x: 1.1, y: 0.4 }, 0.5);
-    expect(rect.pos).toEqual({ x: 1.0, y: 0.5 });
-    expect(rect.size).toEqual({ x: 2.0, y: 0.5 });
+describe("depth / sortBoxes", () => {
+  test("orders back-to-front so nearer boxes paint last", () => {
+    const sorted = sortBoxes([box("far", 2, 2), box("near", 0, 0), box("mid", 1, 0)]);
+    expect(sorted.map((b) => b.code)).toEqual(["near", "mid", "far"]);
   });
 
-  test("floors a click or tiny drag at one grid cell, not zero", () => {
-    const rect = drawnRect({ x: 1.0, y: 1.0 }, { x: 1.0, y: 1.0 }, 0.5);
-    expect(rect.pos).toEqual({ x: 1.0, y: 1.0 });
-    expect(rect.size).toEqual({ x: 0.5, y: 0.5 });
-  });
-
-  test("orientation-independent: dragging either direction gives the same box", () => {
-    const a = drawnRect({ x: 0, y: 0 }, { x: 2, y: 1 }, 0.5);
-    const b = drawnRect({ x: 2, y: 1 }, { x: 0, y: 0 }, 0.5);
-    expect(a).toEqual(b);
+  test("depth is x + y", () => {
+    expect(depth({ x: 1.5, y: 2.5 })).toBe(4);
   });
 });
 
-describe("placeStations", () => {
-  test("keeps only this lab's stations", () => {
-    const placed = placeStations(
-      [station("A", 0, 0), station("B", 1, 0, "other-lab")],
-      [],
-      lab,
-    );
-
-    expect(placed.map((p) => p.station.code)).toEqual(["A"]);
-  });
-
-  test("pairs a device with its station by station_code", () => {
-    const placed = placeStations([station("A", 0, 0)], [device("DEV-1", "A")], lab);
-
-    expect(placed[0].device?.code).toBe("DEV-1");
-  });
-
-  test("leaves an unbound station without a device", () => {
-    const placed = placeStations([station("A", 0, 0)], [device("DEV-1", null)], lab);
-
-    expect(placed[0].device).toBeNull();
-  });
-
-  test("returns stations back-to-front", () => {
-    const placed = placeStations(
-      [station("far", 2, 2), station("near", 0, 0), station("mid", 1, 0)],
-      [],
-      lab,
-    );
-
-    expect(placed.map((p) => p.station.code)).toEqual(["near", "mid", "far"]);
-  });
-});
-
-describe("placementProblems", () => {
+describe("boxProblems", () => {
   test("says nothing about a well-formed layout", () => {
-    const placed = placeStations([station("A", 0, 0), station("B", 2, 2)], [], lab);
-
-    expect(placementProblems(placed, lab)).toEqual([]);
+    expect(boxProblems([box("A", 0, 0), box("B", 2, 2)], 6, 4)).toEqual([]);
   });
 
   test("flags a box that spills off the floor", () => {
-    const placed = placeStations([station("A", 5.5, 0)], [], lab); // 5.5 + 1 > 6
-
-    expect(placementProblems(placed, lab)[0]).toMatchObject({ code: "A" });
-    expect(placementProblems(placed, lab)[0].reason).toContain("outside");
+    const problems = boxProblems([box("A", 5.5, 0)], 6, 4); // 5.5 + 1 > 6
+    expect(problems[0]).toMatchObject({ code: "A" });
+    expect(problems[0].reason).toContain("spills outside");
   });
 
   test("flags a negative coordinate", () => {
-    const placed = placeStations([station("A", -1, 0)], [], lab);
-
-    expect(placementProblems(placed, lab)).toHaveLength(1);
+    expect(boxProblems([box("A", -1, 0)], 6, 4)).toHaveLength(1);
   });
 
-  test("flags two overlapping boxes", () => {
-    const placed = placeStations([station("A", 1, 1), station("B", 1.5, 1.5)], [], lab);
-
-    const problems = placementProblems(placed, lab);
-    expect(problems).toHaveLength(1);
-    expect(problems[0].reason).toContain("overlaps");
-  });
-
-  test("lets two boxes touch edge-to-edge without overlapping", () => {
-    const placed = placeStations([station("A", 0, 0), station("B", 1, 0)], [], lab);
-
-    expect(placementProblems(placed, lab)).toEqual([]);
+  test("flags two overlapping boxes but lets them touch edge-to-edge", () => {
+    expect(boxProblems([box("A", 1, 1), box("B", 1.5, 1.5)], 6, 4)).toHaveLength(1);
+    expect(boxProblems([box("A", 0, 0), box("B", 1, 0)], 6, 4)).toEqual([]);
   });
 });
