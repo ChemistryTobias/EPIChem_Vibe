@@ -89,14 +89,13 @@
   color: var(--color-text-secondary);
 }
 
+/* Like the location path: on hover only the *text* changes colour (the grey
+ * border and white fill stay put) — green normally, red for a destructive one. */
 .btn--sm:hover:not(:disabled) {
-  background: var(--color-bg);
-  border-color: var(--color-primary);
   color: var(--color-primary);
 }
 
 .btn--sm.btn--danger:hover:not(:disabled) {
-  border-color: var(--color-danger);
   color: var(--color-danger);
 }
 
