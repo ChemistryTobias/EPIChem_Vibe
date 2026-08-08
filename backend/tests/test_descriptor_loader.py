@@ -8,7 +8,8 @@ def test_example_virtual_lab_loads_with_no_errors(example_descriptors_dir):
     assert result.errors == []
     kinds = sorted(d.kind for d in result.descriptors)
     assert kinds == sorted(
-        ["Site", "Lab", "Zone", "Station"]
+        ["Site", "Zone", "Station"]
+        + ["Lab"] * 2  # LAB-3 and LAB-4 (a second lab, so the site view isn't one box)
         + ["CapabilityClass"] * 3
         + ["Device"] * 2
     )

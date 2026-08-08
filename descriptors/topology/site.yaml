@@ -6,3 +6,8 @@ metadata:
 spec:
   address: Heisenbergstraße 1, 70569 Stuttgart, Germany
   timezone: Europe/Berlin
+  # The site is itself a metric canvas (ADR 0012): labs are boxes placed on it,
+  # the same width/depth/grid model as a lab, one level up.
+  width_m: 24
+  depth_m: 16
+  grid_size_m: 1

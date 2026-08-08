@@ -12,3 +12,9 @@ spec:
   width_m: 6
   depth_m: 4
   grid_size_m: 0.5
+  # The lab's own box on the site canvas (ADR 0012) — distinct from the floor
+  # above: this lab occupies a 8 m × 6 m rectangle at (2, 2) on the site.
+  site_pos_x: 2
+  site_pos_y: 2
+  site_size_x_m: 8
+  site_size_y_m: 6

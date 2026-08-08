@@ -23,6 +23,8 @@ spec:
     zone: ZONE-FUMEHOOD-2
     station: SPINBOT
     pose: {x_mm: 1420, y_mm: 300, z_mm: 900, yaw_deg: 0}
+    # The device's own footprint box within the station canvas (ADR 0012), in mm.
+    footprint: {size_x_mm: 180, size_y_mm: 160, size_z_mm: 120}
   capabilities:
     - heat
     - stir

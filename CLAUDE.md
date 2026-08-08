@@ -4,8 +4,11 @@
 > `PROJECT_MILESTONES.md` — the honest record of what's actually built vs. what the plan
 > describes. The delivery path (container stack + GitLab CI) has been executed end-to-end and is
 > green; the test suites, lint and typecheck are verified. Current work is **M2 — Device plane**:
-> the topology flatten and metric lab canvas are built (ADRs 0007–0010); the Device-Management
-> shell (Device Status + New-Device-first creation flow) and NetBox/CSV import are next.
+> the topology flatten and metric lab canvas are built (ADRs 0007–0010), and the Lab-layout editor
+> is now a single generic canvas over **three levels** (Site → Lab → Station) with drill-down, a
+> 2D/isometric toggle, drag-resize handles, and a `virtual` soft-hide delete (ADRs 0011–0012). The
+> Device-Management shell (Device Status + New-Device-first creation flow) and NetBox/CSV import
+> are next.
 > (The old `docs/SESSION_HANDOFF.md` was deleted 2026-08-07 — it had gone stale, pinned to a
 > commit six commits behind `main`.)
 
@@ -42,12 +45,22 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
   schema is `Site → Lab → Zone(optional) → Station → Module → Device` (Station = a group of ≥1
   device; the old M1 `Workcell`/`Bench` levels and `StationDeviceBinding` are gone; layout
   geometry lives on `Lab` as a metric `width_m × depth_m` canvas per ADR 0010, execution fields
-  on `Station`; `Module` folds into the `Device` containment tree via `node_kind`). The UI renamed
-  the Topology section to **Device Management** (Hierarchy / Device Status / Lab Layout), though the
-  frontend `screens/topology/` directory and `api/topology.ts`/`TopologySnapshot` keep the
-  data-model name on purpose. Read ADRs 0007–0010 before touching `models/topology.py`,
-  `importer.py`, the descriptor schemas, or the frontend screens — don't reintroduce the old
-  six-level model.
+  on `Station`; `Module` folds into the `Device` containment tree via `node_kind`). ADR 0012 then
+  gave the level *above* and *below* the lab their own canvas geometry so the layout editor is one
+  implementation over three levels: `Site.width_m/depth_m/grid_size_m` (labs are boxes on it),
+  `Lab.site_pos_*/site_size_*_m` (the lab's box on the site — distinct from its own floor), and
+  `Device.size_*_mm` (a footprint within the station canvas, mm to match `pose_*_mm`). ADR 0011
+  added a `virtual` soft-hide flag on `Station`/`Device` (the canvas "delete" that the revision
+  history can reverse). The UI renamed the Topology section to **Device Management** (Hierarchy /
+  Device Status / Lab Layout), though the frontend `screens/topology/` directory and
+  `api/topology.ts`/`TopologySnapshot` keep the data-model name on purpose. The Lab-layout editor
+  lives in `screens/layout/` — the generic canvas (`isometric.ts` geometry + `Box`/`CanvasModel`,
+  `shapes.ts`, `useIsometricPaper.ts`) is level-agnostic; **`levels.ts` is the only place the three
+  levels differ** (which rows become boxes, their unit, which write endpoint each action calls), so
+  add a level or change a write there, not by branching in the canvas. Read ADRs 0007–0012 before
+  touching `models/topology.py`, `importer.py`, the descriptor schemas, or the layout/topology
+  frontend screens — don't reintroduce the old six-level model, and don't duplicate the canvas
+  per level.
 - Enumerated fields (environment_class, atmosphere, workcell state, ...) are plain strings
   validated at the pydantic descriptor layer, not DB enums — see the module docstring in
   `models/topology.py` for why.

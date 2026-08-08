@@ -71,8 +71,9 @@ src/
     useHashRoute.ts        ~30-line hash router
   components/              shell + shared primitives (Button, StatusDot, Inspector, …)
   screens/
-    layout/                isometric floor plan — isometric.ts is pure geometry (plan §10.3),
-                           useIsometricPaper.ts is all the JointJS lifecycle, shapes.ts the tiles
+    layout/                isometric floor plan — isometric.ts is pure geometry (plan §10.3) +
+                           the generic Box/CanvasModel, useIsometricPaper.ts is all the JointJS
+                           lifecycle, shapes.ts the tiles, levels.ts the per-level data/writes
     topology/              tree view + tree-building logic (topologyTree.ts is pure)
     devices/               card grid + filters
     samples/               table + register form + inspector
@@ -110,24 +111,35 @@ a component is one place, not two directories. Only `tokens.css` and `base.css` 
 
 Built on **`@joint/core` alone** (MPL-2.0) — no Stencil, Inspector, Halo, Toolbar, Navigator or
 Selection, all of which are JointJS+ commercial. Plan §10.2 recommends exactly this: the free core
-plus React-side panels, which is what `LayoutInspector` is. The lab is a **metric** canvas since
-ADR 0010 (a `width_m × depth_m` floor with a `grid_size_m` raster), so the projection in
-`isometric.ts` is per-metre, not per-cell: `toScreen` places a station at its `(pos_x, pos_y)`
-metres, and the unit-tested inverse `toGrid` turns a dropped pixel back into metres (snapped to the
-grid) — that inverse is what makes dragging land where you dropped it.
+plus React-side panels, which is what `LayoutInspector` is.
 
-The canvas holds no authoritative state, per §10.3: a drag reports a metric position, the screen
-PUTs it and refetches, and the redraw is what moves the tile. A rejected write snaps it back for
-free.
+**One canvas, three levels (ADR 0012).** The editor is a single implementation over Site → Lab →
+Station: the site floor holds labs, a lab floor holds stations, a station floor holds
+devices/modules — each a box on a metric floor. `isometric.ts` deals only in a generic
+`Box`/`CanvasModel` and a projection (`toScreen`/`toFloor` take an `iso | 2d` flag; `metricsFor`
+auto-fits each level's floor, from a 40 m site to a 1 m station, to the viewport). **`levels.ts` is
+the only place the levels differ** — which rows become boxes, their unit (the station level
+converts device mm ↔ metres at its boundary), and which write endpoint each drag/create/delete
+calls. You drill down by clicking a box, back up via the breadcrumb. So: to add a level or change a
+write, edit `levels.ts`; don't branch in the canvas.
+
+Editing (edit mode): **add** a standard-size child at the origin, **drag** to move, resize the
+**footprint/height with drag handles** (`useIsometricPaper.ts`, the isometric-diagram demo
+affordance on the free core) or numerically, **remove** (hard delete for labs, `virtual` soft-hide
+for stations/devices — ADR 0011), and **edit the floor/grid**. A **2D/isometric toggle**
+re-projects the same model.
+
+The canvas holds no authoritative state, per §10.3: a drag or handle-resize reports new geometry,
+the screen PUTs it and refetches, and the redraw is what commits it. A rejected write snaps it back
+for free.
 
 `@joint/core` is ~435 kB, so this screen is lazy-loaded (`App.tsx`) and the other three don't pay
 for it.
 
-What's *not* built from §10 (ADRs 0009/0010): editing the lab canvas/grid from the UI, zone
-drawing, creating/deleting stations by dragging a square, drag-to-resize footprints, box-height
-handles, the per-station device/module sub-layout, multi-select, align/distribute, copy-paste,
-undo/redo. The live-status, sample-occupancy, transport-route and utilisation layers need M2's
-device plane — there is no live state to draw.
+What's *not* built (ADRs 0009–0012): zone rectangles (zones classify, they aren't placed),
+multi-select, align/distribute, copy-paste, undo/redo, and floorplan-image upload. The live-status,
+sample-occupancy, transport-route and utilisation layers need M2's device plane — there is no live
+state to draw.
 
 ## Not here, on purpose
 

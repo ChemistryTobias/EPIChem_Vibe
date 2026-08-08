@@ -189,26 +189,28 @@ import is explicitly deferred to a late stage (see M6).
   Device Status screen. Restoring a past revision (forward-revert) is a later capability and will
   get its own ADR. Still to come on the *other* subsections: the creation affordances on Device
   Status / Lab Layout.
-- [x] **Lab-layout editor (ADRs 0009, 0010)** — edit mode on the isometric canvas now does the
-  backend-backed §10.3 affordances, all `@joint/core` only (no JointJS+ component): **drag** a
-  station to move it (was already there); **draw** a footprint on empty floor to create a station,
-  with a live isometric preview that snaps to the grid, then a create form prefilled with that
-  position/footprint (`drawnRect` in `isometric.ts`, unit-tested; the rubber-band lives in
-  `useIsometricPaper.ts`'s blank-pointer handlers); **edit** a selected station's geometry
-  (position, footprint, height) numerically or **delete** it from the inspector; and **edit the
-  lab's canvas/grid** (`width_m × depth_m`, `grid_size_m`). New write helpers `reshapeStation` and
-  `resizeLabCanvas` join `moveStation` (all share one placement-spec builder so a full-replace PUT
-  preserves the fields the form doesn't touch); the station create carries optional geometry.
-  Verified end-to-end against the write path with a TestClient smoke run. **Not built, because the
-  schema has no geometry for them:** zone rectangles and the per-station device/module sub-layout
-  (Zone/Device carry no 2-D coordinates). Also deferred, as UI polish rather than capability:
-  canvas drag-handles for resize (numeric in the inspector instead), multi-select,
-  align/distribute, copy-paste, undo/redo, and the site floorplan map.
+- [x] **Lab-layout editor — three levels, one implementation (ADRs 0009, 0010, 0011, 0012)** —
+  the isometric canvas is now a *single* generic editor over three levels (Site → Lab → Station),
+  all `@joint/core` only (no JointJS+ component). A level is just data: the site floor holds labs,
+  a lab floor holds stations, a station floor holds devices/modules — each a box on a metric floor
+  (`Box`/`CanvasModel` in `isometric.ts`; the per-level adapters in `levels.ts` are the only place
+  the levels differ). You **drill down** by clicking a box and back up with the breadcrumb; the
+  canvas fills the screen (the legend and floor/label toggles are gone). Edit mode: **add** a
+  standard-size child at the origin (10 m lab / 1 m station / 0.1 m device); **drag** a box to move
+  it; resize its **footprint and height with drag handles** (the isometric-diagram demo affordance,
+  rebuilt on the free core in `useIsometricPaper.ts`) or numerically; **remove** it — a hard delete
+  for labs, a **soft-hide** (`virtual`, ADR 0011) for stations/devices that the canvas filters out
+  and the revision history can reverse; and **edit the floor/grid**. A **2D / isometric toggle**
+  re-projects the same model. This needed backend geometry the old model lacked (ADR 0012): a Site
+  canvas, a Lab's box on it, and a Device footprint — so all three levels are true metric placement
+  surfaces. Verified: 78 frontend tests + typecheck + build; backend geometry/virtual round-trips
+  under pytest. **Still not built:** zone rectangles (zones classify, they aren't placed), and the
+  live-status/occupancy/utilisation layers (need live device state), plus multi-select /
+  align-distribute / copy-paste / undo-redo and floorplan-image upload as UI polish.
 **M2 device plane proper (unchanged from the plan, still not started):** real devices behind IOCs,
 queueserver per cell, the `plans_allowed`/`devices_allowed` introspection service (the
 palette-generation mechanism the plan calls "the single highest-leverage integration in the
-project," §9.2), the MQTT state tree, live Device Status, and the layout-editor upgrades
-(floorplan upload, drag-to-create-lab, box-height editing, per-station sub-layouts — §10).
+project," §9.2), the MQTT state tree, and live Device Status.
 
 ## M3 — Procedure designer
 

@@ -1,0 +1,20 @@
+apiVersion: epichem.dev/v1
+kind: Lab
+metadata:
+  code: LAB-4
+  name: Lab 4 (glovebox suite)
+spec:
+  site: SITE-MPIFKF
+  room_number: "3.14"
+  environment_class: glovebox
+  access_control_group: lab3-users
+  # Its own floor (ADR 0010).
+  width_m: 5
+  depth_m: 4
+  grid_size_m: 0.5
+  # A second box on the site canvas (ADR 0012), so the site view isn't a single
+  # lab — placed beside LAB-3, a 6 m × 5 m rectangle at (12, 3).
+  site_pos_x: 12
+  site_pos_y: 3
+  site_size_x_m: 6
+  site_size_y_m: 5
