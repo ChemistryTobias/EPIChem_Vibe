@@ -131,6 +131,7 @@ export function LayoutScreen() {
       depthU: floorEff.depthU,
       gridU: floorEff.gridU,
       boxes: sortBoxes([...base, ...created]),
+      outlines: level.outlines,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level, draft, floorEff.widthU, floorEff.depthU, floorEff.gridU, bump]);

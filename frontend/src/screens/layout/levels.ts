@@ -26,7 +26,7 @@ import {
 import { createDevice, placeDeviceInStation, setDeviceVirtual } from "../../api/devices";
 import type { HierarchyKind } from "../../api/topology";
 import type { Device, Lab, Site, Station, Zone } from "../../api/types";
-import type { Box, BoxFill, CanvasModel, FloorPos } from "./isometric";
+import type { Box, BoxFill, CanvasModel, FloorPos, Outline } from "./isometric";
 import { sortBoxes } from "./isometric";
 
 export type Level = "site" | "lab" | "station";
@@ -108,6 +108,9 @@ export interface LevelConfig {
   drillInto: (code: string) => Partial<LevelContext> | null;
   /** The current box's geometry, for prefilling the numeric form. */
   geometryOf: (code: string) => BoxGeometry | null;
+  /** Weak footprints one level down (stations in labs / devices in stations),
+   * projected into this level's canvas — context only, never interactive. */
+  outlines: Outline[];
 }
 
 // ---- fills (DESIGN.md brand palette) ---------------------------------------
@@ -168,6 +171,25 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
   };
   const byCode = new Map(labs.map((l) => [l.code, l]));
 
+  // One level down: each lab's stations, scaled from the lab's own floor into the
+  // box the lab occupies on the site (site footprint can differ from lab floor).
+  const outlines: Outline[] = [];
+  for (const lab of labs) {
+    const fw = lab.width_m || 1;
+    const fd = lab.depth_m || 1;
+    for (const s of data.stations) {
+      if (s.lab_id !== lab.id || s.virtual) continue;
+      outlines.push({
+        code: s.code,
+        pos: {
+          x: lab.site_pos_x + (s.pos_x / fw) * lab.site_size_x_m,
+          y: lab.site_pos_y + (s.pos_y / fd) * lab.site_size_y_m,
+        },
+        size: { x: (s.size_x_m / fw) * lab.site_size_x_m, y: (s.size_y_m / fd) * lab.site_size_y_m },
+      });
+    }
+  }
+
   return {
     level: "site",
     childLabel: "lab",
@@ -226,6 +248,7 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
       const l = byCode.get(code);
       return l ? { lab: l } : null;
     },
+    outlines,
   };
 }
 
@@ -254,6 +277,24 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
   );
   const floor: FloorGeometry = { widthU: lab.width_m, depthU: lab.depth_m, gridU: lab.grid_size_m };
   const byCode = new Map(stations.map((s) => [s.code, s]));
+
+  // One level down: each station's devices, placed by their mm pose within the
+  // station's own footprint (station canvas units are metres, so mm ÷ 1000
+  // offsets straight onto the lab floor at the station's position).
+  const outlines: Outline[] = [];
+  for (const s of stations) {
+    for (const d of data.devices) {
+      if (d.station_code !== s.code || d.virtual) continue;
+      outlines.push({
+        code: d.code,
+        pos: { x: s.pos_x + (d.pose_x_mm ?? 0) / MM_PER_M, y: s.pos_y + (d.pose_y_mm ?? 0) / MM_PER_M },
+        size: {
+          x: (d.size_x_mm ?? DEFAULT_DEVICE_SIZE_M * MM_PER_M) / MM_PER_M,
+          y: (d.size_y_mm ?? DEFAULT_DEVICE_SIZE_M * MM_PER_M) / MM_PER_M,
+        },
+      });
+    }
+  }
   const zoneCodeOf = (s: Station) =>
     s.zone_id ? (data.zones.find((z) => z.id === s.zone_id)?.code ?? null) : null;
 
@@ -316,6 +357,7 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
       const s = byCode.get(code);
       return s ? { station: s } : null;
     },
+    outlines,
   };
 }
 
@@ -402,5 +444,6 @@ function stationLevel(station: Station, _lab: Lab | null, data: LayoutData): Lev
     // form), so there's no separate "resize floor" here — reshape the station box.
     resizeFloor: () => Promise.resolve(),
     drillInto: () => null, // devices are the leaf level
+    outlines: [], // nothing below a device is drawn (only one level down)
   };
 }

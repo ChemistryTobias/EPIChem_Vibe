@@ -195,6 +195,20 @@ export interface Box {
   badge: boolean;
 }
 
+/**
+ * A faint footprint drawn one level *below* the current one — the stations
+ * inside each lab (site view) or the devices inside each station (lab view),
+ * projected into the current canvas so you can feel how the space is used
+ * without drilling in. Non-interactive: it's context, not something to place.
+ */
+export interface Outline {
+  /** Child's registry code (kept for a stable key; not selectable). */
+  code: string;
+  /** Footprint on the current floor, in the current level's units. */
+  pos: FloorPos;
+  size: { x: number; y: number };
+}
+
 /** A whole level's canvas: floor dimensions plus the boxes on it. */
 export interface CanvasModel {
   /** Floor width/depth/grid, in the level's canvas units. */
@@ -202,6 +216,8 @@ export interface CanvasModel {
   depthU: number;
   gridU: number;
   boxes: Box[];
+  /** Weak footprints of the grandchildren (one level down); optional. */
+  outlines?: Outline[];
 }
 
 /** Back-to-front order (painter's algorithm, §10.3) — nearer boxes paint last. */

@@ -24,6 +24,7 @@ import {
   BoxTile,
   FloorGrid,
   HandleDot,
+  OutlineTile,
   boxShape,
   floorGridPath,
   floorSurfacePoints,
@@ -45,7 +46,7 @@ export interface IsometricPaperOptions {
   onReshape: (code: string, size: { x: number; y: number }, height: number) => void;
 }
 
-const CELL_NAMESPACE = { ...shapes, epi: { FloorGrid, Box: BoxTile, Handle: HandleDot } };
+const CELL_NAMESPACE = { ...shapes, epi: { FloorGrid, Box: BoxTile, Handle: HandleDot, Outline: OutlineTile } };
 
 const MARGIN = 24;
 const HANDLE = 12; // handle square side (shapes.ts)
@@ -401,6 +402,15 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       grid: { d: floorGridPath(model.widthU, model.depthU, model.gridU, origin, metrics, projection) },
     });
     graph.addCell(floor);
+
+    // Weak grandchild footprints, drawn flat on the floor beneath the boxes so
+    // they read as context and never obscure a real box (non-interactive).
+    for (const o of model.outlines ?? []) {
+      const shape = boxShape(o.pos, o.size, 0, origin, metrics, projection);
+      const outline = new OutlineTile({ position: shape.position, size: shape.size });
+      outline.attr("face/points", shape.faces.top);
+      graph.addCell(outline);
+    }
 
     // `boxes` are already sorted back-to-front (painter's algorithm, §10.3).
     for (const box of model.boxes) {

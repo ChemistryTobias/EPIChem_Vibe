@@ -88,6 +88,30 @@ export const BoxTile = dia.Element.define(
 );
 
 /**
+ * A weak footprint of a grandchild one level down (a station shown on the site
+ * plan, a device shown on the lab plan). Just the projected footprint outline —
+ * a faint dashed polygon, no height, no fill to speak of, and non-interactive so
+ * it never competes with the real boxes for clicks. Context, not a target.
+ */
+export const OutlineTile = dia.Element.define(
+  "epi.Outline",
+  {
+    attrs: {
+      face: {
+        fill: "rgba(0, 177, 234, 0.06)",
+        stroke: "rgba(0, 108, 102, 0.55)",
+        strokeWidth: 1,
+        strokeDasharray: "3,3",
+        pointerEvents: "none",
+      },
+    },
+  },
+  {
+    markup: util.svg`<polygon @selector="face" />`,
+  },
+);
+
+/**
  * A drag handle (footprint or height), the isometric-diagram demo's affordance
  * rebuilt on the free core: a small square the editor moves manually (it's
  * non-interactive to JointJS, so no default translate fights the maths). One
