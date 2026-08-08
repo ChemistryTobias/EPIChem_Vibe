@@ -55,9 +55,21 @@ export const BoxTile = dia.Element.define(
         fontSize: 10,
         textAnchor: "middle",
         textVerticalAnchor: "middle",
-        // Clickable: a click on the label drills into the box's sublevel (inspect
-        // mode), which the canvas hook detects by the <text> target.
-        pointerEvents: "visiblePainted",
+        // The glyphs themselves aren't the click target — `labelHit` below is, so
+        // clicking anywhere on the label (not just on a letter) counts.
+        pointerEvents: "none",
+      },
+      // A transparent, slightly padded rectangle tracking the label's bounding
+      // box (JointJS `ref` sizing) — the reliable click target for drilling into
+      // the box's sublevel. Rendered on top of the label; a click here is a
+      // "drill", detected in the paper's pointerclick by the <rect> target.
+      labelHit: {
+        ref: "label",
+        refWidth: "150%",
+        refHeight: "220%",
+        refX: "-25%",
+        refY: "-60%",
+        fill: "transparent",
         cursor: "pointer",
       },
       badge: { r: 4, stroke: "#FFFFFF", strokeWidth: 1, pointerEvents: "none" },
@@ -70,6 +82,7 @@ export const BoxTile = dia.Element.define(
       <polygon @selector="top" />
       <circle @selector="badge" />
       <text @selector="label" />
+      <rect @selector="labelHit" />
     `,
   },
 );

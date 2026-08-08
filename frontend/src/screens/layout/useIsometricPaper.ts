@@ -165,9 +165,14 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     paper.on("element:pointerclick", (view, evt) => {
       if (view.model.get("type") === "epi.Handle") return; // a handle isn't a selection
       const code = (view.model.get("boxCode") as string) ?? null;
-      // A click on the <text> label is a drill request; anywhere else selects.
-      const target = evt?.target as Element | undefined;
-      if (code && target?.tagName?.toLowerCase() === "text") handlers.current.onActivate(code);
+      // A click on the label is a drill request; anywhere else on the box selects.
+      // The hit target is the transparent `labelHit` <rect> over the label (the
+      // only rect in a box tile); accept the <text>/<tspan> glyphs too as a
+      // fallback. JointJS wraps label text in <tspan>, which is why matching only
+      // <text> silently failed.
+      const tag = (evt?.target as Element | undefined)?.tagName?.toLowerCase();
+      const isLabel = tag === "rect" || tag === "text" || tag === "tspan";
+      if (code && isLabel) handlers.current.onActivate(code);
       else handlers.current.onSelect(code);
     });
     paper.on("blank:pointerclick", () => handlers.current.onSelect(null));
