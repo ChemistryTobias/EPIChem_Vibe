@@ -76,21 +76,20 @@
 }
 
 /* Compact companion button (`size="sm"`) — the "non-main" buttons that sit next
- * to a primary action in a toolbar/overlay. White fill, quiet grey by default;
- * the action colour appears only on hover — MPG green normally, red for a
- * destructive (danger) action. Placed last so it wins over the variant colours
- * on equal specificity. */
+ * to a primary action in a toolbar/overlay. No fill, not bold, quiet grey with a
+ * thin grey border — same restraint as the location path. Placed last so it wins
+ * over the variant colours on equal specificity. */
 .btn--sm {
   gap: var(--space-1);
   padding: 5px 12px;
   font-size: 10px;
-  background: var(--color-bg);
+  font-weight: 400;
   border-color: var(--color-border);
   color: var(--color-text-secondary);
 }
 
 /* Like the location path: on hover only the *text* changes colour (the grey
- * border and white fill stay put) — green normally, red for a destructive one. */
+ * border stays, no fill appears) — green normally, red for a destructive one. */
 .btn--sm:hover:not(:disabled) {
   color: var(--color-primary);
 }
@@ -100,7 +99,6 @@
 }
 
 .btn--sm:disabled {
-  background: var(--color-bg);
   border-color: var(--color-border-soft);
   color: var(--color-border);
 }
