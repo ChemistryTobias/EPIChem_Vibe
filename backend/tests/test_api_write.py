@@ -240,6 +240,30 @@ def test_site_and_lab_canvas_geometry_round_trip(client):
     assert (body["site_size_x_m"], body["site_size_y_m"]) == (8.0, 6.0)
 
 
+def test_site_floors_and_lab_floor_default_and_round_trip(client):
+    """ADR 0013: a site defaults to one floor and a lab to floor 0; both survive a
+    full-replace PUT so the layout floor selector has real data behind it."""
+    r = client.post("/api/v1/sites", json=_site_descriptor("SITE-F", "Site F"))
+    assert r.status_code == 201
+    assert r.json()["floors"] == 1
+
+    r = client.post("/api/v1/labs", json=_lab_descriptor("LAB-F", "Lab F", "SITE-F"))
+    assert r.status_code == 201
+    assert r.json()["floor"] == 0
+
+    site = _site_descriptor("SITE-F", "Site F")
+    site["spec"]["floors"] = 3
+    r = client.put("/api/v1/sites/SITE-F", json=site)
+    assert r.status_code == 200
+    assert r.json()["floors"] == 3
+
+    lab = _lab_descriptor("LAB-F", "Lab F", "SITE-F")
+    lab["spec"]["floor"] = 2
+    r = client.put("/api/v1/labs/LAB-F", json=lab)
+    assert r.status_code == 200
+    assert r.json()["floor"] == 2
+
+
 def test_device_footprint_defaults_null_and_round_trips(client, session):
     """ADR 0012: a device's footprint is nullable (unplaced → standard 0.1 m on
     the canvas) and a full-replace PUT can set it via location.footprint."""

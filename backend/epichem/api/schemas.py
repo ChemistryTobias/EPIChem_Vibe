@@ -21,6 +21,7 @@ class SiteOut(OutBase):
     width_m: float
     depth_m: float
     grid_size_m: float
+    floors: int
 
 
 class LabOut(OutBase):
@@ -38,6 +39,7 @@ class LabOut(OutBase):
     site_pos_y: float
     site_size_x_m: float
     site_size_y_m: float
+    floor: int
 
 
 class ZoneOut(OutBase):

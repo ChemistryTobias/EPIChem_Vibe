@@ -40,6 +40,9 @@ class SiteSpec(BaseModel):
     width_m: float = 40.0
     depth_m: float = 40.0
     grid_size_m: float = 1.0
+    # Number of building floors (ADR 0013); a layout-only field (labs on different
+    # floors get separate plans), default 1 = single floor.
+    floors: int = 1
 
 
 class LabSpec(BaseModel):
@@ -58,6 +61,8 @@ class LabSpec(BaseModel):
     site_pos_y: float = 0.0
     site_size_x_m: float = 10.0
     site_size_y_m: float = 10.0
+    # Which site floor this lab sits on (ADR 0013), 0-based; layout-only.
+    floor: int = 0
 
 
 class ZoneSpec(BaseModel):

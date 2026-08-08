@@ -41,6 +41,13 @@ class Site(RegistryEntity):
     width_m: Mapped[float] = mapped_column(default=40.0)
     depth_m: Mapped[float] = mapped_column(default=40.0)
     grid_size_m: Mapped[float] = mapped_column(default=1.0)
+    # How many floors the building has (ADR 0013). Purely a *layout* concern: a
+    # multi-floor site shows a floor selector on the Lab-layout canvas so labs on
+    # different floors don't pile onto one plan. It is deliberately absent from
+    # the containment hierarchy (§5.1) — a lab's identity is its site, not which
+    # storey it sits on — so nothing but the layout editor reads it. Default 1
+    # (single floor) hides the selector entirely.
+    floors: Mapped[int] = mapped_column(default=1)
 
     labs: Mapped[list["Lab"]] = relationship(back_populates="site")
 
@@ -66,6 +73,10 @@ class Lab(RegistryEntity):
     site_pos_y: Mapped[float] = mapped_column(default=0.0)
     site_size_x_m: Mapped[float] = mapped_column(default=10.0)
     site_size_y_m: Mapped[float] = mapped_column(default=10.0)
+    # Which floor of the site this lab sits on (ADR 0013), 0-based. Only the
+    # layout editor's floor selector reads it — see Site.floors. Default 0 (ground
+    # floor) means a single-floor site never has to set it.
+    floor: Mapped[int] = mapped_column(default=0)
 
     site: Mapped[Site] = relationship(back_populates="labs")
     zones: Mapped[list["Zone"]] = relationship(back_populates="lab")

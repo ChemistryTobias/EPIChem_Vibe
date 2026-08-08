@@ -11,3 +11,7 @@ spec:
   width_m: 24
   depth_m: 16
   grid_size_m: 1
+  # A two-storey building (ADR 0013), so the Lab-layout canvas offers a floor
+  # selector (the `[0]` in its breadcrumb). Labs default to floor 0; this is
+  # layout-only and never appears in the containment hierarchy.
+  floors: 2

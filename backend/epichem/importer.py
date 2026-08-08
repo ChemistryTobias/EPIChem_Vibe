@@ -111,7 +111,7 @@ TOPOLOGY_WRITE = [
         SiteOut,
         None,
         None,
-        ["address", "timezone", "width_m", "depth_m", "grid_size_m"],
+        ["address", "timezone", "width_m", "depth_m", "grid_size_m", "floors"],
     ),
     TopologyKind(
         "Lab",
@@ -131,6 +131,7 @@ TOPOLOGY_WRITE = [
             "site_pos_y",
             "site_size_x_m",
             "site_size_y_m",
+            "floor",
         ],
     ),
     TopologyKind(
