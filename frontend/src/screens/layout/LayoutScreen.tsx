@@ -30,7 +30,7 @@ import { useNotify } from "../../components/Notifications";
 import { useAsync } from "../../hooks/useAsync";
 import { LocationPath } from "./LocationPath";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
-import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, slidePos, sortBoxes } from "./isometric";
+import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, rectContainsBox, slidePos, sortBoxes } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
 import { ZoneInspector, ZoneRectForm } from "./ZoneInspector";
 import { FloorForm, GeometryForm } from "./layoutForms";
@@ -88,6 +88,19 @@ export function LayoutScreen() {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [bump, setBump] = useState(0); // forces a canvas redraw (snap-back on reject)
   const [editingGeom, setEditingGeom] = useState(false);
+  // A live geometry-edit session (ADR 0014, req #5): dragging/resizing a box opens
+  // the geometry editor, `preview` feeds it the box's position *during* the drag,
+  // and `revert` is the geometry Cancel restores (this box only).
+  const [preview, setPreview] = useState<{ code: string; geom: BoxGeometry } | null>(null);
+  // Only ever read through its setter's functional updates, so the value binding
+  // is intentionally dropped.
+  const [, setEditSession] = useState<{
+    code: string;
+    revert: BoxGeometry;
+    wasEdited: boolean;
+    wasCreate: boolean;
+  } | null>(null);
+  const [geomSync, setGeomSync] = useState(0); // bumps when a drag pushes new values into the form
   const [editingFloor, setEditingFloor] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -110,7 +123,9 @@ export function LayoutScreen() {
   const site = data.sites.find((s) => s.code === siteCode) ?? data.sites[0] ?? null;
   const lab = labCode ? (data.labs.find((l) => l.code === labCode) ?? null) : null;
   const station = stationCode ? (data.stations.find((s) => s.code === stationCode) ?? null) : null;
-  const ctx: LevelContext = { site, lab, station, floor };
+  // Memoised so the live geometry preview (which re-renders on every mousemove)
+  // doesn't churn `level`/`effModel` and force a canvas rebuild mid-drag.
+  const ctx: LevelContext = useMemo(() => ({ site, lab, station, floor }), [site, lab, station, floor]);
   const level = useMemo(() => buildLevel(ctx, data), [ctx, data]);
 
   // ---- draft-aware effective model -----------------------------------------
@@ -133,13 +148,20 @@ export function LayoutScreen() {
       label: c.code,
       badge: false,
     }));
+    const boxes = sortBoxes([...base, ...created]);
+    // Recompute zone membership against the *effective* (draft-aware) boxes, so a
+    // station dragged into a zone counts as a member immediately, before Save (req #7).
+    const zones = level.zones.map((z) => ({
+      ...z,
+      members: boxes.filter((b) => rectContainsBox(z.pos, z.size, b.pos, b.size)).map((b) => b.code),
+    }));
     return {
       widthU: floorEff.widthU,
       depthU: floorEff.depthU,
       gridU: floorEff.gridU,
-      boxes: sortBoxes([...base, ...created]),
+      boxes,
       outlines: level.outlines,
-      zones: level.zones,
+      zones,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [level, draft, floorEff.widthU, floorEff.depthU, floorEff.gridU, bump]);
@@ -201,6 +223,67 @@ export function LayoutScreen() {
     setEditingFloor(false);
     setSelectedZoneCode(null);
     setEditingZoneRect(false);
+    // Switching selection ends any geometry session (its staged change is kept —
+    // only an explicit Cancel reverts it).
+    setEditSession(null);
+    setPreview(null);
+  }, []);
+
+  // Effective geometry with the live drag preview layered on top, so the editor
+  // and inspector show the box's *current* position as it's dragged (req #5).
+  const displayGeometry = useCallback(
+    (code: string): BoxGeometry | null =>
+      preview && preview.code === code ? preview.geom : effGeometry(code),
+    [preview, effGeometry],
+  );
+
+  // Open (or keep) a geometry-edit session for a box, capturing what Cancel
+  // restores. Idempotent per box, so it's safe to call on every drag tick.
+  const beginGeomSession = useCallback(
+    (code: string) => {
+      setSelectedCode(code);
+      setEditingGeom(true);
+      setEditSession((prev) => {
+        if (prev?.code === code) return prev;
+        const g = effGeometry(code);
+        if (!g) return prev;
+        return {
+          code,
+          revert: g,
+          wasEdited: Boolean(draft.edits[code]),
+          wasCreate: draft.creates.some((c) => c.code === code),
+        };
+      });
+    },
+    [effGeometry, draft],
+  );
+
+  // End a session keeping the staged change (Apply, or clicking elsewhere).
+  const endGeomSession = useCallback(() => {
+    setEditSession(null);
+    setPreview(null);
+    setEditingGeom(false);
+  }, []);
+
+  // End a session reverting *only this box* to where it started (Cancel, req #5).
+  const revertGeomSession = useCallback(() => {
+    setEditSession((s) => {
+      if (s) {
+        setDraft((d) => {
+          if (s.wasCreate) {
+            return { ...d, creates: d.creates.map((c) => (c.code === s.code ? { ...c, geom: s.revert } : c)) };
+          }
+          const edits = { ...d.edits };
+          if (s.wasEdited) edits[s.code] = s.revert;
+          else delete edits[s.code];
+          return { ...d, edits };
+        });
+        setBump((b) => b + 1); // redraw so the box snaps back to `revert`
+      }
+      return null;
+    });
+    setPreview(null);
+    setEditingGeom(false);
   }, []);
 
   const selectZone = useCallback((code: string | null) => {
@@ -213,6 +296,17 @@ export function LayoutScreen() {
     }
   }, []);
 
+  // Live geometry while a drag/resize is in flight — opens the editor and feeds
+  // it the box's current position without touching the draft (req #5).
+  const onGeomPreview = useCallback(
+    (code: string, geom: BoxGeometry) => {
+      beginGeomSession(code);
+      setPreview({ code, geom });
+      setGeomSync((n) => n + 1);
+    },
+    [beginGeomSession],
+  );
+
   const onMove = useCallback(
     (code: string, pos: FloorPos) => {
       const cur = effGeometry(code);
@@ -221,9 +315,12 @@ export function LayoutScreen() {
       // back to where the drag started (the isometric-diagram affordance).
       const others = effModel.boxes.filter((b) => b.code !== code).map(toRect);
       const next = slidePos({ pos, size: cur.size, height: cur.height }, floorEff, others, cur.pos);
+      beginGeomSession(code);
+      setPreview(null);
+      setGeomSync((n) => n + 1);
       stageGeometry(code, next);
     },
-    [effGeometry, effModel, floorEff, stageGeometry],
+    [effGeometry, effModel, floorEff, stageGeometry, beginGeomSession],
   );
 
   const onReshape = useCallback(
@@ -231,10 +328,13 @@ export function LayoutScreen() {
       const cur = effGeometry(code);
       if (!cur) return;
       const next = constrain(code, { pos: cur.pos, size, height });
+      beginGeomSession(code);
+      setPreview(null);
+      setGeomSync((n) => n + 1);
       if (!next) return rejected("resize", code);
       stageGeometry(code, next);
     },
-    [effGeometry, constrain, stageGeometry, level.childLabel],
+    [effGeometry, constrain, stageGeometry, level.childLabel, beginGeomSession],
   );
 
   const { containerRef, zoomIn, zoomOut, resetView } = useIsometricPaper({
@@ -254,6 +354,7 @@ export function LayoutScreen() {
     },
     onMove,
     onReshape,
+    onGeomPreview,
   });
 
   // ---- navigation (inspect mode only; LocationPath is `locked` in edit) -----
@@ -436,6 +537,8 @@ export function LayoutScreen() {
     setSelectedCode(null);
     setEditingGeom(false);
     setEditingFloor(false);
+    setEditSession(null);
+    setPreview(null);
   };
   const cancel = () => {
     if (isDirty) setConfirmLeave(true);
@@ -643,7 +746,7 @@ export function LayoutScreen() {
           />
         ) : selectedZoneCode ? (
           <ZoneInspector
-            zone={level.zones.find((z) => z.code === selectedZoneCode) ?? null}
+            zone={effModel.zones?.find((z) => z.code === selectedZoneCode) ?? null}
             childLabel={level.childLabel}
             editable={editable}
             busy={zoneBusy}
@@ -654,20 +757,22 @@ export function LayoutScreen() {
         ) : editingGeom && selectedCode ? (
           <GeometryForm
             code={selectedCode}
-            initial={effGeometry(selectedCode) ?? { pos: { x: 0, y: 0 }, size: level.standardSize, height: level.nominalHeight }}
+            live={displayGeometry(selectedCode) ?? { pos: { x: 0, y: 0 }, size: level.standardSize, height: level.nominalHeight }}
+            syncVersion={geomSync}
             showHeight={level.level !== "site"}
             onStage={(geom) => stageGeometryForm(selectedCode, geom)}
-            onDone={() => setEditingGeom(false)}
-            onCancel={() => setEditingGeom(false)}
+            onApply={endGeomSession}
+            onCancel={revertGeomSession}
           />
         ) : (
           <LayoutInspector
             level={level}
             code={selectedCode}
-            geom={selectedCode ? effGeometry(selectedCode) : null}
+            geom={selectedCode ? displayGeometry(selectedCode) : null}
+            zones={effModel.zones ?? []}
             isNew={selectedCode ? isNew(selectedCode) : false}
             editable={editable}
-            onEditGeometry={() => setEditingGeom(true)}
+            onEditGeometry={() => selectedCode && beginGeomSession(selectedCode)}
             onRemove={() => selectedCode && removeSelected(selectedCode)}
             onClose={() => selectBox(null)}
           />

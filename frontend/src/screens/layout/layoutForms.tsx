@@ -11,7 +11,7 @@
  * adapter boundary), so the labels are uniform.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 import { Button } from "../../components/Button";
@@ -24,48 +24,72 @@ const num = (v: string, fallback: number) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+/** Trim float noise for display without hiding real off-grid values. */
+const show = (v: number) => String(Math.round(v * 1e4) / 1e4);
+
+/**
+ * The live geometry editor (req #5). It opens automatically when a box is dragged
+ * or handle-resized and its fields **follow the drag** — `live` is the box's
+ * current geometry and `syncVersion` bumps whenever a drag pushes new numbers in,
+ * which is when the fields resync (so typing between drags isn't clobbered).
+ * **Apply** keeps the staged change; **Cancel** reverts this box only.
+ */
 export function GeometryForm({
   code,
-  initial,
+  live,
+  syncVersion,
   showHeight,
   onStage,
-  onDone,
+  onApply,
   onCancel,
 }: {
   code: string;
-  initial: BoxGeometry;
+  live: BoxGeometry;
+  syncVersion: number;
   showHeight: boolean;
   /** Validate + stage the geometry; return an error to show, or null on success. */
   onStage: (geom: BoxGeometry) => string | null;
-  onDone: () => void;
+  onApply: () => void;
   onCancel: () => void;
 }) {
-  const [posX, setPosX] = useState(String(initial.pos.x));
-  const [posY, setPosY] = useState(String(initial.pos.y));
-  const [sizeX, setSizeX] = useState(String(initial.size.x));
-  const [sizeY, setSizeY] = useState(String(initial.size.y));
-  const [height, setHeight] = useState(String(initial.height));
+  const [posX, setPosX] = useState(show(live.pos.x));
+  const [posY, setPosY] = useState(show(live.pos.y));
+  const [sizeX, setSizeX] = useState(show(live.size.x));
+  const [sizeY, setSizeY] = useState(show(live.size.y));
+  const [height, setHeight] = useState(show(live.height));
   const [error, setError] = useState<string | null>(null);
+
+  // Resync the fields to the live geometry when a drag/resize pushes new values
+  // (syncVersion bumps). Typing doesn't bump it, so manual edits survive.
+  useEffect(() => {
+    setPosX(show(live.pos.x));
+    setPosY(show(live.pos.y));
+    setSizeX(show(live.size.x));
+    setSizeY(show(live.size.y));
+    setHeight(show(live.height));
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncVersion]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const problem = onStage({
-      pos: { x: num(posX, initial.pos.x), y: num(posY, initial.pos.y) },
-      size: { x: num(sizeX, initial.size.x), y: num(sizeY, initial.size.y) },
-      height: num(height, initial.height),
+      pos: { x: num(posX, live.pos.x), y: num(posY, live.pos.y) },
+      size: { x: num(sizeX, live.size.x), y: num(sizeY, live.size.y) },
+      height: num(height, live.height),
     });
     if (problem) {
       setError(problem);
       return;
     }
-    onDone();
+    onApply();
   }
 
   return (
     <Inspector
       kind="Edit geometry"
       title={code}
-      subtitle="Position, footprint, height — staged until you Save"
+      subtitle="Follows the drag — Apply keeps it, Cancel reverts this box"
       onClose={onCancel}
     >
       <form className="create-form" onSubmit={submit}>

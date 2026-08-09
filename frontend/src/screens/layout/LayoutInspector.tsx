@@ -12,6 +12,7 @@
 import { Button } from "../../components/Button";
 import { Field, FieldGroup, Inspector } from "../../components/Inspector";
 import { NodeDetails } from "../topology/registryDetails";
+import type { ZoneShape } from "./isometric";
 import type { BoxGeometry, LevelConfig } from "./levels";
 
 interface LayoutInspectorProps {
@@ -19,6 +20,8 @@ interface LayoutInspectorProps {
   code: string | null;
   /** Effective (draft-aware) geometry of the selected box, or null if none. */
   geom: BoxGeometry | null;
+  /** Effective zones (draft-aware membership), for the "in zones" summary. */
+  zones: ZoneShape[];
   /** True for a box that only exists in the draft (created, not yet saved). */
   isNew: boolean;
   editable: boolean;
@@ -33,6 +36,7 @@ export function LayoutInspector({
   level,
   code,
   geom,
+  zones,
   isNew,
   editable,
   onEditGeometry,
@@ -53,6 +57,10 @@ export function LayoutInspector({
   }
 
   const row = level.rowOf(code);
+  // Zones the box is geometrically inside (ADR 0015 / req #7) — membership is
+  // computed from the footprint, so a zone drawn around a box lists it here as
+  // soon as it fully encloses it, no wiring needed.
+  const inZones = zones.filter((z) => z.members.includes(code)).map((z) => z.code);
 
   return (
     <Inspector
@@ -71,24 +79,28 @@ export function LayoutInspector({
       )}
 
       {/* A saved box shows the same full registry record as the Hierarchy screen.
-          A staged-new box has no row yet, so fall back to its draft placement. */}
-      {row ? (
-        <NodeDetails kind={level.childKind} row={row} childrenCodes={level.childCodesOf(code)} />
-      ) : (
-        <FieldGroup title="Placement">
-          <Field label="Position" mono>
-            {m(geom.pos.x)}, {m(geom.pos.y)}
+          A staged-new box has no row yet. Either way the placement is shown below,
+          so every level — devices included (req #6) — carries its geometry. */}
+      {row && <NodeDetails kind={level.childKind} row={row} childrenCodes={level.childCodesOf(code)} />}
+
+      <FieldGroup title="Placement">
+        <Field label="Position" mono>
+          {m(geom.pos.x)}, {m(geom.pos.y)}
+        </Field>
+        <Field label="Footprint" mono>
+          {m(geom.size.x)} × {m(geom.size.y)}
+        </Field>
+        {level.level !== "site" && (
+          <Field label="Height" mono>
+            {m(geom.height)}
           </Field>
-          <Field label="Footprint" mono>
-            {m(geom.size.x)} × {m(geom.size.y)}
+        )}
+        {level.zonesEnabled && (
+          <Field label="In zones" mono>
+            {inZones.length > 0 ? inZones.join(", ") : "—"}
           </Field>
-          {level.level !== "site" && (
-            <Field label="Height" mono>
-              {m(geom.height)}
-            </Field>
-          )}
-        </FieldGroup>
-      )}
+        )}
+      </FieldGroup>
     </Inspector>
   );
 }

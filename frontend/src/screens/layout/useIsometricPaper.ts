@@ -52,6 +52,9 @@ export interface IsometricPaperOptions {
   onMove: (code: string, pos: FloorPos) => void;
   /** A box was resized via a handle: new footprint + height, in canvas units. */
   onReshape: (code: string, size: { x: number; y: number }, height: number) => void;
+  /** Continuous geometry while a box is being dragged or handle-resized (not yet
+   * released) — drives the live geometry editor (req: values change immediately). */
+  onGeomPreview: (code: string, geom: { pos: FloorPos; size: { x: number; y: number }; height: number }) => void;
 }
 
 const CELL_NAMESPACE = {
@@ -322,6 +325,8 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
           paintOutline(child.el, { ...child.o, height: drag.height }, drag.origin, drag.metrics, projection);
         }
       }
+      // Live-feed the geometry editor as the handle drags (req).
+      handlers.current.onGeomPreview(drag.box.code, { pos: drag.box.pos, size: drag.size, height: drag.height });
     });
 
     // A plain box move (native JointJS drag): translate the box's child hints by
@@ -332,14 +337,25 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       if (redrawingRef.current || dragRef.current) return;
       if (cell.get("type") !== "epi.Box") return;
       const code = cell.get("boxCode") as string | undefined;
-      const group = code ? outlinesRef.current.get(code) : undefined;
-      if (!group || group.length === 0) return;
+      if (!code) return;
+      const { model, projection } = handlers.current;
+      const box = model.boxes.find((b) => b.code === code);
+      if (!box) return;
+
+      // Move this box's child hints by the same delta so they travel with it (req).
       const prev = cell.previous("position") as { x: number; y: number } | undefined;
       const now = cell.position();
       const dx = now.x - (prev?.x ?? now.x);
       const dy = now.y - (prev?.y ?? now.y);
-      if (dx === 0 && dy === 0) return;
-      for (const child of group) child.el.translate(dx, dy);
+      if (dx !== 0 || dy !== 0) {
+        for (const child of outlinesRef.current.get(code) ?? []) child.el.translate(dx, dy);
+      }
+
+      // Live-feed the geometry editor with the box's current floor position (req).
+      const { origin, metrics } = drawRef.current;
+      const anchor = cell.get("anchor") as { x: number; y: number };
+      const fl = toFloor({ x: now.x + anchor.x, y: now.y + anchor.y }, origin, metrics, 0, projection);
+      handlers.current.onGeomPreview(code, { pos: fl, size: box.size, height: box.height });
     });
 
     paper.on("element:pointerup", (view) => {
