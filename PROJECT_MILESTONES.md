@@ -230,6 +230,17 @@ import is explicitly deferred to a late stage (see M6).
   **Still not built:** the live-status/occupancy/utilisation layers (need live device state), plus
   multi-select / align-distribute / copy-paste / undo-redo and floorplan-image upload as UI polish;
   and mouse-drag create/resize for zones (they're numeric-form + immediate for now).
+- [x] **Lab-layout interaction pass** — labs now render **flat** (only stations/devices get a 3D
+  box), and the grandchild hints are drawn **on the parent box's top face** (and translate /
+  re-elevate with it while it's dragged or handle-resized) instead of hiding under it. Moving a box
+  **soft-snaps**: an edge snaps to a grid line or neighbour edge only when within a few px of one
+  (near *and* far edge), else it keeps the float position (`softSnap`, tested). Dragging or resizing
+  a box **opens the geometry editor automatically** and its fields follow the drag live
+  (`onGeomPreview`, no draft write mid-drag) — **Apply** keeps the staged change, **Cancel** reverts
+  *only that box*. The inspector now shows Position/Footprint/Height for **every** box (devices
+  included) and an **In zones** line whose membership is recomputed against the draft-aware boxes, so
+  a station dragged into a zone counts immediately (before Save). The canvas is never rebuilt
+  mid-drag (a `draggingRef` guard + a `redrawTick` reconcile on release).
 **M2 device plane proper (unchanged from the plan, still not started):** real devices behind IOCs,
 queueserver per cell, the `plans_allowed`/`devices_allowed` introspection service (the
 palette-generation mechanism the plan calls "the single highest-leverage integration in the

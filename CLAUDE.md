@@ -85,8 +85,16 @@ built vs. what the plan describes; update it when scope changes, don't let it dr
   zone when its footprint is fully inside the rectangle (`rectContainsBox`); `Station.zone_id`
   is untouched. Both scopes round-trip through the generic descriptor path (Zone's required
   parent became `None`; `lab`/`site` are optional refs, exactly one enforced). Zone edits are
-  *immediate* (not part of the box draft), gated on a clean draft. Read ADRs 0007–0015 before
-  touching `models/topology.py`,
+  *immediate* (not part of the box draft), gated on a clean draft. **Interaction refinements (no new
+  ADR — same staged model):** labs render *flat* (only stations/devices are 3D boxes); grandchild
+  hints draw on the parent box's *top face* and follow it during a drag/resize (`Outline` now carries
+  `height`+`parentCode`); box moves *soft-snap* (`softSnap` — snap to a grid line/neighbour edge only
+  within a few px, near *and* far edge, else keep the float); a drag/resize *auto-opens the geometry
+  editor* which follows the drag live (`onGeomPreview`) with per-box **Apply**(keep)/**Cancel**(revert,
+  this box only) — still staged, Save is the write boundary; the inspector shows placement for every
+  box (devices included) plus an **In zones** line recomputed from the draft-aware boxes; and the
+  canvas is never rebuilt mid-drag (`draggingRef`/`redrawTick` in `useIsometricPaper`). Read ADRs
+  0007–0015 before touching `models/topology.py`,
   `importer.py`, the descriptor schemas, or the layout/topology frontend screens — don't reintroduce
   the old six-level model, don't duplicate the canvas per level, don't turn the floor into a
   hierarchy level, and don't make edit-mode writes immediate again (Save is the write boundary).
