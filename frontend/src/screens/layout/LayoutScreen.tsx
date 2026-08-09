@@ -92,9 +92,7 @@ export function LayoutScreen() {
   // the geometry editor, `preview` feeds it the box's position *during* the drag,
   // and `revert` is the geometry Cancel restores (this box only).
   const [preview, setPreview] = useState<{ code: string; geom: BoxGeometry } | null>(null);
-  // Only ever read through its setter's functional updates, so the value binding
-  // is intentionally dropped.
-  const [, setEditSession] = useState<{
+  const [editSession, setEditSession] = useState<{
     code: string;
     revert: BoxGeometry;
     wasEdited: boolean;
@@ -267,24 +265,23 @@ export function LayoutScreen() {
 
   // End a session reverting *only this box* to where it started (Cancel, req #5).
   const revertGeomSession = useCallback(() => {
-    setEditSession((s) => {
-      if (s) {
-        setDraft((d) => {
-          if (s.wasCreate) {
-            return { ...d, creates: d.creates.map((c) => (c.code === s.code ? { ...c, geom: s.revert } : c)) };
-          }
-          const edits = { ...d.edits };
-          if (s.wasEdited) edits[s.code] = s.revert;
-          else delete edits[s.code];
-          return { ...d, edits };
-        });
-        setBump((b) => b + 1); // redraw so the box snaps back to `revert`
-      }
-      return null;
-    });
+    const s = editSession;
+    if (s) {
+      setDraft((d) => {
+        if (s.wasCreate) {
+          return { ...d, creates: d.creates.map((c) => (c.code === s.code ? { ...c, geom: s.revert } : c)) };
+        }
+        const edits = { ...d.edits };
+        if (s.wasEdited) edits[s.code] = s.revert;
+        else delete edits[s.code];
+        return { ...d, edits };
+      });
+      setBump((b) => b + 1); // redraw so the box snaps back to `revert`
+    }
+    setEditSession(null);
     setPreview(null);
     setEditingGeom(false);
-  }, []);
+  }, [editSession]);
 
   const selectZone = useCallback((code: string | null) => {
     setSelectedZoneCode(code);
