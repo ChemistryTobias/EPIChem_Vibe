@@ -21,6 +21,7 @@ import {
   rectsOverlap,
   slidePos,
   snap,
+  softSnap,
   sortBoxes,
   toFloor,
   toScreen,
@@ -203,6 +204,27 @@ describe("rectContainsBox (zone membership, ADR 0015)", () => {
   test("a footprint that spills out, or only overlaps, does not", () => {
     expect(rectContainsBox(zp, zs, { x: 4.5, y: 2 }, { x: 1, y: 1 })).toBe(false); // spills right
     expect(rectContainsBox(zp, zs, { x: 0, y: 0 }, { x: 2, y: 2 })).toBe(false); // straddles corner
+  });
+});
+
+describe("softSnap (snap only when near, else float)", () => {
+  test("leaves a position that isn't near any line at its float value", () => {
+    expect(softSnap({ x: 2.5, y: 1.5 }, { x: 1, y: 1 }, floor, [], 0.2)).toEqual({ x: 2.5, y: 1.5 });
+  });
+
+  test("snaps the near edge onto a grid line when within tolerance", () => {
+    expect(softSnap({ x: 2.05, y: 0 }, { x: 1, y: 1 }, floor, [], 0.2).x).toBeCloseTo(2, 9);
+  });
+
+  test("snaps using the far edge when only that edge is near a line", () => {
+    // near edge 1.6 is 0.4 off grid (no snap), far edge 3.1 is 0.1 off 3 (snaps).
+    expect(softSnap({ x: 1.6, y: 0 }, { x: 1.5, y: 1 }, floor, [], 0.2).x).toBeCloseTo(1.5, 9);
+  });
+
+  test("snaps to a neighbour box's edge (an alignment line), flush not overlapping", () => {
+    const others = [{ pos: { x: 3, y: 0 }, size: { x: 1, y: 1 }, height: 0 }];
+    // far edge 2.9 snaps onto the neighbour's near edge 3 → box lands at x=2, flush.
+    expect(softSnap({ x: 1.9, y: 0 }, { x: 1, y: 1 }, floor, others, 0.2).x).toBeCloseTo(2, 9);
   });
 });
 

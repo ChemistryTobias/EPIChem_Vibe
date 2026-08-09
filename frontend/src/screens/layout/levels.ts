@@ -170,7 +170,10 @@ export function fillForMode(mode: string | null): BoxFill {
 
 // ---- unit helpers ----------------------------------------------------------
 
-const NOMINAL_LAB_HEIGHT_M = 1.0; // labs have no height column; a low wall reads as a room
+// Labs are drawn *flat* like zones — only stations (and devices) get a 3D box, so
+// a lab box never obscures the station hints on top of it (req). Labs have no
+// height column anyway; 0 renders the footprint flat on the site floor.
+const NOMINAL_LAB_HEIGHT_M = 0;
 const MM_PER_M = 1000;
 const DEFAULT_DEVICE_SIZE_M = 0.1; // 100 mm standard, when a device has no footprint yet
 
@@ -224,6 +227,9 @@ function siteLevel(site: Site | null, data: LayoutData, viewFloor: number): Leve
       if (s.lab_id !== lab.id || s.virtual) continue;
       outlines.push({
         code: s.code,
+        parentCode: lab.code,
+        // Labs are flat, so the station hints sit on the lab's flat top (height 0).
+        height: NOMINAL_LAB_HEIGHT_M,
         pos: {
           x: lab.site_pos_x + (s.pos_x / fw) * lab.site_size_x_m,
           y: lab.site_pos_y + (s.pos_y / fd) * lab.site_size_y_m,
@@ -347,6 +353,9 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
       if (d.station_code !== s.code || d.virtual) continue;
       outlines.push({
         code: d.code,
+        parentCode: s.code,
+        // Stations are 3D, so device hints ride on the station's top face.
+        height: s.height_m,
         pos: { x: s.pos_x + (d.pose_x_mm ?? 0) / MM_PER_M, y: s.pos_y + (d.pose_y_mm ?? 0) / MM_PER_M },
         size: {
           x: (d.size_x_mm ?? DEFAULT_DEVICE_SIZE_M * MM_PER_M) / MM_PER_M,

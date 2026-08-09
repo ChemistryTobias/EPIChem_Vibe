@@ -244,6 +244,7 @@ export function LayoutScreen() {
     selectedZoneCode,
     showLabels: true,
     editable,
+    heightHandle: level.level !== "site", // labs are flat — no height handle
     onSelect: selectBox,
     onSelectZone: selectZone,
     onActivate: (code) => {

@@ -207,6 +207,13 @@ export interface Outline {
   /** Footprint on the current floor, in the current level's units. */
   pos: FloorPos;
   size: { x: number; y: number };
+  /** Elevation to draw the outline at — the parent box's height, so the hint
+   * sits *on the parent's top face* rather than hidden under the box (0 draws
+   * it flat on the floor, e.g. under a flat lab). */
+  height: number;
+  /** The parent box this outline belongs to, so the canvas can move the hints
+   * with the box while it's dragged (req: children follow the drag). */
+  parentCode: string;
 }
 
 /**
@@ -400,6 +407,51 @@ function sweep1D(a: number, b: number, ok: (v: number) => boolean): number {
 /** Trim float noise from a slid position to 0.1 mm, keeping real (off-grid) values. */
 function round4(v: number): number {
   return Math.round(v * 1e4) / 1e4;
+}
+
+/**
+ * Soft snap a moved box: nudge it onto a nearby grid line or neighbour edge, but
+ * only when an edge is *within `tolU`* of one — otherwise the free (float)
+ * position is kept (snap-but-not-bound, ADR 0010; the req: "only snap if it's a
+ * few pixels near, not just snapping"). Both the near edge (`pos`) and the far
+ * edge (`pos+size`) are candidates on each axis, so a box also snaps when its
+ * trailing edge lines up ("use the other edge"), and it snaps to neighbour box
+ * edges as well as the grid ("snap to lines"). The smallest in-tolerance nudge on
+ * each axis wins; ties and misses leave the axis at its float value.
+ */
+export function softSnap(
+  pos: FloorPos,
+  size: { x: number; y: number },
+  floor: Floor,
+  others: RectGeom[],
+  tolU: number,
+): FloorPos {
+  const axis = (p: number, s: number, grid: number, lines: number[]): number => {
+    const targets = [...lines];
+    if (grid > 0) {
+      // The nearest grid multiple to each edge — so only the *closest* line is a
+      // candidate, never every multiple across the floor.
+      for (const edge of [p, p + s]) targets.push(Math.round(edge / grid) * grid);
+    }
+    let best = 0;
+    let bestAbs = tolU; // only shifts strictly within tolerance are taken
+    for (const t of targets) {
+      for (const edge of [p, p + s]) {
+        const d = t - edge;
+        if (Math.abs(d) < bestAbs) {
+          bestAbs = Math.abs(d);
+          best = d;
+        }
+      }
+    }
+    return round4(p + best);
+  };
+  const xLines = others.flatMap((o) => [o.pos.x, o.pos.x + o.size.x]);
+  const yLines = others.flatMap((o) => [o.pos.y, o.pos.y + o.size.y]);
+  return {
+    x: axis(pos.x, size.x, floor.gridU, xLines),
+    y: axis(pos.y, size.y, floor.gridU, yLines),
+  };
 }
 
 /**

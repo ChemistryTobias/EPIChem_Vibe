@@ -18,8 +18,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
-import type { Box, CanvasModel, FloorPos, Point, Projection, TileMetrics } from "./isometric";
-import { DEFAULT_METRICS, TARGET_PX, canvasExtent, metricsFor, snap, toFloor, toScreen } from "./isometric";
+import type { Box, CanvasModel, FloorPos, Outline, Point, Projection, TileMetrics } from "./isometric";
+import { DEFAULT_METRICS, TARGET_PX, canvasExtent, metricsFor, softSnap, toFloor, toScreen } from "./isometric";
 import {
   BoxTile,
   FloorGrid,
@@ -38,6 +38,9 @@ export interface IsometricPaperOptions {
   showLabels: boolean;
   /** False puts the canvas in read-only "operations" mode (§10.3). */
   editable: boolean;
+  /** Whether the selected box gets a height handle — false at the site level,
+   * where labs are flat (req: only stations are 3D). */
+  heightHandle: boolean;
   onSelect: (code: string | null) => void;
   /** The box's label was clicked — the screen may drill into it (inspect mode). */
   onActivate: (code: string) => void;
@@ -108,6 +111,19 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
 
   // Live-drag state and the elements a handle drag mutates in place.
   const tilesRef = useRef(new Map<string, dia.Element>());
+  // Grandchild hint elements grouped by their parent box's code, so a box drag
+  // (or a height/foot resize) can move/re-elevate its hints live with it.
+  const outlinesRef = useRef(new Map<string, { el: dia.Element; o: Outline }[]>());
+  // The origin/metrics/projection the last redraw used — the change:position
+  // handler needs them to re-project outlines while a box drags.
+  const drawRef = useRef<{ origin: Point; metrics: TileMetrics; projection: Projection }>({
+    origin: { x: 0, y: 0 },
+    metrics: DEFAULT_METRICS,
+    projection: "iso",
+  });
+  // True only during a full redraw, so the change:position listener doesn't treat
+  // the redraw's own position sets as user drags.
+  const redrawingRef = useRef(false);
   const handleRef = useRef<{ foot: dia.Element | null; height: dia.Element | null }>({
     foot: null,
     height: null,
@@ -147,6 +163,20 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       },
     });
     return shape;
+  };
+
+  // Paint a grandchild hint polygon at its parent's height (on the top face).
+  const paintOutline = (
+    el: dia.Element,
+    o: Outline,
+    origin: Point,
+    metrics: TileMetrics,
+    projection: Projection,
+  ) => {
+    const shape = boxShape(o.pos, o.size, o.height, origin, metrics, projection);
+    el.position(shape.position.x, shape.position.y);
+    el.resize(shape.size.width, shape.size.height);
+    el.attr("face/points", shape.faces.top);
   };
 
   // Push the current scale+pan onto the paper. Final transform (JointJS applies
@@ -285,6 +315,31 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       if (tile) {
         paintTile(tile, drag.box, { pos: drag.box.pos, size: drag.size, height: drag.height }, drag.origin, drag.metrics, projection, true, showLabels);
       }
+      // Raising/lowering the box lifts its child hints to the new top face too, so
+      // they keep riding on top of it during the resize (req: same goes for handles).
+      if (drag.kind === "height") {
+        for (const child of outlinesRef.current.get(drag.box.code) ?? []) {
+          paintOutline(child.el, { ...child.o, height: drag.height }, drag.origin, drag.metrics, projection);
+        }
+      }
+    });
+
+    // A plain box move (native JointJS drag): translate the box's child hints by
+    // the same delta so they travel with it (req). Skipped during a redraw (the
+    // rebuild sets positions itself) and during a handle drag (that repaints the
+    // hints from the live height instead).
+    graph.on("change:position", (cell) => {
+      if (redrawingRef.current || dragRef.current) return;
+      if (cell.get("type") !== "epi.Box") return;
+      const code = cell.get("boxCode") as string | undefined;
+      const group = code ? outlinesRef.current.get(code) : undefined;
+      if (!group || group.length === 0) return;
+      const prev = cell.previous("position") as { x: number; y: number } | undefined;
+      const now = cell.position();
+      const dx = now.x - (prev?.x ?? now.x);
+      const dy = now.y - (prev?.y ?? now.y);
+      if (dx === 0 && dy === 0) return;
+      for (const child of group) child.el.translate(dx, dy);
     });
 
     paper.on("element:pointerup", (view) => {
@@ -310,7 +365,14 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
         0,
         projection,
       );
-      const next = snap(dropped, model.gridU);
+      // Soft snap: only pull an edge onto a grid line / neighbour edge if it lands
+      // within a few px of one — otherwise keep the free float position (req).
+      const pxTol = 10;
+      const pxPerUnit = projection === "2d" ? metrics.scale2d : Math.hypot(metrics.mHalfW, metrics.mHalfH);
+      const others = model.boxes
+        .filter((b) => b.code !== code)
+        .map((b) => ({ pos: b.pos, size: b.size, height: b.height }));
+      const next = softSnap(dropped, box.size, model, others, pxTol / pxPerUnit);
       if (Math.abs(next.x - box.pos.x) < 1e-6 && Math.abs(next.y - box.pos.y) < 1e-6) return;
       handlers.current.onMove(code, next);
     });
@@ -379,7 +441,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
   }, [container]);
 
   // Redraw whenever anything visible changes.
-  const { model, projection, selectedCode, selectedZoneCode, showLabels, editable } = options;
+  const { model, projection, selectedCode, selectedZoneCode, showLabels, editable, heightHandle } = options;
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -409,8 +471,11 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
 
     // Full rebuild rather than a diff: a level is tens of boxes, and a rebuild
     // can't drift out of sync with the data the way a diff can.
+    drawRef.current = { origin, metrics, projection };
+    redrawingRef.current = true; // suppress the drag listener during the rebuild
     graph.clear();
     tilesRef.current.clear();
+    outlinesRef.current.clear();
     handleRef.current = { foot: null, height: null };
 
     const floor = new FloorGrid({ position: { x: 0, y: 0 }, size: { width, height } });
@@ -440,15 +505,6 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       graph.addCell(area);
     }
 
-    // Weak grandchild footprints, drawn flat on the floor beneath the boxes so
-    // they read as context and never obscure a real box (non-interactive).
-    for (const o of model.outlines ?? []) {
-      const shape = boxShape(o.pos, o.size, 0, origin, metrics, projection);
-      const outline = new OutlineTile({ position: shape.position, size: shape.size });
-      outline.attr("face/points", shape.faces.top);
-      graph.addCell(outline);
-    }
-
     // `boxes` are already sorted back-to-front (painter's algorithm, §10.3).
     for (const box of model.boxes) {
       const tile = new BoxTile();
@@ -456,6 +512,19 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       paintTile(tile, box, { pos: box.pos, size: box.size, height: box.height }, origin, metrics, projection, box.code === selectedCode, showLabels);
       graph.addCell(tile);
       tilesRef.current.set(box.code, tile);
+    }
+
+    // Weak grandchild hints, drawn *after* the boxes and at the parent's height,
+    // so they sit on the parent box's top face (visible), not hidden under it
+    // (req). Non-interactive: context, never a click target. Grouped by parent so
+    // a drag/resize can move them with the box.
+    for (const o of model.outlines ?? []) {
+      const outline = new OutlineTile();
+      paintOutline(outline, o, origin, metrics, projection);
+      graph.addCell(outline);
+      const group = outlinesRef.current.get(o.parentCode) ?? [];
+      group.push({ el: outline, o });
+      outlinesRef.current.set(o.parentCode, group);
     }
 
     // Resize handles on the selected box (edit mode): a footprint handle at the
@@ -466,14 +535,16 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       const p = tile.position();
       const shape = boxShape(selected.pos, selected.size, selected.height, origin, metrics, projection);
       handleRef.current.foot = addHandle(graph, "foot", p.x + shape.farBottom.x, p.y + shape.farBottom.y);
-      if (projection === "iso") {
+      // No height handle at the site level — labs are flat (req: only stations 3D).
+      if (projection === "iso" && heightHandle) {
         handleRef.current.height = addHandle(graph, "height", p.x + shape.apex.x, p.y + shape.apex.y);
       }
     }
+    redrawingRef.current = false;
     // `container` is a dep so this re-runs in the same commit the paper is
     // created in — effects fire in declaration order, so the paper exists by
     // the time this reads it.
-  }, [container, model, projection, selectedCode, selectedZoneCode, showLabels, editable, size]);
+  }, [container, model, projection, selectedCode, selectedZoneCode, showLabels, editable, heightHandle, size]);
 
   return { containerRef: setContainer, zoomIn, zoomOut, resetView };
 }
