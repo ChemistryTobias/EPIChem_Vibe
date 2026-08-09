@@ -127,6 +127,12 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
   // True only during a full redraw, so the change:position listener doesn't treat
   // the redraw's own position sets as user drags.
   const redrawingRef = useRef(false);
+  // True while a box/handle is being dragged. The live preview changes React state
+  // (selection, editor) mid-drag, which would otherwise rebuild the graph and
+  // destroy the tile under the pointer — so the redraw is suppressed until release,
+  // then `redrawTick` forces exactly one clean rebuild.
+  const draggingRef = useRef(false);
+  const [redrawTick, setRedrawTick] = useState(0);
   const handleRef = useRef<{ foot: dia.Element | null; height: dia.Element | null }>({
     foot: null,
     height: null,
@@ -274,6 +280,9 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // recompute the box's footprint (far-corner handle) or height (apex handle),
     // preview it live, and commit the snapped result on release.
     paper.on("element:pointerdown", (view) => {
+      const type = view.model.get("type");
+      // Suppress redraws for the duration of a box move or handle resize.
+      if (type === "epi.Box" || type === "epi.Handle") draggingRef.current = true;
       const kind = view.model.get("handle") as "foot" | "height" | undefined;
       if (!kind) return;
       const { model, projection, selectedCode } = handlers.current;
@@ -359,6 +368,10 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     });
 
     paper.on("element:pointerup", (view) => {
+      // The drag is over: allow redraws again and force exactly one clean rebuild
+      // (staging may or may not change the model, so we can't rely on it alone).
+      draggingRef.current = false;
+      setRedrawTick((t) => t + 1);
       const drag = dragRef.current;
       if (drag) {
         dragRef.current = null;
@@ -463,6 +476,9 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     const graph = graphRef.current;
     const paper = paperRef.current;
     if (!graph || !paper) return;
+    // Never rebuild the graph mid-drag — it would destroy the tile under the
+    // pointer. The pointerup handler bumps `redrawTick` to reconcile afterwards.
+    if (draggingRef.current) return;
 
     const metrics = fitMetrics(model, projection, size.w, size.h);
     metricsRef.current = metrics;
@@ -560,7 +576,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // `container` is a dep so this re-runs in the same commit the paper is
     // created in — effects fire in declaration order, so the paper exists by
     // the time this reads it.
-  }, [container, model, projection, selectedCode, selectedZoneCode, showLabels, editable, heightHandle, size]);
+  }, [container, model, projection, selectedCode, selectedZoneCode, showLabels, editable, heightHandle, size, redrawTick]);
 
   return { containerRef: setContainer, zoomIn, zoomOut, resetView };
 }
