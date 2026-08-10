@@ -23,6 +23,7 @@ import {
   rectsOverlap,
   slidePos,
   snap,
+  snapEdge,
   softSnap,
   sortBoxes,
   toFloor,
@@ -228,6 +229,19 @@ describe("softSnap (snap only when near, else float)", () => {
     const others = [{ pos: { x: 3, y: 0 }, size: { x: 1, y: 1 }, height: 0 }];
     // far edge 2.9 snaps onto the neighbour's near edge 3 → box lands at x=2, flush.
     expect(softSnap({ x: 1.9, y: 0 }, { x: 1, y: 1 }, floor, others, 0.2).x).toBeCloseTo(2, 9);
+  });
+});
+
+describe("snapEdge (resize soft-snap: gentle, keeps floats)", () => {
+  test("keeps a float edge that isn't near any line", () => {
+    expect(snapEdge(2.5, 1, [], 0.2)).toBeCloseTo(2.5, 9); // 0.5 off grid → no snap
+  });
+  test("snaps onto the nearest grid line within tolerance", () => {
+    expect(snapEdge(3.08, 1, [], 0.2)).toBeCloseTo(3, 9);
+  });
+  test("snaps onto a neighbour edge within tolerance", () => {
+    expect(snapEdge(4.05, 1, [4.9, 6], 0.2)).toBeCloseTo(4, 9); // grid 4 is closest
+    expect(snapEdge(4.85, 1, [4.9, 6], 0.2)).toBeCloseTo(4.9, 9); // neighbour edge wins
   });
 });
 

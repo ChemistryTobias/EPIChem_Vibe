@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
 import type { Box, CanvasModel, FloorPos, Outline, Point, Projection, TileMetrics } from "./isometric";
-import { DEFAULT_METRICS, TARGET_PX, canvasExtent, clampResize, metricsFor, softSnap, toFloor, toScreen } from "./isometric";
+import { DEFAULT_METRICS, TARGET_PX, canvasExtent, clampResize, metricsFor, snapEdge, softSnap, toFloor, toScreen } from "./isometric";
 import {
   BoxTile,
   FloorGrid,
@@ -328,21 +328,21 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
         // The footprint handle sits at the far corner at height 0 (the box's
         // lowest vertex — "at the bottom"), so invert there, not on the top face.
         const far = toFloor({ x: px, y: py }, drag.origin, drag.metrics, 0, projection);
-        const rawX = Math.max(gridU, far.x - drag.box.pos.x);
-        const rawY = Math.max(gridU, far.y - drag.box.pos.y);
-        // Cap the footprint so it can't grow through a neighbour or off the floor
-        // (req): it stops flush against whatever's in the way, live.
         const others = model.boxes
           .filter((b) => b.code !== drag.box.code)
           .map((b) => ({ pos: b.pos, size: b.size, height: b.height }));
-        const cap = clampResize(drag.box.pos, { x: rawX, y: rawY }, { widthU: model.widthU, depthU: model.depthU, gridU }, others);
-        // Resizing snaps to whole grid cells — no in-between footprints (req):
-        // round to the nearest cell, but never past the collision/floor cap.
-        const toCell = (raw: number, capV: number) => {
-          const v = roundTo(raw, gridU);
-          return Math.max(gridU, v > capV + 1e-9 ? Math.floor(capV / gridU + 1e-9) * gridU : v);
-        };
-        drag.size = { x: toCell(rawX, cap.x), y: toCell(rawY, cap.y) };
+        // Soft-snap the far edge the same gentle way a move snaps: onto a grid line
+        // or neighbour edge only when within tolerance, else keep the float — so a
+        // resize isn't forced to whole grid cells / integers (req). The near corner
+        // is fixed, so only this edge moves.
+        const pxPerUnit = projection === "2d" ? drag.metrics.scale2d : Math.hypot(drag.metrics.mHalfW, drag.metrics.mHalfH);
+        const tolU = (handlers.current.snapPx ?? DEFAULT_SNAP_PX) / pxPerUnit;
+        const farX = snapEdge(far.x, gridU, others.flatMap((o) => [o.pos.x, o.pos.x + o.size.x]), tolU);
+        const farY = snapEdge(far.y, gridU, others.flatMap((o) => [o.pos.y, o.pos.y + o.size.y]), tolU);
+        const want = { x: Math.max(gridU, farX - drag.box.pos.x), y: Math.max(gridU, farY - drag.box.pos.y) };
+        // Cap it so it can't grow through a neighbour or off the floor (req): it
+        // stops flush against whatever's in the way, live.
+        drag.size = clampResize(drag.box.pos, want, { widthU: model.widthU, depthU: model.depthU, gridU }, others);
       } else {
         // Only the vertical delta matters: height rises as the handle goes up.
         drag.height = Math.max(gridU, roundTo((drag.centreBaseY - py) / drag.metrics.heightUnit, gridU));
@@ -508,7 +508,15 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // pointer. The pointerup handler bumps `redrawTick` to reconcile afterwards.
     if (draggingRef.current) return;
 
-    const metrics = fitMetrics(model, projection, size.w, size.h);
+    // Measure the container *live* here rather than trusting the `size` state:
+    // the state is driven by the ResizeObserver and can lag a frame behind the
+    // real box, which left the drawing fitted to a stale/fallback size and not
+    // filling the pane (req: stretch to the edges like the overlay does). `size`
+    // stays in the deps so an RO change still triggers this redraw.
+    const rect = container?.getBoundingClientRect();
+    const cw = Math.round(rect?.width ?? 0) || size.w;
+    const ch = Math.round(rect?.height ?? 0) || size.h;
+    const metrics = fitMetrics(model, projection, cw, ch);
     metricsRef.current = metrics;
     const { width, height, origin } = canvasExtent(model.widthU, model.depthU, metrics, projection);
     const tallest = model.boxes.reduce((max, b) => Math.max(max, b.height), 0);
@@ -517,8 +525,8 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // it fills the full-bleed canvas, and centre the drawing in the slack.
     const paperW = width + MARGIN * 2;
     const paperH = height + lift + MARGIN * 2;
-    const dimW = Math.max(paperW, size.w || paperW);
-    const dimH = Math.max(paperH, size.h || paperH);
+    const dimW = Math.max(paperW, cw || paperW);
+    const dimH = Math.max(paperH, ch || paperH);
     paper.setDimensions(dimW, dimH);
     // The fit (centred) transform; the user's zoom/pan is layered on in applyView.
     baseRef.current = {

@@ -97,11 +97,13 @@ export const OutlineTile = dia.Element.define(
   "epi.Outline",
   {
     attrs: {
+      // White dotted, so a grandchild reads on top of a dark station box (its
+      // own teal was nearly invisible there — req: dotted white lines).
       face: {
-        fill: "rgba(0, 177, 234, 0.06)",
-        stroke: "rgba(0, 108, 102, 0.55)",
+        fill: "rgba(255, 255, 255, 0.10)",
+        stroke: "rgba(255, 255, 255, 0.9)",
         strokeWidth: 1,
-        strokeDasharray: "3,3",
+        strokeDasharray: "2,3",
         pointerEvents: "none",
       },
     },
@@ -246,9 +248,14 @@ export function boxShape(
 ): BoxRender {
   const { x: px, y: py } = pos;
   const { x: sx, y: sy } = size;
-  // In 2D there is no raised face; both "top" and "bottom" collapse to the floor.
-  const hm = projection === "2d" ? 0 : height;
-  const flat = projection === "2d";
+  // A box is "flat" in 2D, or whenever it has no height (a lab): then it's a bare
+  // footprint with *no* side faces. Drawing the degenerate zero-height sides would
+  // otherwise lay a solid stroke over two of the four top-face edges, so a dashed
+  // lab looked dashed on only two/three sides — flat drops them, so the whole
+  // rectangle is dashed like a zone (req).
+  const flat = projection === "2d" || height <= 1e-9;
+  // In 2D / flat there is no raised face; both "top" and "bottom" collapse to the floor.
+  const hm = flat ? 0 : height;
 
   // Floor corners: A near, B along +x, C far, D along +y.
   const at = toScreen({ x: px, y: py }, origin, metrics, hm, projection);

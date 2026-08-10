@@ -461,6 +461,28 @@ export function softSnap(
 }
 
 /**
+ * Snap a single moving edge to the nearest grid line or neighbour edge, but only
+ * when it lands within `tolU` — else keep its float value. The resize handle uses
+ * this on the far edge (the near corner is fixed), so resizing snaps the same
+ * *gentle* way dragging does (req: it shouldn't force grid-only / integer sizes,
+ * it should soft-snap and otherwise keep the float).
+ */
+export function snapEdge(edge: number, grid: number, lines: number[], tolU: number): number {
+  const targets = [...lines];
+  if (grid > 0) targets.push(Math.round(edge / grid) * grid);
+  let best = 0;
+  let bestAbs = tolU;
+  for (const t of targets) {
+    const d = t - edge;
+    if (Math.abs(d) < bestAbs) {
+      bestAbs = Math.abs(d);
+      best = d;
+    }
+  }
+  return round3(edge + best);
+}
+
+/**
  * The largest footprint a *resized* box may grow to from its fixed near corner
  * (`pos`) without leaving the floor or overlapping a neighbour (req: "if a device
  * or station is in the way while resizing, don't allow it"). Only the far edges
