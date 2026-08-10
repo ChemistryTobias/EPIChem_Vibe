@@ -54,7 +54,10 @@ export function GeometryForm({
   staged: boolean;
   /** Validate + stage the geometry; return an error to show, or null on success. */
   onStage: (geom: BoxGeometry) => string | null;
-  onApply: () => void;
+  /** Apply keeps the change *and writes it* (req) — it's handed the committed
+   * geometry directly, so it doesn't depend on the just-staged draft (which
+   * React hasn't flushed yet in the same click). */
+  onApply: (geom: BoxGeometry) => void;
   onCancel: () => void;
 }) {
   const [posX, setPosX] = useState(show(live.pos.x));
@@ -88,16 +91,17 @@ export function GeometryForm({
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    const problem = onStage({
+    const geom = {
       pos: { x: num(posX, live.pos.x), y: num(posY, live.pos.y) },
       size: { x: num(sizeX, live.size.x), y: num(sizeY, live.size.y) },
       height: num(height, live.height),
-    });
+    };
+    const problem = onStage(geom);
     if (problem) {
       setError(problem);
       return;
     }
-    onApply();
+    onApply(geom);
   }
 
   return (

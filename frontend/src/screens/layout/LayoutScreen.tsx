@@ -13,9 +13,11 @@
  *
  * The canvas is full-bleed and re-fits to its container (`useIsometricPaper`); the
  * controls float over it in `.canvas-overlay`. Zones (ADR 0015) are a separate
- * flat-2D layer here — drawn under the boxes, selected into their own inspector,
- * and written immediately (not through the box draft), so they're only editable
- * with a clean draft. Not here: the live-status layers (they need live device state).
+ * flat-2D layer here — drawn under the boxes and selected into their own inspector
+ * — but they now stage into the *same* draft as boxes and edit identically (req):
+ * dragging opens a live editor, per-zone **Apply** writes just that zone (and
+ * reconciles station↔zone membership, ADR 0016), and the header **Save** writes
+ * everything. Not here: the live-status layers (they need live device state).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -56,15 +58,34 @@ interface DraftCreate {
   geom: BoxGeometry;
 }
 
-/** The unsaved edits for the current level, applied over the fetched data. */
+/** A zone created in the draft but not yet persisted (ADR 0015). */
+interface ZoneCreate {
+  code: string;
+  rect: ZoneRect;
+}
+
+/** The unsaved edits for the current level, applied over the fetched data. Zones
+ * are staged here too now (req: zone edits work exactly like box edits — nothing
+ * writes until Save). */
 interface Draft {
   creates: DraftCreate[];
   edits: Record<string, BoxGeometry>;
   removes: string[];
   floor: FloorGeometry | null;
+  zoneCreates: ZoneCreate[];
+  zoneEdits: Record<string, ZoneRect>;
+  zoneRemoves: string[];
 }
 
-const EMPTY_DRAFT: Draft = { creates: [], edits: {}, removes: [], floor: null };
+const EMPTY_DRAFT: Draft = {
+  creates: [],
+  edits: {},
+  removes: [],
+  floor: null,
+  zoneCreates: [],
+  zoneEdits: {},
+  zoneRemoves: [],
+};
 
 /** Distinct fill so an unsaved (draft) box reads as "not written yet" — MPG green. */
 const NEW_FILL: BoxFill = { top: "#C6D325", left: "#A9B41F", right: "#8C9519" };
@@ -87,7 +108,6 @@ export function LayoutScreen() {
   const [selectedCode, setSelectedCode] = useStickyState<string | null>("layout.selected", null);
   const [selectedZoneCode, setSelectedZoneCode] = useStickyState<string | null>("layout.selectedZone", null);
   const [editingZoneRect, setEditingZoneRect] = useState(false);
-  const [zoneBusy, setZoneBusy] = useState(false);
   const [projection, setProjection] = useStickyState<Projection>("layout.projection", "iso");
   // Move soft-snap tolerance, px. Held in state (not a fixed literal) so a
   // settings panel can tune it later (req); gentle by default.
@@ -107,9 +127,19 @@ export function LayoutScreen() {
     wasCreate: boolean;
   } | null>(null);
   const [geomSync, setGeomSync] = useState(0); // bumps when a drag pushes new values into the form
+  // A live zone-edit session, the zone counterpart of preview/editSession above
+  // (req: zones edit exactly like boxes now).
+  const [zonePreview, setZonePreview] = useState<{ code: string; rect: ZoneRect } | null>(null);
+  const [zoneSession, setZoneSession] = useState<{
+    code: string;
+    revert: ZoneRect;
+    wasEdited: boolean;
+    wasCreate: boolean;
+  } | null>(null);
+  const [zoneSync, setZoneSync] = useState(0);
   const [editingFloor, setEditingFloor] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const [confirmRemoveCode, setConfirmRemoveCode] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<{ code: string; kind: "box" | "zone" } | null>(null);
   const [saving, setSaving] = useState(false);
   const notify = useNotify();
 
@@ -167,9 +197,24 @@ export function LayoutScreen() {
       if (!eff || !base) return eff ? [o] : [];
       return [projectOutline(o, base, { pos: eff.pos, size: eff.size, height: eff.height })];
     });
-    // Recompute zone membership against the *effective* (draft-aware) boxes, so a
-    // station dragged into a zone counts as a member immediately, before Save (req #7).
-    const zones = level.zones.map((z) => ({
+    // Zones are draft-aware like boxes now (req): drop staged removes, apply
+    // staged rect edits, add staged creates, then recompute membership against
+    // the effective boxes — all before anything is written.
+    const zoneBase = level.zones
+      .filter((z) => !draft.zoneRemoves.includes(z.code))
+      .map((z) => {
+        const e = draft.zoneEdits[z.code];
+        return e ? { ...z, pos: { x: e.pos_x, y: e.pos_y }, size: { x: e.width_m, y: e.depth_m } } : z;
+      });
+    const zoneCreated = draft.zoneCreates.map((c) => ({
+      code: c.code,
+      label: c.code,
+      purpose: "area",
+      pos: { x: c.rect.pos_x, y: c.rect.pos_y },
+      size: { x: c.rect.width_m, y: c.rect.depth_m },
+      members: [] as string[],
+    }));
+    const zones = [...zoneBase, ...zoneCreated].map((z) => ({
       ...z,
       members: boxes.filter((b) => rectContainsBox(z.pos, z.size, b.pos, b.size)).map((b) => b.code),
     }));
@@ -194,7 +239,10 @@ export function LayoutScreen() {
     draft.creates.length > 0 ||
     Object.keys(draft.edits).length > 0 ||
     draft.removes.length > 0 ||
-    draft.floor !== null;
+    draft.floor !== null ||
+    draft.zoneCreates.length > 0 ||
+    Object.keys(draft.zoneEdits).length > 0 ||
+    draft.zoneRemoves.length > 0;
 
   // Warn before leaving edit mode with unsaved changes (req): a browser
   // reload/close is caught by `beforeunload`, and an in-app section switch by a
@@ -307,13 +355,6 @@ export function LayoutScreen() {
     [beginGeomSession, setEditable, setSelectedZoneCode],
   );
 
-  // End a session keeping the staged change (Apply, or clicking elsewhere).
-  const endGeomSession = useCallback(() => {
-    setEditSession(null);
-    setPreview(null);
-    setEditingGeom(false);
-  }, []);
-
   // End a session reverting *only this box* to where it started (Cancel, req #5).
   const revertGeomSession = useCallback(() => {
     const s = editSession;
@@ -334,14 +375,55 @@ export function LayoutScreen() {
     setEditingGeom(false);
   }, [editSession]);
 
+  // Apply a box's geometry edit: **write it immediately** (req — Apply saves, it
+  // doesn't just stage), reconcile zone membership, then drop it from the draft
+  // and reload. The committed geometry is passed in from the form so this doesn't
+  // read the not-yet-flushed draft. Only this box is written; anything else stays
+  // staged until its own Apply or the header Save.
+  const applyGeomSession = useCallback(
+    async (geom: BoxGeometry) => {
+      const code = editSession?.code ?? selectedCode;
+      if (!code) return;
+      const isCreate = draft.creates.some((c) => c.code === code);
+      setSaving(true);
+      try {
+        if (isCreate) await level.create({ code, geom });
+        else await level.setGeometry(code, geom);
+        await level.syncZoneMembership?.(effModel.boxes, effModel.zones ?? []);
+        setDraft((d) => ({
+          ...d,
+          creates: d.creates.filter((c) => c.code !== code),
+          edits: Object.fromEntries(Object.entries(d.edits).filter(([k]) => k !== code)),
+        }));
+        layout.reload();
+        notify({ kind: "success", message: `Saved ${code}.` });
+      } catch (cause) {
+        notify({ kind: "error", message: cause instanceof Error ? cause.message : String(cause) });
+        setSaving(false);
+        return; // keep the session open so the user can retry
+      }
+      setSaving(false);
+      setEditSession(null);
+      setPreview(null);
+      setEditingGeom(false);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editSession, selectedCode, draft, level, effModel, layout, notify],
+  );
+
   const selectZone = useCallback((code: string | null) => {
     setSelectedZoneCode(code);
     setEditingZoneRect(false);
+    // Leaving/selecting ends any zone session (its staged change is kept — only an
+    // explicit Cancel reverts it), mirroring selectBox.
+    setZoneSession(null);
+    setZonePreview(null);
     if (code) {
       setSelectedCode(null);
       setEditingGeom(false);
       setEditingFloor(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Live geometry while a drag/resize is in flight — opens the editor and feeds
@@ -385,27 +467,141 @@ export function LayoutScreen() {
     [effGeometry, constrain, stageGeometry, level.childLabel, beginGeomSession],
   );
 
-  // Drag/resize a zone on the canvas (ADR 0015) — the immediate-write mirror of
-  // the numeric form, so a zone relocates/resizes by hand, not only via the
-  // inspector. Gated on a clean box draft by `runZoneWrite` (hoisted below); a
-  // rejected write snaps the zone back on the next redraw.
-  const onMoveZone = (code: string, pos: FloorPos) => {
-    const z = effModel.zones?.find((zz) => zz.code === code);
-    if (!z) return;
-    setSelectedZoneCode(code);
-    setEditingZoneRect(true); // auto-open the zone geometry editor, like a box drag (req)
-    void runZoneWrite(() =>
-      level.placeZone(code, clampZoneRect({ pos_x: pos.x, pos_y: pos.y, width_m: z.size.x, depth_m: z.size.y })),
+  // ---- zones, staged exactly like boxes (req) ------------------------------
+  //
+  // The zone counterpart of effGeometry/displayGeometry/onMove/onReshape above:
+  // drag/resize stages into the zone draft and opens the live editor; Apply keeps
+  // it, Cancel reverts this zone, and the header Save writes everything at once.
+
+  // Clamp a zone rectangle inside the floor, at 3-decimal precision.
+  const clampZoneRect = (rect: ZoneRect): ZoneRect => {
+    const width_m = round3(Math.min(rect.width_m, floorEff.widthU));
+    const depth_m = round3(Math.min(rect.depth_m, floorEff.depthU));
+    return {
+      width_m,
+      depth_m,
+      pos_x: round3(Math.min(Math.max(rect.pos_x, 0), Math.max(floorEff.widthU - width_m, 0))),
+      pos_y: round3(Math.min(Math.max(rect.pos_y, 0), Math.max(floorEff.depthU - depth_m, 0))),
+    };
+  };
+
+  const effZoneRect = (code: string): ZoneRect | null => {
+    const created = draft.zoneCreates.find((c) => c.code === code);
+    if (created) return created.rect;
+    if (draft.zoneRemoves.includes(code)) return null;
+    const edited = draft.zoneEdits[code];
+    if (edited) return edited;
+    const z = level.zones.find((zz) => zz.code === code);
+    return z ? { pos_x: z.pos.x, pos_y: z.pos.y, width_m: z.size.x, depth_m: z.size.y } : null;
+  };
+
+  const displayZoneRect = (code: string): ZoneRect | null =>
+    zonePreview && zonePreview.code === code ? zonePreview.rect : effZoneRect(code);
+
+  const stageZoneRect = (code: string, rect: ZoneRect) => {
+    setDraft((d) =>
+      d.zoneCreates.some((c) => c.code === code)
+        ? { ...d, zoneCreates: d.zoneCreates.map((c) => (c.code === code ? { ...c, rect } : c)) }
+        : { ...d, zoneEdits: { ...d.zoneEdits, [code]: rect } },
     );
   };
-  const onReshapeZone = (code: string, size: { x: number; y: number }) => {
-    const z = effModel.zones?.find((zz) => zz.code === code);
-    if (!z) return;
+
+  const beginZoneSession = (code: string) => {
     setSelectedZoneCode(code);
-    setEditingZoneRect(true); // auto-open the zone geometry editor, like a box resize (req)
-    void runZoneWrite(() =>
-      level.placeZone(code, clampZoneRect({ pos_x: z.pos.x, pos_y: z.pos.y, width_m: size.x, depth_m: size.y })),
-    );
+    setSelectedCode(null);
+    setEditingGeom(false);
+    setEditingZoneRect(true);
+    setZoneSession((prev) => {
+      if (prev?.code === code) return prev;
+      const r = effZoneRect(code);
+      if (!r) return prev;
+      return {
+        code,
+        revert: r,
+        wasEdited: Boolean(draft.zoneEdits[code]),
+        wasCreate: draft.zoneCreates.some((c) => c.code === code),
+      };
+    });
+  };
+
+  const revertZoneSession = () => {
+    if (zoneSession) {
+      const s = zoneSession;
+      setDraft((d) => {
+        if (s.wasCreate) {
+          return { ...d, zoneCreates: d.zoneCreates.map((c) => (c.code === s.code ? { ...c, rect: s.revert } : c)) };
+        }
+        const zoneEdits = { ...d.zoneEdits };
+        if (s.wasEdited) zoneEdits[s.code] = s.revert;
+        else delete zoneEdits[s.code];
+        return { ...d, zoneEdits };
+      });
+      setBump((b) => b + 1);
+    }
+    setZoneSession(null);
+    setZonePreview(null);
+    setEditingZoneRect(false);
+  };
+
+  // Apply a zone edit: **write it immediately** (req — the zone counterpart of
+  // applyGeomSession), then reconcile station↔zone membership so the hierarchy
+  // reflects the new/moved zone, drop it from the draft, and reload. The committed
+  // rect is passed in from the form, so it doesn't read the not-yet-flushed draft.
+  const applyZoneSession = useCallback(
+    async (rect: ZoneRect) => {
+      const code = zoneSession?.code ?? selectedZoneCode;
+      if (!code) return;
+      const isCreate = draft.zoneCreates.some((c) => c.code === code);
+      setSaving(true);
+      try {
+        if (isCreate) await level.createZone(code, rect);
+        else await level.placeZone(code, rect);
+        await level.syncZoneMembership?.(effModel.boxes, effModel.zones ?? []);
+        setDraft((d) => ({
+          ...d,
+          zoneCreates: d.zoneCreates.filter((c) => c.code !== code),
+          zoneEdits: Object.fromEntries(Object.entries(d.zoneEdits).filter(([k]) => k !== code)),
+        }));
+        layout.reload();
+        notify({ kind: "success", message: `Saved zone ${code}.` });
+      } catch (cause) {
+        notify({ kind: "error", message: cause instanceof Error ? cause.message : String(cause) });
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
+      setZoneSession(null);
+      setZonePreview(null);
+      setEditingZoneRect(false);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [zoneSession, selectedZoneCode, draft, level, effModel, layout, notify],
+  );
+
+  // Live zone geometry while a drag/resize is in flight — opens the editor and
+  // feeds it the zone's current rect without touching the draft (req).
+  const onZoneGeomPreview = (code: string, geom: { pos: FloorPos; size: { x: number; y: number } }) => {
+    beginZoneSession(code);
+    setZonePreview({ code, rect: { pos_x: geom.pos.x, pos_y: geom.pos.y, width_m: geom.size.x, depth_m: geom.size.y } });
+    setZoneSync((n) => n + 1);
+  };
+
+  const onMoveZone = (code: string, pos: FloorPos) => {
+    const r = effZoneRect(code);
+    if (!r) return;
+    beginZoneSession(code);
+    setZonePreview(null);
+    setZoneSync((n) => n + 1);
+    stageZoneRect(code, clampZoneRect({ pos_x: pos.x, pos_y: pos.y, width_m: r.width_m, depth_m: r.depth_m }));
+  };
+
+  const onReshapeZone = (code: string, size: { x: number; y: number }) => {
+    const r = effZoneRect(code);
+    if (!r) return;
+    beginZoneSession(code);
+    setZonePreview(null);
+    setZoneSync((n) => n + 1);
+    stageZoneRect(code, clampZoneRect({ pos_x: r.pos_x, pos_y: r.pos_y, width_m: size.x, depth_m: size.y }));
   };
 
   const { containerRef, zoomIn, zoomOut, resetView } = useIsometricPaper({
@@ -427,6 +623,7 @@ export function LayoutScreen() {
     onReshape,
     onMoveZone,
     onReshapeZone,
+    onZoneGeomPreview,
     onGeomPreview,
     snapPx,
   });
@@ -515,70 +712,55 @@ export function LayoutScreen() {
     return null;
   };
 
-  // ---- zones (ADR 0015) ----------------------------------------------------
-  //
-  // Zones are a separate layer from the staged box draft: their writes are
-  // immediate (create/resize/delete then reload), so they're only allowed when
-  // the box draft is clean — otherwise a reload would fight the unsaved boxes.
-  const zoneRow = selectedZoneCode ? level.zoneRowOf(selectedZoneCode) : null;
+  // ---- zones (ADR 0015), staged into the draft like boxes ------------------
 
-  async function runZoneWrite(fn: () => Promise<unknown>, after?: () => void): Promise<string | null> {
-    if (isDirty) {
-      const msg = "Save or cancel your layout changes before editing zones.";
-      notify({ kind: "info", key: "zone-lock", message: msg });
-      return msg;
+  // Next free zone code, avoiding both persisted rows and staged creates.
+  const nextZoneCode = (): string => {
+    const taken = new Set([...data.zones.map((z) => z.code), ...draft.zoneCreates.map((c) => c.code)]);
+    for (let n = 1; ; n++) {
+      const c = `ZONE-${String(n).padStart(2, "0")}`;
+      if (!taken.has(c)) return c;
     }
-    setZoneBusy(true);
-    try {
-      await fn();
-      layout.reload();
-      after?.();
-      return null;
-    } catch (cause) {
-      const msg = cause instanceof Error ? cause.message : String(cause);
-      notify({ kind: "error", message: msg });
-      return msg;
-    } finally {
-      setZoneBusy(false);
-    }
-  }
+  };
 
   const addZone = () => {
-    const code = level.nextZoneCode();
+    const code = nextZoneCode();
     // A sensible starting rectangle: half the floor at the origin, at least a cell.
-    const w = Math.max(floorEff.gridU, floorEff.widthU / 2);
-    const d = Math.max(floorEff.gridU, floorEff.depthU / 2);
-    void runZoneWrite(
-      () => level.createZone(code, { pos_x: 0, pos_y: 0, width_m: w, depth_m: d }),
-      () => setSelectedZoneCode(code),
+    const rect = clampZoneRect({
+      pos_x: 0,
+      pos_y: 0,
+      width_m: Math.max(floorEff.gridU, floorEff.widthU / 2),
+      depth_m: Math.max(floorEff.gridU, floorEff.depthU / 2),
+    });
+    setDraft((d) => ({ ...d, zoneCreates: [...d.zoneCreates, { code, rect }] }));
+    setSelectedCode(null);
+    setSelectedZoneCode(code);
+    setEditingZoneRect(true);
+    setZoneSession({ code, revert: rect, wasEdited: false, wasCreate: true });
+    setZonePreview(null);
+    setZoneSync((n) => n + 1);
+  };
+
+  // Stage a zone removal (drop a staged create, or record a remove of a saved
+  // zone), mirroring `removeSelected` for boxes.
+  const removeZoneStaged = (code: string) => {
+    setDraft((d) =>
+      d.zoneCreates.some((c) => c.code === code)
+        ? { ...d, zoneCreates: d.zoneCreates.filter((c) => c.code !== code) }
+        : {
+            ...d,
+            zoneRemoves: [...d.zoneRemoves, code],
+            zoneEdits: Object.fromEntries(Object.entries(d.zoneEdits).filter(([k]) => k !== code)),
+          },
     );
+    selectZone(null);
   };
 
-  const removeZone = () => {
-    if (!selectedZoneCode) return;
-    void runZoneWrite(() => deleteNode("Zone", selectedZoneCode), () => selectZone(null));
-  };
-
-  // Clamp a zone rectangle inside the floor, at 3-decimal precision.
-  const clampZoneRect = (rect: ZoneRect): ZoneRect => {
-    const width_m = round3(Math.min(rect.width_m, floorEff.widthU));
-    const depth_m = round3(Math.min(rect.depth_m, floorEff.depthU));
-    return {
-      width_m,
-      depth_m,
-      pos_x: round3(Math.min(Math.max(rect.pos_x, 0), Math.max(floorEff.widthU - width_m, 0))),
-      pos_y: round3(Math.min(Math.max(rect.pos_y, 0), Math.max(floorEff.depthU - depth_m, 0))),
-    };
-  };
-
-  // Clamp a zone rectangle inside the floor, then write it. Returns an error
-  // string (shown in the form) or null on success.
-  const saveZoneRect = async (rect: ZoneRect): Promise<string | null> => {
-    if (!selectedZoneCode) return "No zone selected.";
+  // Validate + stage a zone rect from the numeric form (the Apply path).
+  const stageZoneRectForm = (code: string, rect: ZoneRect): string | null => {
     if (rect.width_m <= 0 || rect.depth_m <= 0) return "Zone width and depth must be positive.";
-    const err = await runZoneWrite(() => level.placeZone(selectedZoneCode, clampZoneRect(rect)));
-    if (!err) setEditingZoneRect(false);
-    return err;
+    stageZoneRect(code, clampZoneRect(rect));
+    return null;
   };
 
   // ---- persist / mode transitions ------------------------------------------
@@ -593,10 +775,17 @@ export function LayoutScreen() {
       }
       for (const code of d.removes) await l.remove(code);
       if (d.floor) await l.resizeFloor(d.floor);
+      // Zones write from the same draft now (req): creates, rect edits, removes.
+      for (const c of d.zoneCreates) await l.createZone(c.code, c.rect);
+      for (const [code, rect] of Object.entries(d.zoneEdits)) {
+        if (d.zoneRemoves.includes(code)) continue;
+        await l.placeZone(code, rect);
+      }
+      for (const code of d.zoneRemoves) await deleteNode("Zone", code);
       // Reconcile the hierarchy with geometric zone membership (ADR 0016) — a
       // station drawn inside a zone gets that zone_id, so the tree/API agree with
       // the drawing. Computed from the final (draft-aware) boxes.
-      await l.syncZoneMembership?.(effModel.boxes);
+      await l.syncZoneMembership?.(effModel.boxes, effModel.zones ?? []);
       setDraft(EMPTY_DRAFT);
       setSelectedCode(null);
       layout.reload();
@@ -619,10 +808,14 @@ export function LayoutScreen() {
     setEditable(false);
     setDraft(EMPTY_DRAFT);
     setSelectedCode(null);
+    setSelectedZoneCode(null);
     setEditingGeom(false);
     setEditingFloor(false);
+    setEditingZoneRect(false);
     setEditSession(null);
     setPreview(null);
+    setZoneSession(null);
+    setZonePreview(null);
   };
   const cancel = () => {
     if (isDirty) setConfirmLeave(true);
@@ -646,9 +839,11 @@ export function LayoutScreen() {
               <>
                 <Button
                   variant="primary"
-                  onClick={async () => {
-                    const ok = await save(level, draft);
-                    if (ok) exitToInspect();
+                  onClick={() => {
+                    // Save everything staged but *stay in edit mode* (req): on
+                    // success `save` clears the draft, so this button and every
+                    // Apply grey out. Leaving is the separate "Inspector mode".
+                    void save(level, draft);
                   }}
                   disabled={!isDirty || saving}
                 >
@@ -731,7 +926,7 @@ export function LayoutScreen() {
                           </Button>
                         )}
                         {level.zonesEnabled && (
-                          <Button size="sm" onClick={addZone} disabled={saving || zoneBusy}>
+                          <Button size="sm" onClick={addZone} disabled={saving}>
                             Add zone
                           </Button>
                         )}
@@ -785,29 +980,31 @@ export function LayoutScreen() {
                   </div>
                 </div>
 
-                {confirmRemoveCode && (
+                {confirmRemove && (
                   <div className="layout-confirm" role="dialog" aria-modal="true" aria-label="Remove component?">
                     <div className="layout-confirm__box">
                       <p className="layout-confirm__title">
-                        {level.removeVerb} {level.childLabel}?
+                        {confirmRemove.kind === "zone" ? "Delete zone" : `${level.removeVerb} ${level.childLabel}`}?
                       </p>
                       <p className="layout-confirm__body">
-                        {level.removeVerb} <strong className="mono">{confirmRemoveCode}</strong>?{" "}
-                        {level.removeVerb === "Delete"
-                          ? "It's staged until you Save, and the delete stays reversible from the revision history."
+                        {confirmRemove.kind === "zone" ? "Delete" : level.removeVerb}{" "}
+                        <strong className="mono">{confirmRemove.code}</strong>?{" "}
+                        {confirmRemove.kind === "zone" || level.removeVerb === "Delete"
+                          ? "It's staged until you Save, and stays reversible from the revision history."
                           : "This hides it from the canvas (staged until Save) — reversible from the revision history."}
                       </p>
                       <div className="layout-confirm__actions">
                         <Button
                           variant="danger"
                           onClick={() => {
-                            removeSelected(confirmRemoveCode);
-                            setConfirmRemoveCode(null);
+                            if (confirmRemove.kind === "zone") removeZoneStaged(confirmRemove.code);
+                            else removeSelected(confirmRemove.code);
+                            setConfirmRemove(null);
                           }}
                         >
-                          {level.removeVerb}
+                          {confirmRemove.kind === "zone" ? "Delete" : level.removeVerb}
                         </Button>
-                        <Button variant="secondary" onClick={() => setConfirmRemoveCode(null)}>
+                        <Button variant="secondary" onClick={() => setConfirmRemove(null)}>
                           Cancel
                         </Button>
                       </div>
@@ -845,30 +1042,27 @@ export function LayoutScreen() {
             onDone={() => setEditingFloor(false)}
             onCancel={() => setEditingFloor(false)}
           />
-        ) : editingZoneRect && zoneRow ? (
+        ) : editingZoneRect && selectedZoneCode && displayZoneRect(selectedZoneCode) ? (
           <ZoneRectForm
-            // Re-key on the rect so a canvas drag/resize (which writes then
-            // reloads) refreshes the form's fields to the new values (req).
-            key={`${zoneRow.code}:${zoneRow.pos_x},${zoneRow.pos_y},${zoneRow.width_m},${zoneRow.depth_m}`}
-            code={zoneRow.code}
-            initial={{
-              pos_x: zoneRow.pos_x,
-              pos_y: zoneRow.pos_y,
-              width_m: zoneRow.width_m,
-              depth_m: zoneRow.depth_m,
-            }}
-            busy={zoneBusy}
-            onSave={saveZoneRect}
-            onCancel={() => setEditingZoneRect(false)}
+            code={selectedZoneCode}
+            live={displayZoneRect(selectedZoneCode)!}
+            syncVersion={zoneSync}
+            staged={
+              Boolean(draft.zoneEdits[selectedZoneCode]) ||
+              draft.zoneCreates.some((c) => c.code === selectedZoneCode)
+            }
+            onStage={(rect) => stageZoneRectForm(selectedZoneCode, rect)}
+            onApply={applyZoneSession}
+            onCancel={revertZoneSession}
           />
         ) : selectedZoneCode ? (
           <ZoneInspector
             zone={effModel.zones?.find((z) => z.code === selectedZoneCode) ?? null}
             childLabel={level.childLabel}
             editable={editable}
-            busy={zoneBusy}
-            onEditRect={() => setEditingZoneRect(true)}
-            onRemove={removeZone}
+            busy={false}
+            onEditRect={() => beginZoneSession(selectedZoneCode)}
+            onRemove={() => setConfirmRemove({ code: selectedZoneCode, kind: "zone" })}
             onClose={() => selectZone(null)}
           />
         ) : editingGeom && selectedCode ? (
@@ -879,7 +1073,7 @@ export function LayoutScreen() {
             showHeight={level.level !== "site"}
             staged={Boolean(draft.edits[selectedCode]) || isNew(selectedCode)}
             onStage={(geom) => stageGeometryForm(selectedCode, geom)}
-            onApply={endGeomSession}
+            onApply={applyGeomSession}
             onCancel={revertGeomSession}
           />
         ) : (
@@ -896,7 +1090,7 @@ export function LayoutScreen() {
               if (editable) beginGeomSession(selectedCode);
               else enterEditGeometry(selectedCode);
             }}
-            onRemove={() => selectedCode && setConfirmRemoveCode(selectedCode)}
+            onRemove={() => selectedCode && setConfirmRemove({ code: selectedCode, kind: "box" })}
             onClose={() => selectBox(null)}
           />
         )}

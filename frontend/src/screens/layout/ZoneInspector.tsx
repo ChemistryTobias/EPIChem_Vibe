@@ -2,12 +2,12 @@
  * The inspector for a selected zone (ADR 0015) and the numeric form to edit its
  * rectangle. Zones are a flat 2D area at the site or lab level; membership is
  * geometric — the boxes whose footprint sits fully inside the zone — and shown
- * here. Zone writes are immediate (not part of the staged box draft), so the
- * edit/remove affordances are only offered in edit mode with a clean draft; the
- * screen enforces the clean-draft rule and reports it.
+ * here. Zone edits are now **staged like boxes** (ADR 0014 model, req): dragging
+ * or resizing a zone opens this editor live, Apply keeps the staged change and
+ * Cancel reverts this zone, and nothing writes until the header Save.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 import { Button } from "../../components/Button";
@@ -76,54 +76,96 @@ export function ZoneInspector({
   );
 }
 
+const s3 = (v: number) => String(Math.round(v * 1e3) / 1e3);
+
+/**
+ * The live zone-rectangle editor — the zone counterpart of `GeometryForm`. It
+ * opens when a zone is dragged/resized and its fields **follow the drag**
+ * (`live` + `syncVersion`); Apply keeps the staged rect (greyed until something
+ * changed), Cancel reverts this zone. Nothing writes until the header Save.
+ */
 export function ZoneRectForm({
   code,
-  initial,
-  busy,
-  onSave,
+  live,
+  syncVersion,
+  staged,
+  onStage,
+  onApply,
   onCancel,
 }: {
   code: string;
-  initial: ZoneRect;
-  busy: boolean;
-  /** Write the rectangle; returns an error string to show, or null on success. */
-  onSave: (rect: ZoneRect) => Promise<string | null>;
+  live: ZoneRect;
+  syncVersion: number;
+  /** Whether this zone already has a staged change, so Apply is enabled. */
+  staged: boolean;
+  /** Validate + stage the rectangle; returns an error to show, or null on ok. */
+  onStage: (rect: ZoneRect) => string | null;
+  /** Apply keeps the change *and writes it* (req) — handed the committed rect
+   * directly so it doesn't depend on the not-yet-flushed draft. */
+  onApply: (rect: ZoneRect) => void;
   onCancel: () => void;
 }) {
-  const [posX, setPosX] = useState(String(initial.pos_x));
-  const [posY, setPosY] = useState(String(initial.pos_y));
-  const [width, setWidth] = useState(String(initial.width_m));
-  const [depth, setDepth] = useState(String(initial.depth_m));
+  const [posX, setPosX] = useState(s3(live.pos_x));
+  const [posY, setPosY] = useState(s3(live.pos_y));
+  const [width, setWidth] = useState(s3(live.width_m));
+  const [depth, setDepth] = useState(s3(live.depth_m));
   const [error, setError] = useState<string | null>(null);
+  const [touched, setTouched] = useState(false);
 
-  async function submit(event: FormEvent) {
+  // Resync the fields when a drag/resize pushes new values (syncVersion bumps).
+  useEffect(() => {
+    setPosX(s3(live.pos_x));
+    setPosY(s3(live.pos_y));
+    setWidth(s3(live.width_m));
+    setDepth(s3(live.depth_m));
+    setError(null);
+    setTouched(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncVersion]);
+
+  const edit = (setter: (v: string) => void) => (v: string) => {
+    setter(v);
+    setTouched(true);
+  };
+
+  function submit(event: FormEvent) {
     event.preventDefault();
-    const err = await onSave({
-      pos_x: num(posX, initial.pos_x),
-      pos_y: num(posY, initial.pos_y),
-      width_m: num(width, initial.width_m),
-      depth_m: num(depth, initial.depth_m),
-    });
-    setError(err);
+    const rect = {
+      pos_x: num(posX, live.pos_x),
+      pos_y: num(posY, live.pos_y),
+      width_m: num(width, live.width_m),
+      depth_m: num(depth, live.depth_m),
+    };
+    const err = onStage(rect);
+    if (err) {
+      setError(err);
+      return;
+    }
+    onApply(rect);
   }
 
   return (
-    <Inspector kind="Edit zone" title={code} subtitle="Rectangle on this floor" onClose={onCancel}>
+    <Inspector
+      kind="Edit zone"
+      title={code}
+      subtitle="Follows the drag — Apply keeps it, Cancel reverts this zone"
+      onClose={onCancel}
+    >
       <form className="create-form" onSubmit={submit}>
-        <TextField label="Position X (m)" value={posX} onChange={setPosX} type="number" step="any" />
-        <TextField label="Position Y (m)" value={posY} onChange={setPosY} type="number" step="any" />
-        <TextField label="Width (m)" value={width} onChange={setWidth} type="number" step="any" />
-        <TextField label="Depth (m)" value={depth} onChange={setDepth} type="number" step="any" />
+        <TextField label="Position X (m)" value={posX} onChange={edit(setPosX)} type="number" step="any" />
+        <TextField label="Position Y (m)" value={posY} onChange={edit(setPosY)} type="number" step="any" />
+        <TextField label="Width (m)" value={width} onChange={edit(setWidth)} type="number" step="any" />
+        <TextField label="Depth (m)" value={depth} onChange={edit(setDepth)} type="number" step="any" />
         {error && (
           <p className="create-form__error" role="alert">
             {error}
           </p>
         )}
         <div className="create-form__actions">
-          <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? "Saving…" : "Save"}
+          <Button type="submit" variant="primary" disabled={!(staged || touched)}>
+            Apply
           </Button>
-          <Button type="button" onClick={onCancel} disabled={busy}>
+          <Button type="button" onClick={onCancel}>
             Cancel
           </Button>
         </div>

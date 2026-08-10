@@ -56,6 +56,9 @@ export interface IsometricPaperOptions {
   onMoveZone: (code: string, pos: FloorPos) => void;
   /** A zone was resized via its handle: new footprint, in canvas units. */
   onReshapeZone: (code: string, size: { x: number; y: number }) => void;
+  /** Continuous zone geometry while a zone is dragged/resized — opens the zone
+   * editor live (the zone counterpart of `onGeomPreview`, req). */
+  onZoneGeomPreview: (code: string, geom: { pos: FloorPos; size: { x: number; y: number } }) => void;
   /** Continuous geometry while a box is being dragged or handle-resized (not yet
    * released) — drives the live geometry editor (req: values change immediately). */
   onGeomPreview: (code: string, geom: { pos: FloorPos; size: { x: number; y: number }; height: number }) => void;
@@ -408,7 +411,9 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       if (drag.target === "zone") {
         const zEl = zonesRef.current.get(drag.box.code);
         if (zEl) paintZone(zEl, { code: drag.box.code, label: drag.box.label }, { pos: drag.box.pos, size: drag.size }, drag.origin, drag.metrics, projection, true);
-        return; // zones have no height handle, no child hints, no geometry editor
+        // Live-feed the zone editor as the handle drags (req: like a box resize).
+        handlers.current.onZoneGeomPreview(drag.box.code, { pos: drag.box.pos, size: drag.size });
+        return; // zones have no height handle and no child hints
       }
 
       const tile = tilesRef.current.get(drag.box.code);
@@ -448,6 +453,13 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       const dy = now.y - (prev?.y ?? now.y);
       if (dx !== 0 || dy !== 0) {
         for (const child of outlinesRef.current.get(code) ?? []) child.el.translate(dx, dy);
+        // The resize handles belong to the selected box — slide them along too so
+        // they stay on its corners while it's dragged (req). Translating a handle
+        // fires change:position, but with no handle drag in flight that's ignored.
+        if (code === handlers.current.selectedCode) {
+          handleRef.current.foot?.translate(dx, dy);
+          handleRef.current.height?.translate(dx, dy);
+        }
       }
 
       // Live-feed the geometry editor with the box's current floor position (req).
@@ -455,6 +467,30 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       const anchor = cell.get("anchor") as { x: number; y: number };
       const fl = toFloor({ x: now.x + anchor.x, y: now.y + anchor.y }, origin, metrics, 0, projection);
       handlers.current.onGeomPreview(code, { pos: fl, size: box.size, height: box.height });
+    });
+
+    // A zone body move (native drag): live-feed the zone editor with its current
+    // floor position, so the editor follows the drag like a box's does (req).
+    graph.on("change:position", (cell) => {
+      if (redrawingRef.current || dragRef.current) return;
+      if (cell.get("type") !== "epi.Zone") return;
+      const code = cell.get("zoneCode") as string | undefined;
+      if (!code) return;
+      const { model, projection } = handlers.current;
+      const z = (model.zones ?? []).find((zz) => zz.code === code);
+      if (!z) return;
+      const { origin, metrics } = drawRef.current;
+      const anchor = cell.get("anchor") as { x: number; y: number };
+      const prev = cell.previous("position") as { x: number; y: number } | undefined;
+      const now = cell.position();
+      // Slide the selected zone's resize handle along with its body (req).
+      const dx = now.x - (prev?.x ?? now.x);
+      const dy = now.y - (prev?.y ?? now.y);
+      if ((dx !== 0 || dy !== 0) && code === handlers.current.selectedZoneCode) {
+        handleRef.current.foot?.translate(dx, dy);
+      }
+      const fl = toFloor({ x: now.x + anchor.x, y: now.y + anchor.y }, origin, metrics, 0, projection);
+      handlers.current.onZoneGeomPreview(code, { pos: fl, size: z.size });
     });
 
     paper.on("element:pointerup", (view) => {

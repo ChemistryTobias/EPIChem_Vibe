@@ -137,8 +137,10 @@ export interface LevelConfig {
    * Reconcile the hierarchy with geometric zone membership on Save (ADR 0016):
    * write each child's containing zone into its FK where one exists. Implemented
    * at the lab level (station↔zone); absent elsewhere (labs have no zone FK).
+   * Takes the *draft-aware* zones (with computed members) so a zone created or
+   * moved in the same Save is reflected — not just the ones that existed before.
    */
-  syncZoneMembership?: (boxes: Box[]) => Promise<void>;
+  syncZoneMembership?: (boxes: Box[], zones: ZoneShape[]) => Promise<void>;
 }
 
 /**
@@ -457,18 +459,19 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
       return placeZoneArea(z, "lab", lab.code, rect);
     },
     // Reconcile Station.zone_id with the drawing on Save (ADR 0016): a station in
-    // a drawn lab-zone gets that zone; one in none gets null. Only persisted
-    // stations (created ones sync on the next Save). One write per changed
-    // membership, carrying the station's final geometry.
-    syncZoneMembership: async (boxes) => {
-      const drawn = zoneRows.filter((z) => z.width_m > 0 && z.depth_m > 0);
+    // a drawn lab-zone gets that zone; one in none gets null. Membership comes
+    // from the *draft-aware* zones passed in (their `members` were computed
+    // against these same effective boxes), so a zone just created or moved in
+    // this Save participates — the earlier version read the stale persisted rows
+    // and silently skipped brand-new zones. Only persisted stations sync (created
+    // ones pick it up on the next Save). One write per changed membership.
+    syncZoneMembership: async (boxes, zones) => {
+      const desiredByCode = new Map<string, string>();
+      for (const z of zones) for (const code of z.members) desiredByCode.set(code, z.code);
       for (const b of boxes) {
         const s = byCode.get(b.code);
         if (!s) continue;
-        const zone = drawn.find((z) =>
-          rectContainsBox({ x: z.pos_x, y: z.pos_y }, { x: z.width_m, y: z.depth_m }, b.pos, b.size),
-        );
-        const desired = zone?.code ?? null;
+        const desired = desiredByCode.get(b.code) ?? null;
         if (desired !== zoneCodeOf(s)) {
           await reshapeStation(s, lab.code, desired, {
             pos_x: b.pos.x,
