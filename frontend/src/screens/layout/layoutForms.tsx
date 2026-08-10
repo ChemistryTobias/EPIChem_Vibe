@@ -40,6 +40,7 @@ export function GeometryForm({
   live,
   syncVersion,
   showHeight,
+  staged,
   onStage,
   onApply,
   onCancel,
@@ -48,6 +49,9 @@ export function GeometryForm({
   live: BoxGeometry;
   syncVersion: number;
   showHeight: boolean;
+  /** Whether this box already has a staged change (a drag/resize) — so Apply is
+   * enabled even before the fields are touched. Combined with local edits. */
+  staged: boolean;
   /** Validate + stage the geometry; return an error to show, or null on success. */
   onStage: (geom: BoxGeometry) => string | null;
   onApply: () => void;
@@ -59,6 +63,9 @@ export function GeometryForm({
   const [sizeY, setSizeY] = useState(show(live.size.y));
   const [height, setHeight] = useState(show(live.height));
   const [error, setError] = useState<string | null>(null);
+  // Whether the fields have been typed since the last resync — so Apply can grey
+  // out until something actually changed (req: like the Save-all button).
+  const [touched, setTouched] = useState(false);
 
   // Resync the fields to the live geometry when a drag/resize pushes new values
   // (syncVersion bumps). Typing doesn't bump it, so manual edits survive.
@@ -69,8 +76,15 @@ export function GeometryForm({
     setSizeY(show(live.size.y));
     setHeight(show(live.height));
     setError(null);
+    setTouched(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncVersion]);
+
+  // Field setter that also flags the form as touched.
+  const edit = (setter: (v: string) => void) => (v: string) => {
+    setter(v);
+    setTouched(true);
+  };
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -94,12 +108,12 @@ export function GeometryForm({
       onClose={onCancel}
     >
       <form className="create-form" onSubmit={submit}>
-        <TextField label="Position X (m)" value={posX} onChange={setPosX} type="number" step="any" />
-        <TextField label="Position Y (m)" value={posY} onChange={setPosY} type="number" step="any" />
-        <TextField label="Footprint X (m)" value={sizeX} onChange={setSizeX} type="number" step="any" />
-        <TextField label="Footprint Y (m)" value={sizeY} onChange={setSizeY} type="number" step="any" />
+        <TextField label="Position X (m)" value={posX} onChange={edit(setPosX)} type="number" step="any" />
+        <TextField label="Position Y (m)" value={posY} onChange={edit(setPosY)} type="number" step="any" />
+        <TextField label="Footprint X (m)" value={sizeX} onChange={edit(setSizeX)} type="number" step="any" />
+        <TextField label="Footprint Y (m)" value={sizeY} onChange={edit(setSizeY)} type="number" step="any" />
         {showHeight && (
-          <TextField label="Height (m)" value={height} onChange={setHeight} type="number" step="any" />
+          <TextField label="Height (m)" value={height} onChange={edit(setHeight)} type="number" step="any" />
         )}
         {error && (
           <p className="create-form__error" role="alert">
@@ -107,7 +121,7 @@ export function GeometryForm({
           </p>
         )}
         <div className="create-form__actions">
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" disabled={!(staged || touched)}>
             Apply
           </Button>
           <Button type="button" onClick={onCancel}>

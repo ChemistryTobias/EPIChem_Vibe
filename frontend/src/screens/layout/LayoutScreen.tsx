@@ -28,6 +28,7 @@ import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useNotify } from "../../components/Notifications";
 import { useAsync } from "../../hooks/useAsync";
+import { setLeaveGuard } from "../../hooks/useHashRoute";
 import { useStickyState } from "../../hooks/useStickyState";
 import { LocationPath } from "./LocationPath";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
@@ -108,6 +109,7 @@ export function LayoutScreen() {
   const [geomSync, setGeomSync] = useState(0); // bumps when a drag pushes new values into the form
   const [editingFloor, setEditingFloor] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [confirmRemoveCode, setConfirmRemoveCode] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const notify = useNotify();
 
@@ -194,9 +196,9 @@ export function LayoutScreen() {
     draft.removes.length > 0 ||
     draft.floor !== null;
 
-  // Don't let a full page reload/close silently drop an unsaved edit session
-  // (req: "I should not be able to leave if I am in edit mode"). In-app
-  // navigation keeps the draft (sticky state), so this guards the browser leave.
+  // Warn before leaving edit mode with unsaved changes (req): a browser
+  // reload/close is caught by `beforeunload`, and an in-app section switch by a
+  // `navigate` leave-guard that asks to confirm.
   useEffect(() => {
     if (!(editable && isDirty)) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -204,7 +206,13 @@ export function LayoutScreen() {
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    setLeaveGuard(() =>
+      window.confirm("You have unsaved layout changes. Leave edit mode and discard them?"),
+    );
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      setLeaveGuard(null);
+    };
   }, [editable, isDirty]);
 
   const effGeometry = useCallback(
@@ -647,7 +655,7 @@ export function LayoutScreen() {
                   {saving ? "Saving…" : "Save"}
                 </Button>
                 <Button variant="secondary" onClick={cancel} disabled={saving}>
-                  Cancel
+                  Inspector mode
                 </Button>
               </>
             ) : (
@@ -777,6 +785,36 @@ export function LayoutScreen() {
                   </div>
                 </div>
 
+                {confirmRemoveCode && (
+                  <div className="layout-confirm" role="dialog" aria-modal="true" aria-label="Remove component?">
+                    <div className="layout-confirm__box">
+                      <p className="layout-confirm__title">
+                        {level.removeVerb} {level.childLabel}?
+                      </p>
+                      <p className="layout-confirm__body">
+                        {level.removeVerb} <strong className="mono">{confirmRemoveCode}</strong>?{" "}
+                        {level.removeVerb === "Delete"
+                          ? "It's staged until you Save, and the delete stays reversible from the revision history."
+                          : "This hides it from the canvas (staged until Save) — reversible from the revision history."}
+                      </p>
+                      <div className="layout-confirm__actions">
+                        <Button
+                          variant="danger"
+                          onClick={() => {
+                            removeSelected(confirmRemoveCode);
+                            setConfirmRemoveCode(null);
+                          }}
+                        >
+                          {level.removeVerb}
+                        </Button>
+                        <Button variant="secondary" onClick={() => setConfirmRemoveCode(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {confirmLeave && (
                   <ConfirmLeave
                     childLabel={level.childLabel}
@@ -839,6 +877,7 @@ export function LayoutScreen() {
             live={displayGeometry(selectedCode) ?? { pos: { x: 0, y: 0 }, size: level.standardSize, height: level.nominalHeight }}
             syncVersion={geomSync}
             showHeight={level.level !== "site"}
+            staged={Boolean(draft.edits[selectedCode]) || isNew(selectedCode)}
             onStage={(geom) => stageGeometryForm(selectedCode, geom)}
             onApply={endGeomSession}
             onCancel={revertGeomSession}
@@ -857,7 +896,7 @@ export function LayoutScreen() {
               if (editable) beginGeomSession(selectedCode);
               else enterEditGeometry(selectedCode);
             }}
-            onRemove={() => selectedCode && removeSelected(selectedCode)}
+            onRemove={() => selectedCode && setConfirmRemoveCode(selectedCode)}
             onClose={() => selectBox(null)}
           />
         )}
