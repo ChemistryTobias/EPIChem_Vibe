@@ -133,6 +133,12 @@ export interface LevelConfig {
   createZone: (code: string, rect: ZoneRect) => Promise<unknown>;
   /** Move/resize a zone's rectangle. */
   placeZone: (code: string, rect: ZoneRect) => Promise<unknown>;
+  /**
+   * Reconcile the hierarchy with geometric zone membership on Save (ADR 0016):
+   * write each child's containing zone into its FK where one exists. Implemented
+   * at the lab level (station↔zone); absent elsewhere (labs have no zone FK).
+   */
+  syncZoneMembership?: (boxes: Box[]) => Promise<void>;
 }
 
 /**
@@ -449,6 +455,30 @@ function labLevel(lab: Lab, site: Site | null, data: LayoutData): LevelConfig {
     placeZone: (code, rect) => {
       const z = zoneRows.find((zz) => zz.code === code)!;
       return placeZoneArea(z, "lab", lab.code, rect);
+    },
+    // Reconcile Station.zone_id with the drawing on Save (ADR 0016): a station in
+    // a drawn lab-zone gets that zone; one in none gets null. Only persisted
+    // stations (created ones sync on the next Save). One write per changed
+    // membership, carrying the station's final geometry.
+    syncZoneMembership: async (boxes) => {
+      const drawn = zoneRows.filter((z) => z.width_m > 0 && z.depth_m > 0);
+      for (const b of boxes) {
+        const s = byCode.get(b.code);
+        if (!s) continue;
+        const zone = drawn.find((z) =>
+          rectContainsBox({ x: z.pos_x, y: z.pos_y }, { x: z.width_m, y: z.depth_m }, b.pos, b.size),
+        );
+        const desired = zone?.code ?? null;
+        if (desired !== zoneCodeOf(s)) {
+          await reshapeStation(s, lab.code, desired, {
+            pos_x: b.pos.x,
+            pos_y: b.pos.y,
+            size_x_m: b.size.x,
+            size_y_m: b.size.y,
+            height_m: b.height,
+          });
+        }
+      }
     },
   };
 }

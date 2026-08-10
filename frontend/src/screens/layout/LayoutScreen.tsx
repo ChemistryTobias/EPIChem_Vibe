@@ -552,6 +552,10 @@ export function LayoutScreen() {
       }
       for (const code of d.removes) await l.remove(code);
       if (d.floor) await l.resizeFloor(d.floor);
+      // Reconcile the hierarchy with geometric zone membership (ADR 0016) — a
+      // station drawn inside a zone gets that zone_id, so the tree/API agree with
+      // the drawing. Computed from the final (draft-aware) boxes.
+      await l.syncZoneMembership?.(effModel.boxes);
       setDraft(EMPTY_DRAFT);
       setSelectedCode(null);
       layout.reload();
