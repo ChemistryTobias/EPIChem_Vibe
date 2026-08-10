@@ -52,6 +52,10 @@ export interface IsometricPaperOptions {
   onMove: (code: string, pos: FloorPos) => void;
   /** A box was resized via a handle: new footprint + height, in canvas units. */
   onReshape: (code: string, size: { x: number; y: number }, height: number) => void;
+  /** A zone was dragged to a new floor position (ADR 0015), in canvas units. */
+  onMoveZone: (code: string, pos: FloorPos) => void;
+  /** A zone was resized via its handle: new footprint, in canvas units. */
+  onReshapeZone: (code: string, size: { x: number; y: number }) => void;
   /** Continuous geometry while a box is being dragged or handle-resized (not yet
    * released) — drives the live geometry editor (req: values change immediately). */
   onGeomPreview: (code: string, geom: { pos: FloorPos; size: { x: number; y: number }; height: number }) => void;
@@ -78,9 +82,11 @@ const ZOOM_MAX = 4;
 /** The bits of a pointer/wheel event the pan/zoom handlers need. */
 type PointerLike = { clientX: number; clientY: number; preventDefault?: () => void };
 
-/** A handle drag in progress: which handle, and the box it resizes. */
+/** A handle drag in progress: which handle, and the box/zone it resizes. */
 interface Drag {
   kind: "foot" | "height";
+  /** Whether the handle is resizing a box or a zone rectangle (ADR 0015). */
+  target: "box" | "zone";
   box: Box;
   origin: Point;
   metrics: TileMetrics;
@@ -124,6 +130,8 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
   // Grandchild hint elements grouped by their parent box's code, so a box drag
   // (or a height/foot resize) can move/re-elevate its hints live with it.
   const outlinesRef = useRef(new Map<string, { el: dia.Element; o: Outline }[]>());
+  // Zone area elements by code, so a zone drag/resize can repaint one live.
+  const zonesRef = useRef(new Map<string, dia.Element>());
   // The origin/metrics/projection the last redraw used — the change:position
   // handler needs them to re-project outlines while a box drags.
   const drawRef = useRef<{ origin: Point; metrics: TileMetrics; projection: Projection }>({
@@ -180,6 +188,32 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       },
     });
     return shape;
+  };
+
+  // Paint a zone area (flat, ADR 0015). Main render and live drag/resize both go
+  // through this, so a dragged zone repaints identically to a reloaded one.
+  const paintZone = (
+    el: dia.Element,
+    z: { code: string; label: string },
+    geom: { pos: FloorPos; size: { x: number; y: number } },
+    origin: Point,
+    metrics: TileMetrics,
+    projection: Projection,
+    selected: boolean,
+  ) => {
+    const shape = boxShape(geom.pos, geom.size, 0, origin, metrics, projection);
+    el.position(shape.position.x, shape.position.y);
+    el.resize(shape.size.width, shape.size.height);
+    el.set("anchor", shape.anchor);
+    el.attr({
+      area: {
+        points: shape.faces.top,
+        stroke: selected ? "#00B1EA" : "rgba(140, 149, 25, 0.9)",
+        strokeDasharray: selected ? "0" : "6,4",
+        strokeWidth: selected ? 2.5 : 1.5,
+      },
+      zlabel: { text: z.label, x: shape.label.x, y: shape.label.y },
+    });
   };
 
   // Paint a grandchild hint polygon at its parent's height (on the top face).
@@ -239,7 +273,9 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       interactive: (cellView) => {
         const type = cellView.model.get("type");
         if (type === "epi.Handle") return true; // draggable; we read its position
-        return handlers.current.editable && type === "epi.Box";
+        // Boxes and zones are both draggable in edit mode (ADR 0015: zones move
+        // and resize on the canvas now, not only via the inspector).
+        return handlers.current.editable && (type === "epi.Box" || type === "epi.Zone");
       },
     });
 
@@ -295,17 +331,27 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // preview it live, and commit the snapped result on release.
     paper.on("element:pointerdown", (view) => {
       const type = view.model.get("type");
-      // Suppress redraws for the duration of a box move or handle resize.
-      if (type === "epi.Box" || type === "epi.Handle") draggingRef.current = true;
+      // Suppress redraws for the duration of a box/zone move or handle resize.
+      if (type === "epi.Box" || type === "epi.Zone" || type === "epi.Handle") draggingRef.current = true;
       const kind = view.model.get("handle") as "foot" | "height" | undefined;
       if (!kind) return;
-      const { model, projection, selectedCode } = handlers.current;
-      const box = model.boxes.find((b) => b.code === selectedCode);
+      const target = (view.model.get("handleTarget") as "box" | "zone" | undefined) ?? "box";
+      const { model, projection, selectedCode, selectedZoneCode } = handlers.current;
+      // The handle resizes either the selected box or the selected zone; build a
+      // generic box-like geometry either way (a zone is flat: height 0).
+      let box: Box | undefined;
+      if (target === "zone") {
+        const z = (model.zones ?? []).find((zz) => zz.code === selectedZoneCode);
+        if (z) box = { code: z.code, pos: z.pos, size: z.size, height: 0, fill: { top: "", left: "", right: "" }, label: z.label, badge: false };
+      } else {
+        box = model.boxes.find((b) => b.code === selectedCode);
+      }
       if (!box) return;
       const { metrics, origin } = dimsFor(model, projection);
       const centre = { x: box.pos.x + box.size.x / 2, y: box.pos.y + box.size.y / 2 };
       dragRef.current = {
         kind,
+        target,
         box,
         origin,
         metrics,
@@ -328,24 +374,30 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
         // The footprint handle sits at the far corner at height 0 (the box's
         // lowest vertex — "at the bottom"), so invert there, not on the top face.
         const far = toFloor({ x: px, y: py }, drag.origin, drag.metrics, 0, projection);
-        const others = model.boxes
-          .filter((b) => b.code !== drag.box.code)
-          .map((b) => ({ pos: b.pos, size: b.size, height: b.height }));
+        // A zone snaps to (and may overlap) the boxes so it can be sized to
+        // *encompass* a lab/station (ADR 0015); a box snaps to and is blocked by
+        // its siblings. So both use box edges to snap, but only a box collision-caps.
+        const boxes = model.boxes.filter((b) => b.code !== drag.box.code).map((b) => ({ pos: b.pos, size: b.size, height: b.height }));
+        const clampOthers = drag.target === "zone" ? [] : boxes;
         // Soft-snap the far edge the same gentle way a move snaps: onto a grid line
         // or neighbour edge only when within tolerance, else keep the float — so a
-        // resize isn't forced to whole grid cells / integers (req). The near corner
-        // is fixed, so only this edge moves.
+        // resize isn't forced to whole grid cells / integers (req).
         const pxPerUnit = projection === "2d" ? drag.metrics.scale2d : Math.hypot(drag.metrics.mHalfW, drag.metrics.mHalfH);
         const tolU = (handlers.current.snapPx ?? DEFAULT_SNAP_PX) / pxPerUnit;
-        const farX = snapEdge(far.x, gridU, others.flatMap((o) => [o.pos.x, o.pos.x + o.size.x]), tolU);
-        const farY = snapEdge(far.y, gridU, others.flatMap((o) => [o.pos.y, o.pos.y + o.size.y]), tolU);
+        const farX = snapEdge(far.x, gridU, boxes.flatMap((o) => [o.pos.x, o.pos.x + o.size.x]), tolU);
+        const farY = snapEdge(far.y, gridU, boxes.flatMap((o) => [o.pos.y, o.pos.y + o.size.y]), tolU);
         const want = { x: Math.max(gridU, farX - drag.box.pos.x), y: Math.max(gridU, farY - drag.box.pos.y) };
-        // Cap it so it can't grow through a neighbour or off the floor (req): it
-        // stops flush against whatever's in the way, live.
-        drag.size = clampResize(drag.box.pos, want, { widthU: model.widthU, depthU: model.depthU, gridU }, others);
+        // Cap it so it can't grow through a neighbour (boxes only) or off the floor.
+        drag.size = clampResize(drag.box.pos, want, { widthU: model.widthU, depthU: model.depthU, gridU }, clampOthers);
       } else {
         // Only the vertical delta matters: height rises as the handle goes up.
         drag.height = Math.max(gridU, roundTo((drag.centreBaseY - py) / drag.metrics.heightUnit, gridU));
+      }
+
+      if (drag.target === "zone") {
+        const zEl = zonesRef.current.get(drag.box.code);
+        if (zEl) paintZone(zEl, { code: drag.box.code, label: drag.box.label }, { pos: drag.box.pos, size: drag.size }, drag.origin, drag.metrics, projection, true);
+        return; // zones have no height handle, no child hints, no geometry editor
       }
 
       const tile = tilesRef.current.get(drag.box.code);
@@ -402,30 +454,37 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       const drag = dragRef.current;
       if (drag) {
         dragRef.current = null;
-        handlers.current.onReshape(drag.box.code, drag.size, drag.height);
+        if (drag.target === "zone") handlers.current.onReshapeZone(drag.box.code, drag.size);
+        else handlers.current.onReshape(drag.box.code, drag.size, drag.height);
+        return;
+      }
+
+      const { model, projection } = handlers.current;
+      const { metrics, origin } = dimsFor(model, projection);
+      const pxTol = handlers.current.snapPx ?? DEFAULT_SNAP_PX;
+      const pxPerUnit = projection === "2d" ? metrics.scale2d : Math.hypot(metrics.mHalfW, metrics.mHalfH);
+      const anchor = view.model.get("anchor") as { x: number; y: number };
+      const position = view.model.position();
+      const dropped = toFloor({ x: position.x + anchor.x, y: position.y + anchor.y }, origin, metrics, 0, projection);
+
+      // A zone move: snap to grid / box edges (so it can be aligned to a lab or
+      // station), but it may overlap them, and it writes immediately (ADR 0015).
+      if (view.model.get("type") === "epi.Zone") {
+        const zCode = view.model.get("zoneCode") as string | undefined;
+        const z = (model.zones ?? []).find((zz) => zz.code === zCode);
+        if (!zCode || !z) return;
+        const next = softSnap(dropped, z.size, model, [], pxTol / pxPerUnit);
+        handlers.current.onMoveZone(zCode, next);
         return;
       }
 
       // Otherwise it's a box move: invert the dropped anchor back to floor units.
-      const { model, projection } = handlers.current;
       const code = view.model.get("boxCode") as string | undefined;
       const box = model.boxes.find((b) => b.code === code);
       if (!code || !box) return;
-      const { metrics, origin } = dimsFor(model, projection);
-      const anchor = view.model.get("anchor") as { x: number; y: number };
-      const position = view.model.position();
-      const dropped = toFloor(
-        { x: position.x + anchor.x, y: position.y + anchor.y },
-        origin,
-        metrics,
-        0,
-        projection,
-      );
       // Soft snap: only pull an edge onto a grid line / neighbour edge if it lands
       // within a few px of one — otherwise keep the free float position (req). The
       // tolerance is a variable (settable later), and deliberately gentle.
-      const pxTol = handlers.current.snapPx ?? DEFAULT_SNAP_PX;
-      const pxPerUnit = projection === "2d" ? metrics.scale2d : Math.hypot(metrics.mHalfW, metrics.mHalfH);
       const others = model.boxes
         .filter((b) => b.code !== code)
         .map((b) => ({ pos: b.pos, size: b.size, height: b.height }));
@@ -544,6 +603,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     graph.clear();
     tilesRef.current.clear();
     outlinesRef.current.clear();
+    zonesRef.current.clear();
     handleRef.current = { foot: null, height: null };
 
     const floor = new FloorGrid({ position: { x: 0, y: 0 }, size: { width, height } });
@@ -554,23 +614,14 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     graph.addCell(floor);
 
     // Zones (ADR 0015): flat translucent areas under everything else, so boxes
-    // and outlines read over them. Selectable; the selected one gets a solid
-    // accent border.
+    // and outlines read over them. Selectable, and — in edit mode — draggable and
+    // resizable (below). The selected one gets a solid accent border.
     for (const z of model.zones ?? []) {
-      const shape = boxShape(z.pos, z.size, 0, origin, metrics, projection);
-      const area = new ZoneArea({ position: shape.position, size: shape.size });
+      const area = new ZoneArea();
       area.set("zoneCode", z.code);
-      const selected = z.code === selectedZoneCode;
-      area.attr({
-        area: {
-          points: shape.faces.top,
-          stroke: selected ? "#00B1EA" : "rgba(140, 149, 25, 0.9)",
-          strokeDasharray: selected ? "0" : "6,4",
-          strokeWidth: selected ? 2.5 : 1.5,
-        },
-        zlabel: { text: z.label, x: shape.label.x, y: shape.label.y },
-      });
+      paintZone(area, z, { pos: z.pos, size: z.size }, origin, metrics, projection, z.code === selectedZoneCode);
       graph.addCell(area);
+      zonesRef.current.set(z.code, area);
     }
 
     // `boxes` are already sorted back-to-front (painter's algorithm, §10.3).
@@ -607,6 +658,16 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       if (projection === "iso" && heightHandle) {
         handleRef.current.height = addHandle(graph, "height", p.x + shape.apex.x, p.y + shape.apex.y);
       }
+    }
+    // A footprint handle on the selected zone too (edit mode), so a zone resizes
+    // on the canvas, not only via the inspector (ADR 0015). Zones are flat — no
+    // height handle. Tagged `handleTarget: "zone"` so the drag routes to the zone.
+    const selZone = editable ? (model.zones ?? []).find((z) => z.code === selectedZoneCode) : undefined;
+    if (selZone) {
+      const shape = boxShape(selZone.pos, selZone.size, 0, origin, metrics, projection);
+      const handle = addHandle(graph, "foot", shape.position.x + shape.farBottom.x, shape.position.y + shape.farBottom.y);
+      handle.set("handleTarget", "zone");
+      handleRef.current.foot = handle;
     }
     redrawingRef.current = false;
     // `container` is a dep so this re-runs in the same commit the paper is

@@ -30,7 +30,7 @@ import { useNotify } from "../../components/Notifications";
 import { useAsync } from "../../hooks/useAsync";
 import { LocationPath } from "./LocationPath";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
-import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, projectOutline, rectContainsBox, slidePos, sortBoxes } from "./isometric";
+import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, projectOutline, rectContainsBox, round3, slidePos, sortBoxes } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
 import { ZoneInspector, ZoneRectForm } from "./ZoneInspector";
 import { FloorForm, GeometryForm } from "./layoutForms";
@@ -348,6 +348,25 @@ export function LayoutScreen() {
     [effGeometry, constrain, stageGeometry, level.childLabel, beginGeomSession],
   );
 
+  // Drag/resize a zone on the canvas (ADR 0015) — the immediate-write mirror of
+  // the numeric form, so a zone relocates/resizes by hand, not only via the
+  // inspector. Gated on a clean box draft by `runZoneWrite` (hoisted below); a
+  // rejected write snaps the zone back on the next redraw.
+  const onMoveZone = (code: string, pos: FloorPos) => {
+    const z = effModel.zones?.find((zz) => zz.code === code);
+    if (!z) return;
+    void runZoneWrite(() =>
+      level.placeZone(code, clampZoneRect({ pos_x: pos.x, pos_y: pos.y, width_m: z.size.x, depth_m: z.size.y })),
+    );
+  };
+  const onReshapeZone = (code: string, size: { x: number; y: number }) => {
+    const z = effModel.zones?.find((zz) => zz.code === code);
+    if (!z) return;
+    void runZoneWrite(() =>
+      level.placeZone(code, clampZoneRect({ pos_x: z.pos.x, pos_y: z.pos.y, width_m: size.x, depth_m: size.y })),
+    );
+  };
+
   const { containerRef, zoomIn, zoomOut, resetView } = useIsometricPaper({
     model: effModel,
     projection,
@@ -365,6 +384,8 @@ export function LayoutScreen() {
     },
     onMove,
     onReshape,
+    onMoveZone,
+    onReshapeZone,
     onGeomPreview,
     snapPx,
   });
@@ -497,18 +518,24 @@ export function LayoutScreen() {
     void runZoneWrite(() => deleteNode("Zone", selectedZoneCode), () => selectZone(null));
   };
 
+  // Clamp a zone rectangle inside the floor, at 3-decimal precision.
+  const clampZoneRect = (rect: ZoneRect): ZoneRect => {
+    const width_m = round3(Math.min(rect.width_m, floorEff.widthU));
+    const depth_m = round3(Math.min(rect.depth_m, floorEff.depthU));
+    return {
+      width_m,
+      depth_m,
+      pos_x: round3(Math.min(Math.max(rect.pos_x, 0), Math.max(floorEff.widthU - width_m, 0))),
+      pos_y: round3(Math.min(Math.max(rect.pos_y, 0), Math.max(floorEff.depthU - depth_m, 0))),
+    };
+  };
+
   // Clamp a zone rectangle inside the floor, then write it. Returns an error
   // string (shown in the form) or null on success.
   const saveZoneRect = async (rect: ZoneRect): Promise<string | null> => {
     if (!selectedZoneCode) return "No zone selected.";
     if (rect.width_m <= 0 || rect.depth_m <= 0) return "Zone width and depth must be positive.";
-    const clamped: ZoneRect = {
-      width_m: Math.min(rect.width_m, floorEff.widthU),
-      depth_m: Math.min(rect.depth_m, floorEff.depthU),
-      pos_x: Math.min(Math.max(rect.pos_x, 0), Math.max(floorEff.widthU - rect.width_m, 0)),
-      pos_y: Math.min(Math.max(rect.pos_y, 0), Math.max(floorEff.depthU - rect.depth_m, 0)),
-    };
-    const err = await runZoneWrite(() => level.placeZone(selectedZoneCode, clamped));
+    const err = await runZoneWrite(() => level.placeZone(selectedZoneCode, clampZoneRect(rect)));
     if (!err) setEditingZoneRect(false);
     return err;
   };
