@@ -36,7 +36,7 @@ import { ZoneInspector, ZoneRectForm } from "./ZoneInspector";
 import { FloorForm, GeometryForm } from "./layoutForms";
 import { buildLevel } from "./levels";
 import type { BoxGeometry, FloorGeometry, LayoutData, LevelConfig, LevelContext } from "./levels";
-import { useIsometricPaper } from "./useIsometricPaper";
+import { DEFAULT_SNAP_PX, useIsometricPaper } from "./useIsometricPaper";
 
 import "./LayoutScreen.css";
 
@@ -84,6 +84,9 @@ export function LayoutScreen() {
   const [editingZoneRect, setEditingZoneRect] = useState(false);
   const [zoneBusy, setZoneBusy] = useState(false);
   const [projection, setProjection] = useState<Projection>("iso");
+  // Move soft-snap tolerance, px. Held in state (not a fixed literal) so a
+  // settings panel can tune it later (req); gentle by default.
+  const [snapPx] = useState<number>(DEFAULT_SNAP_PX);
   const [editable, setEditable] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [bump, setBump] = useState(0); // forces a canvas redraw (snap-back on reject)
@@ -363,6 +366,7 @@ export function LayoutScreen() {
     onMove,
     onReshape,
     onGeomPreview,
+    snapPx,
   });
 
   // ---- navigation (inspect mode only; LocationPath is `locked` in edit) -----

@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
 import type { Box, CanvasModel, FloorPos, Outline, Point, Projection, TileMetrics } from "./isometric";
-import { DEFAULT_METRICS, TARGET_PX, canvasExtent, clampResize, metricsFor, projectOutline, softSnap, toFloor, toScreen } from "./isometric";
+import { DEFAULT_METRICS, TARGET_PX, canvasExtent, clampResize, metricsFor, softSnap, toFloor, toScreen } from "./isometric";
 import {
   BoxTile,
   FloorGrid,
@@ -55,6 +55,10 @@ export interface IsometricPaperOptions {
   /** Continuous geometry while a box is being dragged or handle-resized (not yet
    * released) — drives the live geometry editor (req: values change immediately). */
   onGeomPreview: (code: string, geom: { pos: FloorPos; size: { x: number; y: number }; height: number }) => void;
+  /** Move soft-snap tolerance, in screen px — how close an edge must come to a
+   * grid line / neighbour edge before it snaps. A variable (not a fixed literal)
+   * so a settings panel can tune it later; defaults to `DEFAULT_SNAP_PX`. */
+  snapPx?: number;
 }
 
 const CELL_NAMESPACE = {
@@ -64,6 +68,9 @@ const CELL_NAMESPACE = {
 
 const MARGIN = 24;
 const HANDLE = 12; // handle square side (shapes.ts)
+/** Default move soft-snap tolerance, px. Deliberately gentle (a box mostly keeps
+ * its free float position); a settings panel can override via `snapPx`. */
+export const DEFAULT_SNAP_PX = 6;
 const ZOOM_STEP = 1.2; // per button press; the wheel uses a gentler factor
 const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 4;
@@ -244,12 +251,18 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       return { metrics, origin };
     };
 
-    // Re-fit whenever the container resizes (window, inspector open/close, …).
-    const ro = new ResizeObserver((entries) => {
-      const r = entries[0]?.contentRect;
-      if (r) setSize({ w: Math.round(r.width), h: Math.round(r.height) });
-    });
+    // Fit the drawing to the container and re-fit whenever it resizes (window,
+    // inspector open/close, …). Measure immediately too — the ResizeObserver's
+    // first callback lands a frame later, and until then the paper would draw at
+    // the fixed fallback size and not fill the pane (req: it should dynamically
+    // resize with the content window).
+    const measure = () => {
+      const r = container.getBoundingClientRect();
+      if (r.width || r.height) setSize({ w: Math.round(r.width), h: Math.round(r.height) });
+    };
+    const ro = new ResizeObserver(measure);
     ro.observe(container);
+    measure();
 
     paper.on("element:pointerclick", (view, evt) => {
       const type = view.model.get("type");
@@ -315,16 +328,21 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
         // The footprint handle sits at the far corner at height 0 (the box's
         // lowest vertex — "at the bottom"), so invert there, not on the top face.
         const far = toFloor({ x: px, y: py }, drag.origin, drag.metrics, 0, projection);
-        const want = {
-          x: Math.max(gridU, roundTo(far.x - drag.box.pos.x, gridU)),
-          y: Math.max(gridU, roundTo(far.y - drag.box.pos.y, gridU)),
-        };
-        // Don't let the box grow through a neighbour or off the floor (req): the
-        // footprint stops flush against whatever's in the way, live.
+        const rawX = Math.max(gridU, far.x - drag.box.pos.x);
+        const rawY = Math.max(gridU, far.y - drag.box.pos.y);
+        // Cap the footprint so it can't grow through a neighbour or off the floor
+        // (req): it stops flush against whatever's in the way, live.
         const others = model.boxes
           .filter((b) => b.code !== drag.box.code)
           .map((b) => ({ pos: b.pos, size: b.size, height: b.height }));
-        drag.size = clampResize(drag.box.pos, want, { widthU: model.widthU, depthU: model.depthU, gridU }, others);
+        const cap = clampResize(drag.box.pos, { x: rawX, y: rawY }, { widthU: model.widthU, depthU: model.depthU, gridU }, others);
+        // Resizing snaps to whole grid cells — no in-between footprints (req):
+        // round to the nearest cell, but never past the collision/floor cap.
+        const toCell = (raw: number, capV: number) => {
+          const v = roundTo(raw, gridU);
+          return Math.max(gridU, v > capV + 1e-9 ? Math.floor(capV / gridU + 1e-9) * gridU : v);
+        };
+        drag.size = { x: toCell(rawX, cap.x), y: toCell(rawY, cap.y) };
       } else {
         // Only the vertical delta matters: height rises as the handle goes up.
         drag.height = Math.max(gridU, roundTo((drag.centreBaseY - py) / drag.metrics.heightUnit, gridU));
@@ -334,23 +352,13 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       if (tile) {
         paintTile(tile, drag.box, { pos: drag.box.pos, size: drag.size, height: drag.height }, drag.origin, drag.metrics, projection, true, showLabels);
       }
-      // The child hints keep riding with the box during a resize (req: same goes
-      // for handles): a height drag re-elevates them to the new top face; a foot
-      // drag re-places them at the same fraction of the growing/shrinking
-      // footprint. `child.o` was computed against `drag.box`, so that's the base.
-      const kids = outlinesRef.current.get(drag.box.code) ?? [];
+      // A *height* drag re-elevates the child hints to the new top face so they
+      // keep riding on top. A *foot* (footprint) drag leaves them exactly where
+      // they are — the near corner is fixed, so the grandchildren don't move when
+      // the box is only resized (req: only movement when dragging).
       if (drag.kind === "height") {
-        for (const child of kids) {
+        for (const child of outlinesRef.current.get(drag.box.code) ?? []) {
           paintOutline(child.el, { ...child.o, height: drag.height }, drag.origin, drag.metrics, projection);
-        }
-      } else {
-        for (const child of kids) {
-          const t = projectOutline(
-            child.o,
-            { pos: drag.box.pos, size: drag.box.size, height: drag.box.height },
-            { pos: drag.box.pos, size: drag.size, height: drag.box.height },
-          );
-          paintOutline(child.el, t, drag.origin, drag.metrics, projection);
         }
       }
       // Live-feed the geometry editor as the handle drags (req).
@@ -414,8 +422,9 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
         projection,
       );
       // Soft snap: only pull an edge onto a grid line / neighbour edge if it lands
-      // within a few px of one — otherwise keep the free float position (req).
-      const pxTol = 10;
+      // within a few px of one — otherwise keep the free float position (req). The
+      // tolerance is a variable (settable later), and deliberately gentle.
+      const pxTol = handlers.current.snapPx ?? DEFAULT_SNAP_PX;
       const pxPerUnit = projection === "2d" ? metrics.scale2d : Math.hypot(metrics.mHalfW, metrics.mHalfH);
       const others = model.boxes
         .filter((b) => b.code !== code)

@@ -388,7 +388,7 @@ export function slidePos(g: RectGeom, floor: Floor, others: RectGeom[], from: Fl
   // on the free axis (the tile-collision "move X then Y" resolution).
   const x = sweep1D(from.x, target.x, (v) => free(v, from.y));
   const y = sweep1D(from.y, target.y, (v) => free(x, v));
-  return { pos: { x: round4(x), y: round4(y) }, size, height: g.height };
+  return { pos: { x: round3(x), y: round3(y) }, size, height: g.height };
 }
 
 /**
@@ -409,9 +409,10 @@ function sweep1D(a: number, b: number, ok: (v: number) => boolean): number {
   return lo;
 }
 
-/** Trim float noise from a slid position to 0.1 mm, keeping real (off-grid) values. */
-function round4(v: number): number {
-  return Math.round(v * 1e4) / 1e4;
+/** Round a coordinate to 3 decimals (max precision we keep, req) — 1 mm for a
+ * metre, 1 µm for a mm — trimming float noise while keeping real off-grid values. */
+export function round3(v: number): number {
+  return Math.round(v * 1e3) / 1e3;
 }
 
 /**
@@ -449,7 +450,7 @@ export function softSnap(
         }
       }
     }
-    return round4(p + best);
+    return round3(p + best);
   };
   const xLines = others.flatMap((o) => [o.pos.x, o.pos.x + o.size.x]);
   const yLines = others.flatMap((o) => [o.pos.y, o.pos.y + o.size.y]);
@@ -485,26 +486,23 @@ export function clampResize(
       if (o.pos.y >= pos.y - 1e-6 && xOverlap) sy = Math.min(sy, o.pos.y - pos.y);
     }
   }
-  return { x: round4(Math.max(sx, minX)), y: round4(Math.max(sy, minY)) };
+  return { x: round3(Math.max(sx, minX)), y: round3(Math.max(sy, minY)) };
 }
 
 /**
- * Re-place a grandchild outline when its parent box has moved or resized in the
- * draft (req: children follow the parent). The child keeps the same *fraction* of
- * the parent's footprint and is lifted to the parent's (new) height so it stays
- * on the top face. `base` is the parent geometry the outline's absolute position
- * was originally computed against; `eff` is the parent's current (draft-aware)
- * geometry. Identity when `eff == base`.
+ * Re-place a grandchild outline when its parent box changed in the draft. The
+ * child *translates* with the parent (so it travels while the box is dragged) and
+ * is lifted to the parent's height (so it rides the top face), but it does **not**
+ * stretch when the parent is only resized — a resize keeps the near corner fixed,
+ * so the translation is zero and the child stays exactly where it is (req:
+ * "resizing … they should just stay in their place, only movement when dragging").
+ * `base` is the parent geometry the outline was computed against; `eff` is the
+ * parent's current (draft-aware) geometry. Identity when `eff == base`.
  */
 export function projectOutline(o: Outline, base: RectGeom, eff: RectGeom): Outline {
-  const fx = base.size.x > 1e-9 ? (o.pos.x - base.pos.x) / base.size.x : 0;
-  const fy = base.size.y > 1e-9 ? (o.pos.y - base.pos.y) / base.size.y : 0;
-  const rx = base.size.x > 1e-9 ? o.size.x / base.size.x : 1;
-  const ry = base.size.y > 1e-9 ? o.size.y / base.size.y : 1;
   return {
     ...o,
-    pos: { x: eff.pos.x + fx * eff.size.x, y: eff.pos.y + fy * eff.size.y },
-    size: { x: rx * eff.size.x, y: ry * eff.size.y },
+    pos: { x: o.pos.x + (eff.pos.x - base.pos.x), y: o.pos.y + (eff.pos.y - base.pos.y) },
     height: eff.height,
   };
 }

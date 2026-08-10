@@ -24,8 +24,9 @@ const num = (v: string, fallback: number) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-/** Trim float noise for display without hiding real off-grid values. */
-const show = (v: number) => String(Math.round(v * 1e4) / 1e4);
+/** Trim float noise for display to at most 3 decimals (req: max precision 3),
+ * without hiding real off-grid values. */
+const show = (v: number) => String(Math.round(v * 1e3) / 1e3);
 
 /**
  * The live geometry editor (req #5). It opens automatically when a box is dragged

@@ -270,12 +270,14 @@ describe("projectOutline (grandchild hints follow the parent)", () => {
     expect(r.height).toBe(1.2);
   });
 
-  test("scales the fraction with a resized parent", () => {
+  test("stays put and unstretched when the parent is only resized", () => {
+    // A resize keeps the near corner fixed, so the child doesn't move or scale
+    // (req: subcomponents stay in place on resize — only movement when dragging).
     const base = { pos: { x: 0, y: 0 }, size: { x: 4, y: 4 }, height: 0.5 };
     const eff = { pos: { x: 0, y: 0 }, size: { x: 8, y: 8 }, height: 0.5 };
     const r = projectOutline(o, base, eff);
-    expect(r.pos).toEqual({ x: 2, y: 2 }); // 1/4 of 8
-    expect(r.size).toEqual({ x: 2, y: 2 });
+    expect(r.pos).toEqual({ x: 1, y: 1 });
+    expect(r.size).toEqual({ x: 1, y: 1 });
   });
 });
 
