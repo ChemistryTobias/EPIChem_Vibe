@@ -173,6 +173,11 @@ export interface BoxFill {
   top: string;
   left: string;
   right: string;
+  /** Optional top-face stroke when unselected (defaults to white). Lets a flat
+   * lab read like a zone: a translucent fill with a coloured border (req). */
+  stroke?: string;
+  /** Optional top-face stroke dash (defaults to solid) — the zone look. */
+  dash?: string;
 }
 
 /**
@@ -451,6 +456,56 @@ export function softSnap(
   return {
     x: axis(pos.x, size.x, floor.gridU, xLines),
     y: axis(pos.y, size.y, floor.gridU, yLines),
+  };
+}
+
+/**
+ * The largest footprint a *resized* box may grow to from its fixed near corner
+ * (`pos`) without leaving the floor or overlapping a neighbour (req: "if a device
+ * or station is in the way while resizing, don't allow it"). Only the far edges
+ * move; each axis is limited to the floor edge and to the nearest neighbour that
+ * lies ahead on that axis and overlaps on the other. Run twice so the two axes'
+ * limits settle together. Never smaller than one grid cell.
+ */
+export function clampResize(
+  pos: FloorPos,
+  size: { x: number; y: number },
+  floor: Floor,
+  others: RectGeom[],
+): { x: number; y: number } {
+  const minX = Math.min(floor.gridU || 0.01, floor.widthU);
+  const minY = Math.min(floor.gridU || 0.01, floor.depthU);
+  let sx = Math.min(size.x, floor.widthU - pos.x);
+  let sy = Math.min(size.y, floor.depthU - pos.y);
+  for (let pass = 0; pass < 2; pass++) {
+    for (const o of others) {
+      const yOverlap = pos.y < o.pos.y + o.size.y - 1e-6 && pos.y + sy > o.pos.y + 1e-6;
+      const xOverlap = pos.x < o.pos.x + o.size.x - 1e-6 && pos.x + sx > o.pos.x + 1e-6;
+      if (o.pos.x >= pos.x - 1e-6 && yOverlap) sx = Math.min(sx, o.pos.x - pos.x);
+      if (o.pos.y >= pos.y - 1e-6 && xOverlap) sy = Math.min(sy, o.pos.y - pos.y);
+    }
+  }
+  return { x: round4(Math.max(sx, minX)), y: round4(Math.max(sy, minY)) };
+}
+
+/**
+ * Re-place a grandchild outline when its parent box has moved or resized in the
+ * draft (req: children follow the parent). The child keeps the same *fraction* of
+ * the parent's footprint and is lifted to the parent's (new) height so it stays
+ * on the top face. `base` is the parent geometry the outline's absolute position
+ * was originally computed against; `eff` is the parent's current (draft-aware)
+ * geometry. Identity when `eff == base`.
+ */
+export function projectOutline(o: Outline, base: RectGeom, eff: RectGeom): Outline {
+  const fx = base.size.x > 1e-9 ? (o.pos.x - base.pos.x) / base.size.x : 0;
+  const fy = base.size.y > 1e-9 ? (o.pos.y - base.pos.y) / base.size.y : 0;
+  const rx = base.size.x > 1e-9 ? o.size.x / base.size.x : 1;
+  const ry = base.size.y > 1e-9 ? o.size.y / base.size.y : 1;
+  return {
+    ...o,
+    pos: { x: eff.pos.x + fx * eff.size.x, y: eff.pos.y + fy * eff.size.y },
+    size: { x: rx * eff.size.x, y: ry * eff.size.y },
+    height: eff.height,
   };
 }
 

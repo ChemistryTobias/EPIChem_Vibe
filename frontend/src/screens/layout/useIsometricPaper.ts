@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { dia, shapes } from "@joint/core";
 
 import type { Box, CanvasModel, FloorPos, Outline, Point, Projection, TileMetrics } from "./isometric";
-import { DEFAULT_METRICS, TARGET_PX, canvasExtent, metricsFor, softSnap, toFloor, toScreen } from "./isometric";
+import { DEFAULT_METRICS, TARGET_PX, canvasExtent, clampResize, metricsFor, projectOutline, softSnap, toFloor, toScreen } from "./isometric";
 import {
   BoxTile,
   FloorGrid,
@@ -158,8 +158,9 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       top: {
         points: shape.faces.top,
         fill: box.fill.top,
-        stroke: selected ? "#00B1EA" : "#FFFFFF",
-        strokeWidth: selected ? 3 : 1,
+        stroke: selected ? "#00B1EA" : (box.fill.stroke ?? "#FFFFFF"),
+        strokeWidth: selected ? 3 : box.fill.stroke ? 1.5 : 1,
+        strokeDasharray: selected ? "0" : (box.fill.dash ?? "0"),
       },
       left: { points: shape.faces.left, fill: box.fill.left },
       right: { points: shape.faces.right, fill: box.fill.right },
@@ -314,10 +315,16 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
         // The footprint handle sits at the far corner at height 0 (the box's
         // lowest vertex — "at the bottom"), so invert there, not on the top face.
         const far = toFloor({ x: px, y: py }, drag.origin, drag.metrics, 0, projection);
-        drag.size = {
+        const want = {
           x: Math.max(gridU, roundTo(far.x - drag.box.pos.x, gridU)),
           y: Math.max(gridU, roundTo(far.y - drag.box.pos.y, gridU)),
         };
+        // Don't let the box grow through a neighbour or off the floor (req): the
+        // footprint stops flush against whatever's in the way, live.
+        const others = model.boxes
+          .filter((b) => b.code !== drag.box.code)
+          .map((b) => ({ pos: b.pos, size: b.size, height: b.height }));
+        drag.size = clampResize(drag.box.pos, want, { widthU: model.widthU, depthU: model.depthU, gridU }, others);
       } else {
         // Only the vertical delta matters: height rises as the handle goes up.
         drag.height = Math.max(gridU, roundTo((drag.centreBaseY - py) / drag.metrics.heightUnit, gridU));
@@ -327,11 +334,23 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
       if (tile) {
         paintTile(tile, drag.box, { pos: drag.box.pos, size: drag.size, height: drag.height }, drag.origin, drag.metrics, projection, true, showLabels);
       }
-      // Raising/lowering the box lifts its child hints to the new top face too, so
-      // they keep riding on top of it during the resize (req: same goes for handles).
+      // The child hints keep riding with the box during a resize (req: same goes
+      // for handles): a height drag re-elevates them to the new top face; a foot
+      // drag re-places them at the same fraction of the growing/shrinking
+      // footprint. `child.o` was computed against `drag.box`, so that's the base.
+      const kids = outlinesRef.current.get(drag.box.code) ?? [];
       if (drag.kind === "height") {
-        for (const child of outlinesRef.current.get(drag.box.code) ?? []) {
+        for (const child of kids) {
           paintOutline(child.el, { ...child.o, height: drag.height }, drag.origin, drag.metrics, projection);
+        }
+      } else {
+        for (const child of kids) {
+          const t = projectOutline(
+            child.o,
+            { pos: drag.box.pos, size: drag.box.size, height: drag.box.height },
+            { pos: drag.box.pos, size: drag.size, height: drag.box.height },
+          );
+          paintOutline(child.el, t, drag.origin, drag.metrics, projection);
         }
       }
       // Live-feed the geometry editor as the handle drags (req).

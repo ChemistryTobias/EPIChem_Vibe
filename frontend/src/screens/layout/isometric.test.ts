@@ -12,11 +12,13 @@ import {
   DEFAULT_METRICS,
   boxProblems,
   canvasExtent,
+  clampResize,
   clampToFloor,
   depth,
   metricsFor,
   overlapsAny,
   placeNextSlot,
+  projectOutline,
   rectContainsBox,
   rectsOverlap,
   slidePos,
@@ -26,6 +28,7 @@ import {
   toFloor,
   toScreen,
 } from "./isometric";
+import type { Outline } from "./isometric";
 
 const ORIGIN = { x: 0, y: 0 };
 const M = DEFAULT_METRICS;
@@ -225,6 +228,54 @@ describe("softSnap (snap only when near, else float)", () => {
     const others = [{ pos: { x: 3, y: 0 }, size: { x: 1, y: 1 }, height: 0 }];
     // far edge 2.9 snaps onto the neighbour's near edge 3 → box lands at x=2, flush.
     expect(softSnap({ x: 1.9, y: 0 }, { x: 1, y: 1 }, floor, others, 0.2).x).toBeCloseTo(2, 9);
+  });
+});
+
+describe("clampResize (don't grow through a neighbour or off the floor)", () => {
+  test("leaves a free resize untouched", () => {
+    expect(clampResize({ x: 0, y: 0 }, { x: 2, y: 2 }, floor, [])).toEqual({ x: 2, y: 2 });
+  });
+
+  test("stops the far edge flush against a blocking neighbour ahead on x", () => {
+    // Box at (0,0) growing to 3 wide hits B at x=2 (same y band) → capped to 2.
+    const others = [{ pos: { x: 2, y: 0 }, size: { x: 1, y: 1 }, height: 0 }];
+    expect(clampResize({ x: 0, y: 0 }, { x: 3, y: 1 }, floor, others).x).toBeCloseTo(2, 9);
+  });
+
+  test("ignores a neighbour that doesn't overlap on the other axis", () => {
+    // B is at y=2, box only 1 deep at y=0 → no y-overlap, so x is free to the floor.
+    const others = [{ pos: { x: 2, y: 2 }, size: { x: 1, y: 1 }, height: 0 }];
+    expect(clampResize({ x: 0, y: 0 }, { x: 6, y: 1 }, floor, others).x).toBeCloseTo(6, 9);
+  });
+
+  test("caps to the floor edge", () => {
+    expect(clampResize({ x: 4, y: 0 }, { x: 5, y: 1 }, floor, []).x).toBeCloseTo(2, 9); // 6 - 4
+  });
+});
+
+describe("projectOutline (grandchild hints follow the parent)", () => {
+  const o: Outline = { code: "d", parentCode: "s", pos: { x: 1, y: 1 }, size: { x: 1, y: 1 }, height: 0.5 };
+  test("is identity when the parent hasn't moved", () => {
+    const base = { pos: { x: 0, y: 0 }, size: { x: 4, y: 4 }, height: 0.5 };
+    const r = projectOutline(o, base, base);
+    expect(r.pos).toEqual({ x: 1, y: 1 });
+    expect(r.size).toEqual({ x: 1, y: 1 });
+  });
+
+  test("translates with a moved parent and lifts to its new height", () => {
+    const base = { pos: { x: 0, y: 0 }, size: { x: 4, y: 4 }, height: 0.5 };
+    const eff = { pos: { x: 2, y: 3 }, size: { x: 4, y: 4 }, height: 1.2 };
+    const r = projectOutline(o, base, eff);
+    expect(r.pos).toEqual({ x: 3, y: 4 }); // same offset (1,1) from the new corner
+    expect(r.height).toBe(1.2);
+  });
+
+  test("scales the fraction with a resized parent", () => {
+    const base = { pos: { x: 0, y: 0 }, size: { x: 4, y: 4 }, height: 0.5 };
+    const eff = { pos: { x: 0, y: 0 }, size: { x: 8, y: 8 }, height: 0.5 };
+    const r = projectOutline(o, base, eff);
+    expect(r.pos).toEqual({ x: 2, y: 2 }); // 1/4 of 8
+    expect(r.size).toEqual({ x: 2, y: 2 });
   });
 });
 

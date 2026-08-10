@@ -157,7 +157,16 @@ function zoneShapes(rows: Zone[], boxes: Box[]): ZoneShape[] {
 // ---- fills (DESIGN.md brand palette) ---------------------------------------
 
 const GREY: BoxFill = { top: "#A7A7A8", left: "#8E8E8F", right: "#767677" };
-const LAB_FILL: BoxFill = { top: "#00B1EA", left: "#0090BE", right: "#00708F" };
+// Labs are drawn *flat and translucent, like a zone* (req: "I like the labs as
+// transparent as the zones") — a faint blue wash with a dashed blue border, so
+// the floor grid and the station hints on top read straight through it.
+const LAB_FILL: BoxFill = {
+  top: "rgba(0, 177, 234, 0.14)",
+  left: "rgba(0, 144, 190, 0.14)",
+  right: "rgba(0, 112, 143, 0.14)",
+  stroke: "rgba(0, 144, 190, 0.9)",
+  dash: "6,4",
+};
 
 /** Box fill for a device/station by the bound device's operational mode. */
 export function fillForMode(mode: string | null): BoxFill {

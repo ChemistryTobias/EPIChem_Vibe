@@ -30,7 +30,7 @@ import { useNotify } from "../../components/Notifications";
 import { useAsync } from "../../hooks/useAsync";
 import { LocationPath } from "./LocationPath";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
-import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, rectContainsBox, slidePos, sortBoxes } from "./isometric";
+import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, projectOutline, rectContainsBox, slidePos, sortBoxes } from "./isometric";
 import { LayoutInspector } from "./LayoutInspector";
 import { ZoneInspector, ZoneRectForm } from "./ZoneInspector";
 import { FloorForm, GeometryForm } from "./layoutForms";
@@ -147,6 +147,17 @@ export function LayoutScreen() {
       badge: false,
     }));
     const boxes = sortBoxes([...base, ...created]);
+    // Grandchild hints follow the draft: re-place each outline against its
+    // parent box's *effective* (draft-aware) geometry, so a moved/resized lab or
+    // station carries its child footprints with it and they don't snap back to
+    // the persisted position on redraw (req: children move with the parent).
+    const outlines = (level.outlines ?? []).flatMap((o) => {
+      if (draft.removes.includes(o.parentCode)) return [];
+      const eff = boxes.find((b) => b.code === o.parentCode);
+      const base = level.geometryOf(o.parentCode);
+      if (!eff || !base) return eff ? [o] : [];
+      return [projectOutline(o, base, { pos: eff.pos, size: eff.size, height: eff.height })];
+    });
     // Recompute zone membership against the *effective* (draft-aware) boxes, so a
     // station dragged into a zone counts as a member immediately, before Save (req #7).
     const zones = level.zones.map((z) => ({
@@ -158,7 +169,7 @@ export function LayoutScreen() {
       depthU: floorEff.depthU,
       gridU: floorEff.gridU,
       boxes,
-      outlines: level.outlines,
+      outlines,
       zones,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
