@@ -22,7 +22,10 @@ spec:
     lab: LAB-3
     zone: ZONE-FUMEHOOD-2
     station: SPINBOT
-    pose: {x_mm: 1520, y_mm: 300, z_mm: 900, yaw_deg: 0}
+    # Inside the SpinBot footprint, clear of the hotplate: near corner at
+    # (700,200) mm, 140x140 mm box → [700,840]x[200,340] mm.
+    pose: {x_mm: 700, y_mm: 200, z_mm: 900, yaw_deg: 0}
+    footprint: {size_x_mm: 140, size_y_mm: 140, size_z_mm: 120}
   capabilities:
     - stir
   envelope:

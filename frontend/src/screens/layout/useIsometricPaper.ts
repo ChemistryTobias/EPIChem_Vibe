@@ -292,11 +292,22 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     // first callback lands a frame later, and until then the paper would draw at
     // the fixed fallback size and not fill the pane (req: it should dynamically
     // resize with the content window).
+    //
+    // The RO callback is deferred to the *next frame* (rAF), not run inline: the
+    // redraw it triggers reads layout and calls `paper.setDimensions`, and doing
+    // that synchronously inside the RO delivery makes the browser fire
+    // "ResizeObserver loop completed with undelivered notifications" — which, in
+    // the Vite dev overlay, froze the page on every window resize (req). The rAF
+    // breaks the loop and coalesces a burst of resize events into one measure.
+    let rafId = 0;
     const measure = () => {
       const r = container.getBoundingClientRect();
       if (r.width || r.height) setSize({ w: Math.round(r.width), h: Math.round(r.height) });
     };
-    const ro = new ResizeObserver(measure);
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(measure);
+    });
     ro.observe(container);
     measure();
 
@@ -549,6 +560,7 @@ export function useIsometricPaper(options: IsometricPaperOptions) {
     paperRef.current = paper;
 
     return () => {
+      cancelAnimationFrame(rafId);
       ro.disconnect();
       paper.remove();
       graphRef.current = null;

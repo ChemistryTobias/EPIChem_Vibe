@@ -22,7 +22,9 @@ spec:
     lab: LAB-3
     zone: ZONE-FUMEHOOD-2
     station: SPINBOT
-    pose: {x_mm: 1420, y_mm: 300, z_mm: 900, yaw_deg: 0}
+    # Positioned *inside* the 1.2 m x 0.9 m SpinBot footprint (ADR 0012): near
+    # corner at 200 mm, so its 180x160 mm box spans [200,380]x[200,360] mm.
+    pose: {x_mm: 200, y_mm: 200, z_mm: 900, yaw_deg: 0}
     # The device's own footprint box within the station canvas (ADR 0012), in mm.
     footprint: {size_x_mm: 180, size_y_mm: 160, size_z_mm: 120}
   capabilities:
