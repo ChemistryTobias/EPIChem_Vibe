@@ -18,7 +18,7 @@
  * with a clean draft. Not here: the live-status layers (they need live device state).
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { deleteNode, fetchTopology } from "../../api/topology";
 import type { ZoneRect } from "../../api/topology";
@@ -28,6 +28,7 @@ import { Button } from "../../components/Button";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { useNotify } from "../../components/Notifications";
 import { useAsync } from "../../hooks/useAsync";
+import { useStickyState } from "../../hooks/useStickyState";
 import { LocationPath } from "./LocationPath";
 import type { BoxFill, CanvasModel, FloorPos, Projection, RectGeom } from "./isometric";
 import { boxProblems, clampToFloor, overlapsAny, placeNextSlot, projectOutline, rectContainsBox, round3, slidePos, sortBoxes } from "./isometric";
@@ -75,20 +76,23 @@ const toRect = (b: { pos: FloorPos; size: { x: number; y: number }; height: numb
 
 export function LayoutScreen() {
   const layout = useAsync(useCallback(fetchLayout, []));
-  const [siteCode, setSiteCode] = useState<string | null>(null);
-  const [floor, setFloor] = useState(0);
-  const [labCode, setLabCode] = useState<string | null>(null);
-  const [stationCode, setStationCode] = useState<string | null>(null);
-  const [selectedCode, setSelectedCode] = useState<string | null>(null);
-  const [selectedZoneCode, setSelectedZoneCode] = useState<string | null>(null);
+  // Navigation + edit state is *sticky* (ADR 0014, req): leaving the layout
+  // screen and coming back lands on the same level and the same edit session,
+  // rather than reloading from scratch. A full page reload still resets it.
+  const [siteCode, setSiteCode] = useStickyState<string | null>("layout.site", null);
+  const [floor, setFloor] = useStickyState("layout.floor", 0);
+  const [labCode, setLabCode] = useStickyState<string | null>("layout.lab", null);
+  const [stationCode, setStationCode] = useStickyState<string | null>("layout.station", null);
+  const [selectedCode, setSelectedCode] = useStickyState<string | null>("layout.selected", null);
+  const [selectedZoneCode, setSelectedZoneCode] = useStickyState<string | null>("layout.selectedZone", null);
   const [editingZoneRect, setEditingZoneRect] = useState(false);
   const [zoneBusy, setZoneBusy] = useState(false);
-  const [projection, setProjection] = useState<Projection>("iso");
+  const [projection, setProjection] = useStickyState<Projection>("layout.projection", "iso");
   // Move soft-snap tolerance, px. Held in state (not a fixed literal) so a
   // settings panel can tune it later (req); gentle by default.
   const [snapPx] = useState<number>(DEFAULT_SNAP_PX);
-  const [editable, setEditable] = useState(false);
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [editable, setEditable] = useStickyState("layout.editable", false);
+  const [draft, setDraft] = useStickyState<Draft>("layout.draft", EMPTY_DRAFT);
   const [bump, setBump] = useState(0); // forces a canvas redraw (snap-back on reject)
   const [editingGeom, setEditingGeom] = useState(false);
   // A live geometry-edit session (ADR 0014, req #5): dragging/resizing a box opens
@@ -190,6 +194,19 @@ export function LayoutScreen() {
     draft.removes.length > 0 ||
     draft.floor !== null;
 
+  // Don't let a full page reload/close silently drop an unsaved edit session
+  // (req: "I should not be able to leave if I am in edit mode"). In-app
+  // navigation keeps the draft (sticky state), so this guards the browser leave.
+  useEffect(() => {
+    if (!(editable && isDirty)) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [editable, isDirty]);
+
   const effGeometry = useCallback(
     (code: string): BoxGeometry | null => {
       const created = draft.creates.find((c) => c.code === code);
@@ -268,6 +285,18 @@ export function LayoutScreen() {
       });
     },
     [effGeometry, draft],
+  );
+
+  // Inspect-mode "Edit geometry" (req): flip the whole canvas into edit mode and
+  // open the geometry editor for the box in one press, keeping the selection.
+  const enterEditGeometry = useCallback(
+    (code: string) => {
+      setEditable(true);
+      setSelectedZoneCode(null);
+      setEditingZoneRect(false);
+      beginGeomSession(code);
+    },
+    [beginGeomSession, setEditable, setSelectedZoneCode],
   );
 
   // End a session keeping the staged change (Apply, or clicking elsewhere).
@@ -355,6 +384,8 @@ export function LayoutScreen() {
   const onMoveZone = (code: string, pos: FloorPos) => {
     const z = effModel.zones?.find((zz) => zz.code === code);
     if (!z) return;
+    setSelectedZoneCode(code);
+    setEditingZoneRect(true); // auto-open the zone geometry editor, like a box drag (req)
     void runZoneWrite(() =>
       level.placeZone(code, clampZoneRect({ pos_x: pos.x, pos_y: pos.y, width_m: z.size.x, depth_m: z.size.y })),
     );
@@ -362,6 +393,8 @@ export function LayoutScreen() {
   const onReshapeZone = (code: string, size: { x: number; y: number }) => {
     const z = effModel.zones?.find((zz) => zz.code === code);
     if (!z) return;
+    setSelectedZoneCode(code);
+    setEditingZoneRect(true); // auto-open the zone geometry editor, like a box resize (req)
     void runZoneWrite(() =>
       level.placeZone(code, clampZoneRect({ pos_x: z.pos.x, pos_y: z.pos.y, width_m: size.x, depth_m: size.y })),
     );
@@ -776,6 +809,9 @@ export function LayoutScreen() {
           />
         ) : editingZoneRect && zoneRow ? (
           <ZoneRectForm
+            // Re-key on the rect so a canvas drag/resize (which writes then
+            // reloads) refreshes the form's fields to the new values (req).
+            key={`${zoneRow.code}:${zoneRow.pos_x},${zoneRow.pos_y},${zoneRow.width_m},${zoneRow.depth_m}`}
             code={zoneRow.code}
             initial={{
               pos_x: zoneRow.pos_x,
@@ -815,7 +851,12 @@ export function LayoutScreen() {
             zones={effModel.zones ?? []}
             isNew={selectedCode ? isNew(selectedCode) : false}
             editable={editable}
-            onEditGeometry={() => selectedCode && beginGeomSession(selectedCode)}
+            onEditGeometry={() => {
+              if (!selectedCode) return;
+              // In inspect mode this flips the canvas into edit mode first (req).
+              if (editable) beginGeomSession(selectedCode);
+              else enterEditGeometry(selectedCode);
+            }}
             onRemove={() => selectedCode && removeSelected(selectedCode)}
             onClose={() => selectBox(null)}
           />

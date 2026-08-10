@@ -58,6 +58,10 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
 
   const labsBySite = groupByParent(labs, (l) => l.site_id);
   const zonesByLab = groupByParent(zones, (z) => z.lab_id);
+  // Site-scoped zones (ADR 0015: lab_id null, site_id set) hang directly under
+  // their Site — they group labs spatially, so they're leaves here (labs have no
+  // zone FK), but they still belong in the tree so a drawn site-zone shows up.
+  const zonesBySite = groupByParent(zones, (z) => (z.lab_id === null ? z.site_id : null));
   // A station's parent in the tree is its zone if it has one, otherwise its lab.
   const stationsByZone = groupByParent(stations, (s) => s.zone_id);
   const stationsDirectlyUnderLab = groupByParent(
@@ -91,10 +95,10 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
     node("Station", s, (devicesByStation.get(s.id) ?? []).sort(byCode).map(deviceNode));
 
   const roots = [...sites].sort(byCode).map((site) =>
-    node(
-      "Site",
-      site,
-      (labsBySite.get(site.id) ?? []).sort(byCode).map((lab) =>
+    node("Site", site, [
+      // Site-scoped zones first (leaves), then the labs.
+      ...(zonesBySite.get(site.id) ?? []).sort(byCode).map((zone) => node("Zone", zone, [])),
+      ...(labsBySite.get(site.id) ?? []).sort(byCode).map((lab) =>
         node("Lab", lab, [
           // Zones first, then any station sitting directly under the lab.
           ...(zonesByLab.get(lab.id) ?? [])
@@ -105,7 +109,7 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
           ...(stationsDirectlyUnderLab.get(lab.id) ?? []).sort(byCode).map(stationNode),
         ]),
       ),
-    ),
+    ]),
   );
 
   const known = {
@@ -118,11 +122,14 @@ export function buildTopologyTree(snapshot: TopologySnapshot): TopologyTree {
 
   const orphans: TopologyTree["orphans"] = [
     ...labs.filter((l) => !known.Site.has(l.site_id)).map((l) => orphan("Lab", l.code, l.site_id)),
-    // Only lab-scoped zones belong in the lab hierarchy; site-scoped zones
-    // (lab_id null, ADR 0015) are a layout concept and simply aren't in the tree.
+    // A lab-scoped zone whose lab is missing, or a site-scoped zone (lab_id null,
+    // ADR 0015) whose site is missing, is misplaced.
     ...zones
       .filter((z) => z.lab_id !== null && !known.Lab.has(z.lab_id))
       .map((z) => orphan("Zone", z.code, z.lab_id as string)),
+    ...zones
+      .filter((z) => z.lab_id === null && z.site_id !== null && !known.Site.has(z.site_id))
+      .map((z) => orphan("Zone", z.code, z.site_id as string)),
     // A station is misplaced if its lab is missing, or if it names a zone that
     // isn't in the registry.
     ...stations

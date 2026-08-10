@@ -180,6 +180,25 @@ describe("buildTopologyTree", () => {
     expect(labNode.children[0].code).toBe("ST-1");
   });
 
+  test("hangs a site-scoped zone directly under its site (ADR 0015/0016)", () => {
+    const siteZone: Zone = { ...zone("sz1", "SITE-ZONE-1", "l1"), lab_id: null, site_id: "s1" };
+    const { roots, orphans } = buildTopologyTree({
+      ...empty,
+      sites: [site("s1", "SITE-1")],
+      labs: [lab("l1", "LAB-1", "s1")],
+      zones: [siteZone],
+    });
+    const siteNode = roots[0];
+    expect(siteNode.children.map((n) => `${n.kind}:${n.code}`)).toEqual(["Zone:SITE-ZONE-1", "Lab:LAB-1"]);
+    expect(orphans).toEqual([]);
+  });
+
+  test("flags a site-scoped zone whose site is missing as an orphan", () => {
+    const siteZone: Zone = { ...zone("sz1", "SITE-ZONE-1", "l1"), lab_id: null, site_id: "ghost" };
+    const { orphans } = buildTopologyTree({ ...empty, zones: [siteZone] });
+    expect(orphans).toContainEqual({ kind: "Zone", code: "SITE-ZONE-1", parentId: "ghost" });
+  });
+
   test("nests a module and its devices under a station", () => {
     const { roots } = buildTopologyTree({
       ...empty,

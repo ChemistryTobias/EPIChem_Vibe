@@ -69,14 +69,16 @@ export function LayoutInspector({
       subtitle={isNew ? `${level.level} · unsaved` : level.level}
       onClose={onClose}
     >
-      {editable && (
-        <div className="node-actions">
-          <Button onClick={onEditGeometry}>Edit geometry</Button>
+      {/* "Edit geometry" shows in inspect mode too (req): pressing it switches the
+          whole canvas into edit mode and opens the editor. Remove stays edit-only. */}
+      <div className="node-actions">
+        <Button onClick={onEditGeometry}>Edit geometry</Button>
+        {editable && (
           <Button variant="danger" onClick={onRemove}>
             {level.removeVerb}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* A saved box shows the same full registry record as the Hierarchy screen.
           A staged-new box has no row yet. Either way the placement is shown below,
