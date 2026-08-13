@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import Device, DeviceDB
+from .schema import CreateDevice, Device, DeviceDB
 
 router = APIRouter()
 
@@ -32,7 +32,7 @@ def get_device(identifier: str, session: SessionDepends):
 
 # --- POST --------------------------------------------------------------------
 @router.post("/devices", response_model=Device, status_code=201)
-def create_device(body: Device, session: SessionDepends):
+def create_device(body: CreateDevice, session: SessionDepends):
     """Create a new device."""
     device = DeviceDB(**body.model_dump(exclude_none=True))
     try:

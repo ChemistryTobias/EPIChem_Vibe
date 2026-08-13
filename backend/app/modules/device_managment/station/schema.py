@@ -1,4 +1,4 @@
-"""Station schemas: the SQLAlchemy model (StationDB) and the Pydantic model (Station)."""
+"""Station schemas: SQLAlchemy model (StationDB) and Pydantic models (Station / CreateStation / UpdateStation)."""
 
 from typing import Optional
 from uuid import UUID, uuid4
@@ -21,10 +21,18 @@ class StationDB(Database):
 
 
 class Station(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    uuid: Optional[UUID]
+    uuid: UUID
     name: str
     description: Optional[str] = None
-    dimensions: list = Field(default_factory=list)
-    visualizer: dict = Field(default_factory=dict)
+    dimensions: Optional[list] = Field(default_factory=list)
+    visualizer: Optional[dict] = Field(default_factory=dict)
+
+
+class CreateStation(Station):
+    model_config = ConfigDict(from_attributes=True)
+    uuid: Optional[UUID] = None
+
+
+class UpdateStation(Station):
+    uuid: Optional[UUID] = None
+    name: Optional[str] = None

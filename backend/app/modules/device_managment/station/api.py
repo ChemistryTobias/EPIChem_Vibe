@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import Station, StationDB
+from .schema import CreateStation, Station, StationDB
 
 router = APIRouter()
 
@@ -32,7 +32,7 @@ def get_station(identifier: str, session: SessionDepends):
 
 # --- POST --------------------------------------------------------------------
 @router.post("/stations", response_model=Station, status_code=201)
-def create_station(body: Station, session: SessionDepends):
+def create_station(body: CreateStation, session: SessionDepends):
     """Create a new station."""
     station = StationDB(**body.model_dump(exclude_none=True))
     try:

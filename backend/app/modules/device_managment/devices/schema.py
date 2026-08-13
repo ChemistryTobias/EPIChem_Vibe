@@ -1,4 +1,4 @@
-"""Device schemas: the SQLAlchemy model (DeviceDB) and the Pydantic model (Device)."""
+"""Device schemas: SQLAlchemy model (DeviceDB) and Pydantic models (Device / CreateDevice / UpdateDevice)."""
 
 from typing import Optional
 from uuid import UUID, uuid4
@@ -21,10 +21,18 @@ class DeviceDB(Database):
 
 
 class Device(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    uuid: Optional[UUID]
+    uuid: UUID
     name: str
     description: Optional[str] = None
-    dimensions: list = Field(default_factory=list)
-    visualizer: dict = Field(default_factory=dict)
+    dimensions: Optional[list] = Field(default_factory=list)
+    visualizer: Optional[dict] = Field(default_factory=dict)
+
+
+class CreateDevice(Device):
+    model_config = ConfigDict(from_attributes=True)
+    uuid: Optional[UUID] = None
+
+
+class UpdateDevice(Device):
+    uuid: Optional[UUID] = None
+    name: Optional[str] = None

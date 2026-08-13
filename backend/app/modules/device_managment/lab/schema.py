@@ -1,4 +1,4 @@
-"""Lab schemas: the SQLAlchemy model (LabDB) and the Pydantic model (Lab)."""
+"""Lab schemas: SQLAlchemy model (LabDB) and Pydantic models (Lab / CreateLab / UpdateLab)."""
 
 from typing import Optional
 from uuid import UUID, uuid4
@@ -21,10 +21,18 @@ class LabDB(Database):
 
 
 class Lab(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    uuid: Optional[UUID]
+    uuid: UUID
     name: str
     description: Optional[str] = None
-    dimensions: list = Field(default_factory=list)
-    visualizer: dict = Field(default_factory=dict)
+    dimensions: Optional[list] = Field(default_factory=list)
+    visualizer: Optional[dict] = Field(default_factory=dict)
+
+
+class CreateLab(Lab):
+    model_config = ConfigDict(from_attributes=True)
+    uuid: Optional[UUID] = None
+
+
+class UpdateLab(Lab):
+    uuid: Optional[UUID] = None
+    name: Optional[str] = None

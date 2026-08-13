@@ -1,4 +1,4 @@
-"""Zone schemas: the SQLAlchemy model (ZoneDB) and the Pydantic model (Zone)."""
+"""Zone schemas: SQLAlchemy model (ZoneDB) and Pydantic models (Zone / CreateZone / UpdateZone)."""
 
 from typing import Optional
 from uuid import UUID, uuid4
@@ -21,10 +21,18 @@ class ZoneDB(Database):
 
 
 class Zone(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    uuid: Optional[UUID]
+    uuid: UUID
     name: str
     description: Optional[str] = None
-    dimensions: list = Field(default_factory=list)
-    visualizer: dict = Field(default_factory=dict)
+    dimensions: Optional[list] = Field(default_factory=list)
+    visualizer: Optional[dict] = Field(default_factory=dict)
+
+
+class CreateZone(Zone):
+    model_config = ConfigDict(from_attributes=True)
+    uuid: Optional[UUID] = None
+
+
+class UpdateZone(Zone):
+    uuid: Optional[UUID] = None
+    name: Optional[str] = None

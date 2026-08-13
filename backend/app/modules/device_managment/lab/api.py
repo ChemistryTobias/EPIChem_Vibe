@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import Lab, LabDB
+from .schema import CreateLab, Lab, LabDB
 
 router = APIRouter()
 
@@ -32,7 +32,7 @@ def get_lab(identifier: str, session: SessionDepends):
 
 # --- POST --------------------------------------------------------------------
 @router.post("/labs", response_model=Lab, status_code=201)
-def create_lab(body: Lab, session: SessionDepends):
+def create_lab(body: CreateLab, session: SessionDepends):
     """Create a new lab."""
     lab = LabDB(**body.model_dump(exclude_none=True))
     try:

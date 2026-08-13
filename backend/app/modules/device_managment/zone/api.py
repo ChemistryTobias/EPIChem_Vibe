@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import Zone, ZoneDB
+from .schema import CreateZone, Zone, ZoneDB
 
 router = APIRouter()
 
@@ -32,7 +32,7 @@ def get_zone(identifier: str, session: SessionDepends):
 
 # --- POST --------------------------------------------------------------------
 @router.post("/zones", response_model=Zone, status_code=201)
-def create_zone(body: Zone, session: SessionDepends):
+def create_zone(body: CreateZone, session: SessionDepends):
     """Create a new zone."""
     zone = ZoneDB(**body.model_dump(exclude_none=True))
     try:

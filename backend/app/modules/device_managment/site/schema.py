@@ -21,14 +21,19 @@ class SiteDB(Database):
     dimensions: Mapped[list] = mapped_column(JSON, default=list)
     visualizer: Mapped[dict] = mapped_column(JSON, default=dict)
 
-
 class Site(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    uuid: Optional[UUID]
+    uuid: UUID
     name: str
     description: Optional[str] = None
     address: Optional[str] = None
     timezone: Optional[str] = None
-    dimensions: list = Field(default_factory=list)
-    visualizer: dict = Field(default_factory=dict)
+    dimensions: Optional[list] = Field(default_factory=list)
+    visualizer: Optional[dict] = Field(default_factory=dict)
+
+class CreateSite(Site):
+    model_config = ConfigDict(from_attributes=True)
+    uuid: Optional[UUID] = None
+    
+class UpdateSite(Site):
+    uuid: Optional[UUID] = None
+    name: Optional[str] = None
