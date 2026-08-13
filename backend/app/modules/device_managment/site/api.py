@@ -3,8 +3,7 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from app.core.errors import NotFoundError
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from .schema import Site, SiteDB
 
@@ -18,8 +17,7 @@ def get_all_sites(session: SessionDepends):
     return session.query(SiteDB).all()
 
 
-getSide_responses = {404: {"description": "No site found with the given UUID or name."}}
-@router.get("/sites/{identifier}", response_model=Site, responses=getSide_responses)
+@router.get("/sites/{identifier}", response_model=Site)
 def get_site(identifier: str, session: SessionDepends):
     """Get a single site by its UUID or name."""
     try:
@@ -27,16 +25,16 @@ def get_site(identifier: str, session: SessionDepends):
     except ValueError:
         site = session.query(SiteDB).filter_by(name=identifier).first()
     if site is None:
-        raise NotFoundError("No site found with the given UUID or name.")
+        raise HTTPException(status_code=404, detail="No site found with the given UUID or name.")
     return site
 
 
 # --- POST --------------------------------------------------------------------
-createSide_responses = {409: {"description": "A site with the same identifierifier (Name or UUID) already exists."}}
-@router.post("/sites", response_model=Site, status_code=201, responses=createSide_responses)
+@router.post("/sites", response_model=Site, status_code=201)
 def create_site(body: Site, session: SessionDepends):
-    """Create a new site."""
-    site = SiteDB(**body.model_dump())
+    """Create a new site. A duplicate raises IntegrityError, turned into a 409
+    by the fallback handler in core/errors.py."""
+    site = SiteDB(**body.model_dump(exclude_none=True))
     session.add(site)
     session.commit()
     session.refresh(site)
@@ -44,12 +42,12 @@ def create_site(body: Site, session: SessionDepends):
 
 
 # --- PATCH -------------------------------------------------------------------
-# partial update (e.g. change one field) — add when needed
+# partial update — add when needed
 
 
 # --- PUT ---------------------------------------------------------------------
-# full replace of a site — add when needed
+# full replace — add when needed
 
 
 # --- DELETE ------------------------------------------------------------------
-# remove a site — add when needed
+# remove — add when needed

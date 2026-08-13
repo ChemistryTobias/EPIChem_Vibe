@@ -3,8 +3,7 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from app.core.errors import NotFoundError
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from .schema import Device, DeviceDB
 
@@ -18,8 +17,7 @@ def get_all_devices(session: SessionDepends):
     return session.query(DeviceDB).all()
 
 
-get_device_responses = {404: {"description": "No device found with the given UUID or name."}}
-@router.get("/devices/{identifier}", response_model=Device, responses=get_device_responses)
+@router.get("/devices/{identifier}", response_model=Device)
 def get_device(identifier: str, session: SessionDepends):
     """Get a single device by its UUID or name."""
     try:
@@ -27,16 +25,16 @@ def get_device(identifier: str, session: SessionDepends):
     except ValueError:
         device = session.query(DeviceDB).filter_by(name=identifier).first()
     if device is None:
-        raise NotFoundError("No device found with the given UUID or name.")
+        raise HTTPException(status_code=404, detail="No device found with the given UUID or name.")
     return device
 
 
 # --- POST --------------------------------------------------------------------
-create_device_responses = {409: {"description": "A device with the same name already exists."}}
-@router.post("/devices", response_model=Device, status_code=201, responses=create_device_responses)
+@router.post("/devices", response_model=Device, status_code=201)
 def create_device(body: Device, session: SessionDepends):
-    """Create a new device."""
-    device = DeviceDB(**body.model_dump())
+    """Create a new device. A duplicate raises IntegrityError, turned into a 409
+    by the fallback handler in core/errors.py."""
+    device = DeviceDB(**body.model_dump(exclude_none=True))
     session.add(device)
     session.commit()
     session.refresh(device)

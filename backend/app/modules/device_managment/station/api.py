@@ -3,8 +3,7 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from app.core.errors import NotFoundError
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from .schema import Station, StationDB
 
@@ -18,8 +17,7 @@ def get_all_stations(session: SessionDepends):
     return session.query(StationDB).all()
 
 
-get_station_responses = {404: {"description": "No station found with the given UUID or name."}}
-@router.get("/stations/{identifier}", response_model=Station, responses=get_station_responses)
+@router.get("/stations/{identifier}", response_model=Station)
 def get_station(identifier: str, session: SessionDepends):
     """Get a single station by its UUID or name."""
     try:
@@ -27,16 +25,16 @@ def get_station(identifier: str, session: SessionDepends):
     except ValueError:
         station = session.query(StationDB).filter_by(name=identifier).first()
     if station is None:
-        raise NotFoundError("No station found with the given UUID or name.")
+        raise HTTPException(status_code=404, detail="No station found with the given UUID or name.")
     return station
 
 
 # --- POST --------------------------------------------------------------------
-create_station_responses = {409: {"description": "A station with the same name already exists."}}
-@router.post("/stations", response_model=Station, status_code=201, responses=create_station_responses)
+@router.post("/stations", response_model=Station, status_code=201)
 def create_station(body: Station, session: SessionDepends):
-    """Create a new station."""
-    station = StationDB(**body.model_dump())
+    """Create a new station. A duplicate raises IntegrityError, turned into a 409
+    by the fallback handler in core/errors.py."""
+    station = StationDB(**body.model_dump(exclude_none=True))
     session.add(station)
     session.commit()
     session.refresh(station)
