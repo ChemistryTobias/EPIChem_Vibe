@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from .schema import Zone, ZoneDB
 
@@ -32,13 +33,16 @@ def get_zone(identifier: str, session: SessionDepends):
 # --- POST --------------------------------------------------------------------
 @router.post("/zones", response_model=Zone, status_code=201)
 def create_zone(body: Zone, session: SessionDepends):
-    """Create a new zone. A duplicate raises IntegrityError, turned into a 409
-    by the fallback handler in core/errors.py."""
+    """Create a new zone."""
     zone = ZoneDB(**body.model_dump(exclude_none=True))
-    session.add(zone)
-    session.commit()
-    session.refresh(zone)
-    return zone
+    try:
+        session.add(zone)
+        session.commit()
+        session.refresh(zone)
+        return zone
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Zone with the same identifier (UUID or name) already exists.")
 
 
 # --- PATCH -------------------------------------------------------------------

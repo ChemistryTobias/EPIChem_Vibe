@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from .schema import Lab, LabDB
 
@@ -32,13 +33,16 @@ def get_lab(identifier: str, session: SessionDepends):
 # --- POST --------------------------------------------------------------------
 @router.post("/labs", response_model=Lab, status_code=201)
 def create_lab(body: Lab, session: SessionDepends):
-    """Create a new lab. A duplicate raises IntegrityError, turned into a 409
-    by the fallback handler in core/errors.py."""
+    """Create a new lab."""
     lab = LabDB(**body.model_dump(exclude_none=True))
-    session.add(lab)
-    session.commit()
-    session.refresh(lab)
-    return lab
+    try:
+        session.add(lab)
+        session.commit()
+        session.refresh(lab)
+        return lab
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Lab with the same identifier (UUID or name) already exists.")
 
 
 # --- PATCH -------------------------------------------------------------------

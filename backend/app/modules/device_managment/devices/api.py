@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from .schema import Device, DeviceDB
 
@@ -32,13 +33,16 @@ def get_device(identifier: str, session: SessionDepends):
 # --- POST --------------------------------------------------------------------
 @router.post("/devices", response_model=Device, status_code=201)
 def create_device(body: Device, session: SessionDepends):
-    """Create a new device. A duplicate raises IntegrityError, turned into a 409
-    by the fallback handler in core/errors.py."""
+    """Create a new device."""
     device = DeviceDB(**body.model_dump(exclude_none=True))
-    session.add(device)
-    session.commit()
-    session.refresh(device)
-    return device
+    try:
+        session.add(device)
+        session.commit()
+        session.refresh(device)
+        return device
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Device with the same identifier (UUID or name) already exists.")
 
 
 # --- PATCH -------------------------------------------------------------------

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from .schema import Station, StationDB
 
@@ -32,13 +33,16 @@ def get_station(identifier: str, session: SessionDepends):
 # --- POST --------------------------------------------------------------------
 @router.post("/stations", response_model=Station, status_code=201)
 def create_station(body: Station, session: SessionDepends):
-    """Create a new station. A duplicate raises IntegrityError, turned into a 409
-    by the fallback handler in core/errors.py."""
+    """Create a new station."""
     station = StationDB(**body.model_dump(exclude_none=True))
-    session.add(station)
-    session.commit()
-    session.refresh(station)
-    return station
+    try:
+        session.add(station)
+        session.commit()
+        session.refresh(station)
+        return station
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Station with the same identifier (UUID or name) already exists.")
 
 
 # --- PATCH -------------------------------------------------------------------

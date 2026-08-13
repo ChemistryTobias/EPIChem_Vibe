@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from .schema import Site, SiteDB
 
@@ -32,13 +33,16 @@ def get_site(identifier: str, session: SessionDepends):
 # --- POST --------------------------------------------------------------------
 @router.post("/sites", response_model=Site, status_code=201)
 def create_site(body: Site, session: SessionDepends):
-    """Create a new site. A duplicate raises IntegrityError, turned into a 409
-    by the fallback handler in core/errors.py."""
+    """Create a new site."""
     site = SiteDB(**body.model_dump(exclude_none=True))
-    session.add(site)
-    session.commit()
-    session.refresh(site)
-    return site
+    try:
+        session.add(site)
+        session.commit()
+        session.refresh(site)
+        return site
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Site with the same identifier (UUID or name) already exists.")
 
 
 # --- PATCH -------------------------------------------------------------------
