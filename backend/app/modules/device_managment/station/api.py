@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import CreateStation, Station, StationDB
+from .schema import CreateStation, Station, StationDB, UpdateStation
 
 router = APIRouter()
 
@@ -46,7 +46,28 @@ def create_station(body: CreateStation, session: SessionDepends):
 
 
 # --- PATCH -------------------------------------------------------------------
-# partial update — add when needed
+@router.patch("/stations/{identifier}", response_model=Station)
+def patch_station(identifier: str, body: UpdateStation, session: SessionDepends):
+    """Partially update a station."""
+    update_data = body.model_dump(exclude_unset=True)
+    station = get_station(identifier, session)
+
+    if not update_data:
+        return station
+
+    if "uuid" in update_data and update_data["uuid"] != station.uuid:
+        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
+
+    for key, value in update_data.items():
+        setattr(station, key, value)
+
+    try:
+        session.commit()
+        session.refresh(station)
+        return station
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Station with the same identifier (UUID or name) already exists.")
 
 
 # --- PUT ---------------------------------------------------------------------

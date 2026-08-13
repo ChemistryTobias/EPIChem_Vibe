@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import CreateSite, Site, SiteDB
+from .schema import CreateSite, Site, SiteDB, UpdateSite
 
 router = APIRouter()
 
@@ -46,7 +46,28 @@ def create_site(body: CreateSite, session: SessionDepends):
 
 
 # --- PATCH -------------------------------------------------------------------
-# partial update — add when needed
+@router.patch("/sites/{identifier}", response_model=Site)
+def patch_site(identifier: str, body: UpdateSite, session: SessionDepends):
+    """Partially update a site."""
+    update_data = body.model_dump(exclude_unset=True)
+    site = get_site(identifier, session)
+
+    if not update_data:
+        return site
+
+    if "uuid" in update_data and update_data["uuid"] != site.uuid:
+        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
+
+    for key, value in update_data.items():
+        setattr(site, key, value)
+
+    try:
+        session.commit()
+        session.refresh(site)
+        return site
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Site with the same identifier (UUID or name) already exists.")
 
 
 # --- PUT ---------------------------------------------------------------------

@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import CreateZone, Zone, ZoneDB
+from .schema import CreateZone, Zone, ZoneDB, UpdateZone
 
 router = APIRouter()
 
@@ -46,7 +46,28 @@ def create_zone(body: CreateZone, session: SessionDepends):
 
 
 # --- PATCH -------------------------------------------------------------------
-# partial update — add when needed
+@router.patch("/zones/{identifier}", response_model=Zone)
+def patch_zone(identifier: str, body: UpdateZone, session: SessionDepends):
+    """Partially update a zone."""
+    update_data = body.model_dump(exclude_unset=True)
+    zone = get_zone(identifier, session)
+
+    if not update_data:
+        return zone
+
+    if "uuid" in update_data and update_data["uuid"] != zone.uuid:
+        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
+
+    for key, value in update_data.items():
+        setattr(zone, key, value)
+
+    try:
+        session.commit()
+        session.refresh(zone)
+        return zone
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Zone with the same identifier (UUID or name) already exists.")
 
 
 # --- PUT ---------------------------------------------------------------------

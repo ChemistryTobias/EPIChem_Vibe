@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import CreateDevice, Device, DeviceDB
+from .schema import CreateDevice, Device, DeviceDB, UpdateDevice
 
 router = APIRouter()
 
@@ -46,7 +46,28 @@ def create_device(body: CreateDevice, session: SessionDepends):
 
 
 # --- PATCH -------------------------------------------------------------------
-# partial update — add when needed
+@router.patch("/devices/{identifier}", response_model=Device)
+def patch_device(identifier: str, body: UpdateDevice, session: SessionDepends):
+    """Partially update a device."""
+    update_data = body.model_dump(exclude_unset=True)
+    device = get_device(identifier, session)
+
+    if not update_data:
+        return device
+
+    if "uuid" in update_data and update_data["uuid"] != device.uuid:
+        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
+
+    for key, value in update_data.items():
+        setattr(device, key, value)
+
+    try:
+        session.commit()
+        session.refresh(device)
+        return device
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Device with the same identifier (UUID or name) already exists.")
 
 
 # --- PUT ---------------------------------------------------------------------

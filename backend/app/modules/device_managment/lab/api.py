@@ -6,7 +6,7 @@ from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
-from .schema import CreateLab, Lab, LabDB
+from .schema import CreateLab, Lab, LabDB, UpdateLab
 
 router = APIRouter()
 
@@ -46,7 +46,28 @@ def create_lab(body: CreateLab, session: SessionDepends):
 
 
 # --- PATCH -------------------------------------------------------------------
-# partial update — add when needed
+@router.patch("/labs/{identifier}", response_model=Lab)
+def patch_lab(identifier: str, body: UpdateLab, session: SessionDepends):
+    """Partially update a lab."""
+    update_data = body.model_dump(exclude_unset=True)
+    lab = get_lab(identifier, session)
+
+    if not update_data:
+        return lab
+
+    if "uuid" in update_data and update_data["uuid"] != lab.uuid:
+        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
+
+    for key, value in update_data.items():
+        setattr(lab, key, value)
+
+    try:
+        session.commit()
+        session.refresh(lab)
+        return lab
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Lab with the same identifier (UUID or name) already exists.")
 
 
 # --- PUT ---------------------------------------------------------------------
