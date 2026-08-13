@@ -1,10 +1,4 @@
-"""Application entry point. Start everything with:
-
-    .venv/bin/uvicorn app.main:app --reload
-
-Composition root: creates the FastAPI app, registers the app-wide exception
-handler, creates the database tables, and mounts each module's router.
-"""
+"""Application entry point."""
 
 from app.core.database import Database, engine
 from app.core.errors import install_exception_handlers

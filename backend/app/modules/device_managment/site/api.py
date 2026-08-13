@@ -3,7 +3,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.errors import NotFoundError
+from fastapi import APIRouter
 
 from .schema import Site, SiteDB
 
@@ -26,7 +27,7 @@ def get_site(identifier: str, session: SessionDepends):
     except ValueError:
         site = session.query(SiteDB).filter_by(name=identifier).first()
     if site is None:
-        raise HTTPException(status_code=404, detail="No site found with the given UUID or name.")
+        raise NotFoundError("No site found with the given UUID or name.")
     return site
 
 

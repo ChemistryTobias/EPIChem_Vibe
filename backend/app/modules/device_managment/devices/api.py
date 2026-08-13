@@ -3,7 +3,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.errors import NotFoundError
+from fastapi import APIRouter
 
 from .schema import Device, DeviceDB
 
@@ -26,7 +27,7 @@ def get_device(identifier: str, session: SessionDepends):
     except ValueError:
         device = session.query(DeviceDB).filter_by(name=identifier).first()
     if device is None:
-        raise HTTPException(status_code=404, detail="No device found with the given UUID or name.")
+        raise NotFoundError("No device found with the given UUID or name.")
     return device
 
 

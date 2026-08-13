@@ -3,7 +3,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.errors import NotFoundError
+from fastapi import APIRouter
 
 from .schema import Lab, LabDB
 
@@ -26,7 +27,7 @@ def get_lab(identifier: str, session: SessionDepends):
     except ValueError:
         lab = session.query(LabDB).filter_by(name=identifier).first()
     if lab is None:
-        raise HTTPException(status_code=404, detail="No lab found with the given UUID or name.")
+        raise NotFoundError("No lab found with the given UUID or name.")
     return lab
 
 

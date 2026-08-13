@@ -3,7 +3,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.errors import NotFoundError
+from fastapi import APIRouter
 
 from .schema import Zone, ZoneDB
 
@@ -26,7 +27,7 @@ def get_zone(identifier: str, session: SessionDepends):
     except ValueError:
         zone = session.query(ZoneDB).filter_by(name=identifier).first()
     if zone is None:
-        raise HTTPException(status_code=404, detail="No zone found with the given UUID or name.")
+        raise NotFoundError("No zone found with the given UUID or name.")
     return zone
 
 
