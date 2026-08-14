@@ -13,7 +13,7 @@ from app.modules.device_managment.zone.schema import Zone, ZoneDB
 from .logic import get_system_timezone
 
 
-class SiteDB(GeometryDB, ObjectDB, Database):
+class SiteDB(ObjectDB, GeometryDB, Database):
     """A physical site of an organisation, which contains labs and zones."""
     __tablename__ = "sites"
     __object_type__ = "site"
