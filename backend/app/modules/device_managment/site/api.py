@@ -1,5 +1,3 @@
-"""Site HTTP endpoints ."""
-
 from uuid import UUID
 
 from app.core.database import SessionDepends

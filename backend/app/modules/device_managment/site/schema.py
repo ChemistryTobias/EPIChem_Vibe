@@ -1,52 +1,58 @@
-"""Site schemas: the SQLAlchemy model (SiteDB) and the Pydantic model (Site)."""
+from typing import Optional, ClassVar
 
-from typing import Optional
-from uuid import UUID, uuid4
-from datetime import 
-
-from pydantic import BaseModel, ConfigDict, Field, NaiveDatetime
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import types
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
+from app.core.geometry.schema import GeometryDB, GeometryDescriptor, ObjectGeometry
+from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
+from app.modules.device_managment.lab.schema import Lab, LabDB
+from app.modules.device_managment.zone.schema import Zone, ZoneDB
+
+from .logic import get_system_timezone
 
 
-class SiteDB(Database):
-    __tablename__ = "dm_sites"
+class SiteDB(GeometryDB, ObjectDB, Database):
+    """A physical site of an organisation, which contains labs and zones."""
+    __tablename__ = "sites"
+    __object_type__ = "site"
 
-    # object base 
-    uuid: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(types.String(50), unique=True)
-    created_at: Mapped[NaiveDatetime] = mapped_column(types.DateTime)# default=on creation
-    updated_at: Mapped[NaiveDatetime] = mapped_column(types.DateTime)# default=on update
-    description: Mapped[Optional[str]] = mapped_column(types.Text, default=None)
+    organisation: Mapped[Optional[str]] = mapped_column(types.String(50), default=None)
+    address: Mapped[Optional[str]] = mapped_column(types.Text, default=None)
+    coordinates: Mapped[Optional[dict]] = mapped_column(types.JSON, default=None)
+    timezone: Mapped[Optional[str]] = mapped_column(types.String(50), default=get_system_timezone)
+    labs: Mapped[list["LabDB"]] = relationship()
+    site_zones: Mapped[list["ZoneDB"]] = relationship()
 
-    # site specific
-    organisation: Mapped[???]
-    address: Mapped[Optional[???]] = mapped_column(default=None)
-    coordinates: Mapped[Optional[???]] 
-    timezone: Mapped[] # default=on creation
-    site_zones: Mapped[Optional[zones]] 
-    labs: Mapped[Optional[labs]] 
-    
-    # dimension object
-    dimensions: Mapped[list] = mapped_column(types.JSON, default=list) # very simple list (<-e.g. for levels or for more complex stuff) [(posx, posy, posz, dimx, dimy, dimz), ...] to roughly represent any object physical object as a rectangle (on this level optional coordinates would set the origina)
-    svg: Mapped[Optional[bin]] # optional svg object(s) list -> must adhere to the dimensions provided
-    usd: Mapped[Optional[bin]] # optional Universal Scene Description object(s) list -> must be inside the dimensions provided
 
-class Site(BaseModel):
-    uuid: UUID
-    name: str
-    description: Optional[str] = None
+class SiteBase(BaseModel):
+    class Coordinates(BaseModel):
+        latitude: float = Field(ge=-90, le=90)
+        longitude: float = Field(ge=-180, le=180)
+
+    organisation: Optional[str] = None
     address: Optional[str] = None
+    coordinates: Optional[Coordinates] = None
     timezone: Optional[str] = None
-    dimensions: Optional[list] = Field(default_factory=list)
-    visualizer: Optional[dict] = Field(default_factory=dict)
 
-class CreateSite(Site):
+
+class Site(Object, SiteBase, ObjectGeometry):
+    """A physical site of an organisation, which contains labs and zones."""
+
     model_config = ConfigDict(from_attributes=True)
-    uuid: Optional[UUID] = None
+
+    labs: list[Lab] = Field(default_factory=list)
+    site_zones: list[Zone] = Field(default_factory=list)
+
+
+class CreateSite(CreateObject, SiteBase, ObjectGeometry):
+    default_geometry: ClassVar[list[GeometryDescriptor]] = [
+        GeometryDescriptor(detail="Floor 1", box_position_xyz=(0,0,0), box_dimension_xyz=(60,50,3))
+    ]
     
-class UpdateSite(Site):
-    uuid: Optional[UUID] = None
+    object_geometry: list[GeometryDescriptor] = Field(default_factory=lambda: CreateSite.default_geometry)
+
+
+class UpdateSite(UpdateObject, SiteBase, ObjectGeometry):
     name: Optional[str] = None
