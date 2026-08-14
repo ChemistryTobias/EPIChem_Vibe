@@ -1,4 +1,4 @@
-"""Station HTTP endpoints, as an APIRouter mounted by app/main.py."""
+"""Station HTTP endpoints ."""
 
 from uuid import UUID
 

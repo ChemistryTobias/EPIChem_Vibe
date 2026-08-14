@@ -1,4 +1,4 @@
-"""Zone HTTP endpoints, as an APIRouter mounted by app/main.py."""
+"""Zone HTTP endpoints ."""
 
 from uuid import UUID
 

@@ -1,4 +1,4 @@
-"""Lab HTTP endpoints, as an APIRouter mounted by app/main.py."""
+"""Lab HTTP endpoints ."""
 
 from uuid import UUID
 

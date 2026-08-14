@@ -1,4 +1,4 @@
-"""Device HTTP endpoints, as an APIRouter mounted by app/main.py."""
+"""Device HTTP endpoints ."""
 
 from uuid import UUID
 
