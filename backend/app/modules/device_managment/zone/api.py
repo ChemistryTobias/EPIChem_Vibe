@@ -75,4 +75,14 @@ def patch_zone(identifier: str, body: UpdateZone, session: SessionDepends):
 
 
 # --- DELETE ------------------------------------------------------------------
-# remove — add when needed
+@router.delete("/zones/{identifier}", status_code=204)
+def delete_zone(identifier: str, session: SessionDepends):
+    """Delete a zone by UUID or name."""
+    zone = get_zone(identifier, session)
+    try:
+        session.delete(zone)
+        session.commit()
+        return None
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Cannot delete zone because it is referenced by other active resources.")

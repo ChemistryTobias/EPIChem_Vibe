@@ -75,4 +75,14 @@ def patch_lab(identifier: str, body: UpdateLab, session: SessionDepends):
 
 
 # --- DELETE ------------------------------------------------------------------
-# remove — add when needed
+@router.delete("/labs/{identifier}", status_code=204)
+def delete_lab(identifier: str, session: SessionDepends):
+    """Delete a lab by UUID or name."""
+    lab = get_lab(identifier, session)
+    try:
+        session.delete(lab)
+        session.commit()
+        return None
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Cannot delete lab because it is referenced by other active resources.")

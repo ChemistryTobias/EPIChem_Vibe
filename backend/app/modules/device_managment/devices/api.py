@@ -75,4 +75,14 @@ def patch_device(identifier: str, body: UpdateDevice, session: SessionDepends):
 
 
 # --- DELETE ------------------------------------------------------------------
-# remove — add when needed
+@router.delete("/devices/{identifier}", status_code=204)
+def delete_device(identifier: str, session: SessionDepends):
+    """Delete a device by UUID or name."""
+    device = get_device(identifier, session)
+    try:
+        session.delete(device)
+        session.commit()
+        return None
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Cannot delete device because it is referenced by other active resources.")

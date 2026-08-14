@@ -75,4 +75,14 @@ def patch_site(identifier: str, body: UpdateSite, session: SessionDepends):
 
 
 # --- DELETE ------------------------------------------------------------------
-# remove — add when needed
+@router.delete("/sites/{identifier}", status_code=204)
+def delete_site(identifier: str, session: SessionDepends):
+    """Delete a site by UUID or name."""
+    site = get_site(identifier, session)
+    try:
+        session.delete(site)
+        session.commit()
+        return None
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Cannot delete site because it is referenced by other active resources.")

@@ -75,4 +75,14 @@ def patch_station(identifier: str, body: UpdateStation, session: SessionDepends)
 
 
 # --- DELETE ------------------------------------------------------------------
-# remove — add when needed
+@router.delete("/stations/{identifier}", status_code=204)
+def delete_station(identifier: str, session: SessionDepends):
+    """Delete a station by UUID or name."""
+    station = get_station(identifier, session)
+    try:
+        session.delete(station)
+        session.commit()
+        return None
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(status_code=409, detail="Cannot delete station because it is referenced by other active resources.")
