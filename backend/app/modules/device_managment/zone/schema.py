@@ -6,13 +6,15 @@ from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
-from app.core.geometry.schema import GeometryDB, ObjectGeometry
+from app.core.geometry.schema import ObjectGeometryDB, ObjectGeometry, GeometryDescriptor
 from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 from app.modules.device_managment.lab.schema import Lab, LabDB
 from app.modules.device_managment.station.schema import Station, StationDB
 
+from .logic import get_default_geometry
 
-class ZoneDB(ObjectDB, GeometryDB, Database):
+
+class ZoneDB(ObjectDB, ObjectGeometryDB, Database):
     """A zone: a short tag grouping labs (under a site) or stations (under a lab)."""
 
     __tablename__ = "zones"
@@ -39,8 +41,8 @@ class Zone(Object, ZoneBase, ObjectGeometry):
     stations: list[Station] = Field(default_factory=list)
 
 
-class CreateZone(CreateObject, ZoneBase, ObjectGeometry):
-    pass
+class CreateZone(CreateObject, ObjectGeometry, ZoneBase):
+    object_geometry: GeometryDescriptor = Field(default_factory=get_default_geometry)
 
 
 class UpdateZone(UpdateObject, ZoneBase, ObjectGeometry):

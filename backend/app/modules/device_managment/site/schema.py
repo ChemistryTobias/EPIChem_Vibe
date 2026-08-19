@@ -1,19 +1,18 @@
-from typing import Optional, ClassVar
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import types
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
-from app.core.geometry.schema import GeometryDB, GeometryDescriptor, ObjectGeometry
+from app.core.geometry.schema import GeometryDescriptor, ObjectGeometryListDB, ObjectGeometryList
 from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 from app.modules.device_managment.lab.schema import Lab, LabDB
-# from app.modules.device_managment.zone.schema import Zone, ZoneDB
 
-from .logic import get_system_timezone
+from .logic import get_default_geometry, get_system_timezone
 
 
-class SiteDB(ObjectDB, GeometryDB, Database):
+class SiteDB(ObjectDB, ObjectGeometryListDB, Database):
     """A physical site of an organisation, which contains labs and zones."""
     __tablename__ = "sites"
     __object_type__ = "site"
@@ -36,7 +35,7 @@ class SiteBase(BaseModel):
     timezone: Optional[str] = None
 
 
-class Site(Object, SiteBase, ObjectGeometry):
+class Site(Object, SiteBase, ObjectGeometryList):
     """A physical site of an organisation, which contains labs and zones."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -45,13 +44,9 @@ class Site(Object, SiteBase, ObjectGeometry):
 
 
 
-class CreateSite(CreateObject, SiteBase, ObjectGeometry):
-    default_geometry: ClassVar[list[GeometryDescriptor]] = [
-        GeometryDescriptor(detail="Floor 1", box_position_xyz=(0,0,0), box_dimension_xyz=(60,50,3))
-    ]
-    
-    object_geometry: list[GeometryDescriptor] = Field(default_factory=lambda: CreateSite.default_geometry)
+class CreateSite(CreateObject, SiteBase, ObjectGeometryList):
+    object_geometry: list[GeometryDescriptor] = Field(default_factory=get_default_geometry)
 
 
-class UpdateSite(UpdateObject, SiteBase, ObjectGeometry):
+class UpdateSite(UpdateObject, SiteBase, ObjectGeometryList):
     name: Optional[str] = None

@@ -1,17 +1,18 @@
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
-from app.core.geometry.schema import GeometryDB, ObjectGeometry
+from app.core.geometry.schema import ObjectGeometryDB, ObjectGeometry, GeometryDescriptor
 from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 # StationDB already imported their own api.py; import here would cause circular imports.
 
+from .logic import get_default_geometry
 
-class ModuleDB(ObjectDB, GeometryDB, Database):
+class ModuleDB(ObjectDB, ObjectGeometryDB, Database):
     """A module located within a station."""
 
     __tablename__ = "modules"
@@ -31,8 +32,8 @@ class Module(Object, ModuleBase, ObjectGeometry):
     model_config = ConfigDict(from_attributes=True)
 
 
-class CreateModule(CreateObject, ModuleBase, ObjectGeometry):
-    pass
+class CreateModule(CreateObject, ObjectGeometry, ModuleBase):
+    object_geometry: GeometryDescriptor = Field(default_factory=get_default_geometry)
 
 
 class UpdateModule(UpdateObject, ModuleBase, ObjectGeometry):

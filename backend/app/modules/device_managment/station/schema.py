@@ -6,14 +6,16 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
-from app.core.geometry.schema import GeometryDB, ObjectGeometry
+from app.core.geometry.schema import ObjectGeometryDB, ObjectGeometry, GeometryDescriptor
 from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 from app.modules.device_managment.modules.schema import Module
 from app.modules.device_managment.devices.schema import Device
 # LabDB, ModuleDB, DeviceDB, ZoneDB already imported their own api.py; import here would cause circular imports.
 
+from .logic import get_default_geometry
 
-class StationDB(ObjectDB, GeometryDB, Database):
+
+class StationDB(ObjectDB, ObjectGeometryDB, Database):
     """A station located within a lab."""
 
     __tablename__ = "stations"
@@ -41,8 +43,8 @@ class Station(Object, StationBase, ObjectGeometry):
     devices: list[Device] = Field(default_factory=list)
 
 
-class CreateStation(CreateObject, StationBase, ObjectGeometry):
-    pass
+class CreateStation(CreateObject, ObjectGeometry, StationBase):
+    object_geometry: GeometryDescriptor = Field(default_factory=get_default_geometry)
 
 
 class UpdateStation(UpdateObject, StationBase, ObjectGeometry):

@@ -3,10 +3,17 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.geometry.schema import GeometryDescriptor
 from app.modules.device_managment.lab.schema import LabDB
 from app.modules.device_managment.site.schema import SiteDB
+# ZoneDB not imported at module level: schema.py imports get_default_geometry from here, would be circular.
 
-from .schema import ZoneDB
+default_geometry_site = GeometryDescriptor(
+    detail="Zone Outline", shape="rectangle", box_position_xyz=(0, 0, 0), box_dimension_xyz=(10, 10, 3)
+)
+default_geometry_lab = GeometryDescriptor(
+    detail="Zone Outline", shape="rectangle", box_position_xyz=(0, 0, 0), box_dimension_xyz=(2, 2, 3)
+)
 
 
 def resolve_parent_type(session: Session, parent_uuid: UUID) -> str:
@@ -18,10 +25,22 @@ def resolve_parent_type(session: Session, parent_uuid: UUID) -> str:
     raise HTTPException(status_code=400, detail="parent_uuid does not match any existing site or lab.")
 
 
+def get_default_geometry(data: dict) -> GeometryDescriptor:
+    """Pydantic default_factory: `data` is the already-validated sibling fields (Pydantic 2.11+)."""
+    from app.core.database.session_config import SessionLocal
+
+    with SessionLocal() as session:
+        parent_type = resolve_parent_type(session, data["parent_uuid"])
+
+    return default_geometry_site if parent_type == "site" else default_geometry_lab
+
+
 def validate_zone_parent(
     session: Session, zone_uuid: UUID, expected_parent_type: str, expected_parent_uuid: UUID
-) -> ZoneDB:
+) -> "ZoneDB":
     """Look up `zone_uuid` and confirm it was created under `expected_parent_type`/`expected_parent_uuid`."""
+    from .schema import ZoneDB  # deferred: schema.py imports get_default_geometry from here, would be circular otherwise
+
     zone = session.get(ZoneDB, zone_uuid)
     if zone is None:
         raise HTTPException(status_code=400, detail="No zone found with the given zone_uuid.")
