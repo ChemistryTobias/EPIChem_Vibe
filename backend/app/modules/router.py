@@ -1,5 +1,3 @@
-"""Aggregates every domain-module router under one router that main.py mounts."""
-
 from fastapi import APIRouter
 
 from app.modules.device_managment.router import router as device_management_router
