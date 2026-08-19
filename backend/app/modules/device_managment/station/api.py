@@ -1,10 +1,11 @@
-"""Station HTTP endpoints ."""
-
 from uuid import UUID
 
 from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
+
+from app.modules.device_managment.lab.schema import LabDB
+from app.modules.device_managment.zone.logic import validate_zone_parent
 
 from .schema import CreateStation, Station, StationDB, UpdateStation
 
@@ -34,7 +35,10 @@ def get_station(identifier: str, session: SessionDepends):
 @router.post("/stations", response_model=Station, status_code=201)
 def create_station(body: CreateStation, session: SessionDepends):
     """Create a new station."""
-    station = StationDB(**body.model_dump(exclude_none=True))
+    data = body.model_dump(exclude_none=True)
+    if data.get("zone_uuid") is not None:
+        validate_zone_parent(session, data["zone_uuid"], LabDB.__object_type__, body.lab_uuid)
+    station = StationDB(**data)
     try:
         session.add(station)
         session.commit()
@@ -55,8 +59,10 @@ def patch_station(identifier: str, body: UpdateStation, session: SessionDepends)
     if not update_data:
         return station
 
-    if "uuid" in update_data and update_data["uuid"] != station.uuid:
-        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
+    if update_data.get("zone_uuid") is not None:
+        validate_zone_parent(
+            session, update_data["zone_uuid"], LabDB.__object_type__, update_data.get("lab_uuid", station.lab_uuid)
+        )
 
     for key, value in update_data.items():
         setattr(station, key, value)
