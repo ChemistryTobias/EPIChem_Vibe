@@ -1,10 +1,11 @@
-"""Lab HTTP endpoints ."""
-
 from uuid import UUID
 
 from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
+
+from app.modules.device_managment.site.schema import SiteDB
+from app.modules.device_managment.zone.logic import validate_zone_parent
 
 from .schema import CreateLab, Lab, LabDB, UpdateLab
 
@@ -34,7 +35,10 @@ def get_lab(identifier: str, session: SessionDepends):
 @router.post("/labs", response_model=Lab, status_code=201)
 def create_lab(body: CreateLab, session: SessionDepends):
     """Create a new lab."""
-    lab = LabDB(**body.model_dump(exclude_none=True))
+    data = body.model_dump(exclude_none=True)
+    if data.get("zone_uuid") is not None:
+        validate_zone_parent(session, data["zone_uuid"], SiteDB.__object_type__, body.site_uuid)
+    lab = LabDB(**data)
     try:
         session.add(lab)
         session.commit()
@@ -55,8 +59,11 @@ def patch_lab(identifier: str, body: UpdateLab, session: SessionDepends):
     if not update_data:
         return lab
 
-    if "uuid" in update_data and update_data["uuid"] != lab.uuid:
-        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
+    # checks if the lab can be part of the zone
+    if update_data.get("zone_uuid") is not None:
+        validate_zone_parent(
+            session, update_data["zone_uuid"], SiteDB.__object_type__, update_data.get("site_uuid", lab.site_uuid)
+        )
 
     for key, value in update_data.items():
         setattr(lab, key, value)

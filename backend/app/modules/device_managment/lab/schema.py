@@ -1,38 +1,49 @@
-"""Lab schemas: SQLAlchemy model (LabDB) and Pydantic models (Lab / CreateLab / UpdateLab)."""
-
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import JSON, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ForeignKey, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
+from app.core.geometry.schema import GeometryDB, ObjectGeometry
+from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
+from app.modules.device_managment.station.schema import Station
+# SiteDB, StationDB, ZoneDB already imported their own api.py; import here would cause circular imports.
 
 
-class LabDB(Database):
-    __tablename__ = "dm_labs"
+class LabDB(ObjectDB, GeometryDB, Database):
+    """A lab located within a site."""
 
-    uuid: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(String(50), unique=True)
-    description: Mapped[Optional[str]] = mapped_column(default=None)
-    dimensions: Mapped[list] = mapped_column(JSON, default=list)
-    visualizer: Mapped[dict] = mapped_column(JSON, default=dict)
+    __tablename__ = "labs"
+    __object_type__ = "lab"
 
-
-class Lab(BaseModel):
-    uuid: UUID
-    name: str
-    description: Optional[str] = None
-    dimensions: Optional[list] = Field(default_factory=list)
-    visualizer: Optional[dict] = Field(default_factory=dict)
+    room_number: Mapped[Optional[str]] = mapped_column(String(10), default=None)
+    site_uuid: Mapped[UUID] = mapped_column(ForeignKey("sites.uuid"), index=True)
+    site: Mapped["SiteDB"] = relationship(back_populates="labs")
+    stations: Mapped[list["StationDB"]] = relationship(foreign_keys="StationDB.lab_uuid", back_populates="lab")
+    zone_uuid: Mapped[Optional[UUID]] = mapped_column(ForeignKey("zones.uuid"), index=True, default=None)
+    zone: Mapped[Optional["ZoneDB"]] = relationship(back_populates="labs")
 
 
-class CreateLab(Lab):
+class LabBase(BaseModel):
+    room_number: Optional[str] = None
+    site_uuid: UUID
+    zone_uuid: Optional[UUID] = None
+
+
+class Lab(Object, LabBase, ObjectGeometry):
+    """A lab located within a site."""
+
     model_config = ConfigDict(from_attributes=True)
-    uuid: Optional[UUID] = None
+
+    stations: list[Station] = Field(default_factory=list)
 
 
-class UpdateLab(Lab):
-    uuid: Optional[UUID] = None
+class CreateLab(CreateObject, LabBase, ObjectGeometry):
+    pass
+
+
+class UpdateLab(UpdateObject, LabBase, ObjectGeometry):
     name: Optional[str] = None
+    site_uuid: Optional[UUID] = None
