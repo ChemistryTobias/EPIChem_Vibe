@@ -1,5 +1,3 @@
-"""Database engine, session factory, and PK immutability guard."""
-
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
 

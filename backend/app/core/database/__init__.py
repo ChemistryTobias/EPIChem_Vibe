@@ -1,5 +1,3 @@
-"""Shared database setup: declarative base and session dependency."""
-
 from typing import Annotated
 
 from fastapi import Depends
