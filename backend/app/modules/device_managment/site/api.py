@@ -53,9 +53,6 @@ def patch_site(identifier: str, body: UpdateSite, session: SessionDepends):
     if not update_data:
         return site
 
-    if "uuid" in update_data and update_data["uuid"] != site.uuid:
-        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
-
     for key, value in update_data.items():
         setattr(site, key, value)
 

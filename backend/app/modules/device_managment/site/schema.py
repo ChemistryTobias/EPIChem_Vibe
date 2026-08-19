@@ -8,7 +8,7 @@ from app.core.database import Database
 from app.core.geometry.schema import GeometryDB, GeometryDescriptor, ObjectGeometry
 from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 from app.modules.device_managment.lab.schema import Lab, LabDB
-from app.modules.device_managment.zone.schema import Zone, ZoneDB
+# from app.modules.device_managment.zone.schema import Zone, ZoneDB
 
 from .logic import get_system_timezone
 
@@ -22,8 +22,7 @@ class SiteDB(ObjectDB, GeometryDB, Database):
     address: Mapped[Optional[str]] = mapped_column(types.Text, default=None)
     coordinates: Mapped[Optional[dict]] = mapped_column(types.JSON, default=None)
     timezone: Mapped[Optional[str]] = mapped_column(types.String(50), default=get_system_timezone)
-    labs: Mapped[list["LabDB"]] = relationship()
-    site_zones: Mapped[list["ZoneDB"]] = relationship()
+    labs: Mapped[list["LabDB"]] = relationship(back_populates="site")
 
 
 class SiteBase(BaseModel):
@@ -43,7 +42,7 @@ class Site(Object, SiteBase, ObjectGeometry):
     model_config = ConfigDict(from_attributes=True)
 
     labs: list[Lab] = Field(default_factory=list)
-    site_zones: list[Zone] = Field(default_factory=list)
+
 
 
 class CreateSite(CreateObject, SiteBase, ObjectGeometry):
