@@ -1,0 +1,7 @@
+[tool.ruff.lint]
+ignore = [
+    "I001",   # unsorted/unformatted import block
+    "UP045",  # "use `X | None`" instead of `Optional[X]`
+    "BLE001", # blind `except Exception`
+    "B008",   # function call (e.g. Depends()) in argument defaults
+]
