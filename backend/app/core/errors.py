@@ -1,13 +1,4 @@
-"""App-wide exception handlers.
-
-Handlers can only be registered on the FastAPI app instance (not on an
-APIRouter), so they live here as a function that main.py calls with the app.
-
-The IntegrityError → 409 handler is a *fallback*: an endpoint doesn't have to
-catch a duplicate/constraint violation itself — if one slips through (forgotten,
-or a new endpoint), it still comes back as a clean 409 instead of a 500.
-"""
-
+# Registered on the app instance, not an APIRouter -- FastAPI requires that.
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
