@@ -1,7 +1,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.pagination import LimitParam, OffsetParam, paginate
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 
 from .logic import resolve_parent_type
@@ -12,9 +13,9 @@ router = APIRouter()
 
 # --- GET ---------------------------------------------------------------------
 @router.get("/zones")
-def get_all_zones(session: SessionDepends):
+def get_all_zones(session: SessionDepends, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
     """List all zones."""
-    return session.query(ZoneDB).all()
+    return paginate(session.query(ZoneDB), response, limit, offset)
 
 
 @router.get("/zones/{identifier}", response_model=Zone)

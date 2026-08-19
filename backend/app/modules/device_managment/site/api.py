@@ -1,7 +1,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.pagination import LimitParam, OffsetParam, paginate
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 
 from .schema import CreateSite, Site, SiteDB, UpdateSite
@@ -11,9 +12,9 @@ router = APIRouter()
 
 # --- GET ---------------------------------------------------------------------
 @router.get("/sites")
-def get_all_sites(session: SessionDepends):
+def get_all_sites(session: SessionDepends, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
     """List all sites."""
-    return session.query(SiteDB).all()
+    return paginate(session.query(SiteDB), response, limit, offset)
 
 
 @router.get("/sites/{identifier}", response_model=Site)

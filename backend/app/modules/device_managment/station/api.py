@@ -1,7 +1,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.pagination import LimitParam, OffsetParam, paginate
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.modules.device_managment.lab.schema import LabDB
@@ -14,9 +15,9 @@ router = APIRouter()
 
 # --- GET ---------------------------------------------------------------------
 @router.get("/stations")
-def get_all_stations(session: SessionDepends):
+def get_all_stations(session: SessionDepends, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
     """List all stations."""
-    return session.query(StationDB).all()
+    return paginate(session.query(StationDB), response, limit, offset)
 
 
 @router.get("/stations/{identifier}", response_model=Station)

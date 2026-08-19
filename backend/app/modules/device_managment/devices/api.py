@@ -1,7 +1,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.pagination import LimitParam, OffsetParam, paginate
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 
 from .schema import CreateDevice, Device, DeviceDB, UpdateDevice
@@ -11,9 +12,9 @@ router = APIRouter()
 
 # --- GET ---------------------------------------------------------------------
 @router.get("/devices")
-def get_all_devices(session: SessionDepends):
+def get_all_devices(session: SessionDepends, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
     """List all devices."""
-    return session.query(DeviceDB).all()
+    return paginate(session.query(DeviceDB), response, limit, offset)
 
 
 @router.get("/devices/{identifier}", response_model=Device)

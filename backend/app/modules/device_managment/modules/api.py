@@ -1,7 +1,8 @@
 from uuid import UUID
 
 from app.core.database import SessionDepends
-from fastapi import APIRouter, HTTPException
+from app.core.pagination import LimitParam, OffsetParam, paginate
+from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 
 from .schema import CreateModule, Module, ModuleDB, UpdateModule
@@ -11,9 +12,9 @@ router = APIRouter()
 
 # --- GET ---------------------------------------------------------------------
 @router.get("/modules")
-def get_all_modules(session: SessionDepends):
+def get_all_modules(session: SessionDepends, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
     """List all modules."""
-    return session.query(ModuleDB).all()
+    return paginate(session.query(ModuleDB), response, limit, offset)
 
 
 @router.get("/modules/{identifier}", response_model=Module)
