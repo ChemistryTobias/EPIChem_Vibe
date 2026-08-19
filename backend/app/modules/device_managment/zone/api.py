@@ -1,11 +1,10 @@
-"""Zone HTTP endpoints ."""
-
 from uuid import UUID
 
 from app.core.database import SessionDepends
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 
+from .logic import resolve_parent_type
 from .schema import CreateZone, Zone, ZoneDB, UpdateZone
 
 router = APIRouter()
@@ -34,7 +33,9 @@ def get_zone(identifier: str, session: SessionDepends):
 @router.post("/zones", response_model=Zone, status_code=201)
 def create_zone(body: CreateZone, session: SessionDepends):
     """Create a new zone."""
-    zone = ZoneDB(**body.model_dump(exclude_none=True))
+    data = body.model_dump(exclude_none=True)
+    data["parent_type"] = resolve_parent_type(session, body.parent_uuid)
+    zone = ZoneDB(**data)
     try:
         session.add(zone)
         session.commit()
@@ -55,8 +56,8 @@ def patch_zone(identifier: str, body: UpdateZone, session: SessionDepends):
     if not update_data:
         return zone
 
-    if "uuid" in update_data and update_data["uuid"] != zone.uuid:
-        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
+    if "parent_uuid" in update_data and update_data["parent_uuid"] != zone.parent_uuid:
+        raise HTTPException(status_code=400, detail="The parent UUID is immutable and cannot be updated.")
 
     for key, value in update_data.items():
         setattr(zone, key, value)
