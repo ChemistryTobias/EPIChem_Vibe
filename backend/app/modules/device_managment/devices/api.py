@@ -1,5 +1,3 @@
-"""Device HTTP endpoints ."""
-
 from uuid import UUID
 
 from app.core.database import SessionDepends
@@ -54,9 +52,6 @@ def patch_device(identifier: str, body: UpdateDevice, session: SessionDepends):
 
     if not update_data:
         return device
-
-    if "uuid" in update_data and update_data["uuid"] != device.uuid:
-        raise HTTPException(status_code=400, detail="Primary key (UUID) is immutable and cannot be updated.")
 
     for key, value in update_data.items():
         setattr(device, key, value)

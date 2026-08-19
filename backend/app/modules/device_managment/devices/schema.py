@@ -1,38 +1,40 @@
-"""Device schemas: SQLAlchemy model (DeviceDB) and Pydantic models (Device / CreateDevice / UpdateDevice)."""
-
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import JSON, String
-from sqlalchemy.orm import Mapped, mapped_column
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
+from app.core.geometry.schema import GeometryDB, ObjectGeometry
+from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
+# StationDB already imported their own api.py; import here would cause circular imports.
 
 
-class DeviceDB(Database):
-    __tablename__ = "dm_devices"
+class DeviceDB(ObjectDB, GeometryDB, Database):
+    """A device located within a station."""
 
-    uuid: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(String(50), unique=True)
-    description: Mapped[Optional[str]] = mapped_column(default=None)
-    dimensions: Mapped[list] = mapped_column(JSON, default=list)
-    visualizer: Mapped[dict] = mapped_column(JSON, default=dict)
+    __tablename__ = "devices"
+    __object_type__ = "device"
 
-
-class Device(BaseModel):
-    uuid: UUID
-    name: str
-    description: Optional[str] = None
-    dimensions: Optional[list] = Field(default_factory=list)
-    visualizer: Optional[dict] = Field(default_factory=dict)
+    station_uuid: Mapped[UUID] = mapped_column(ForeignKey("stations.uuid"), index=True)
+    station: Mapped["StationDB"] = relationship(back_populates="devices")
 
 
-class CreateDevice(Device):
+class DeviceBase(BaseModel):
+    station_uuid: UUID
+
+
+class Device(Object, DeviceBase, ObjectGeometry):
+    """A device located within a station."""
+
     model_config = ConfigDict(from_attributes=True)
-    uuid: Optional[UUID] = None
 
 
-class UpdateDevice(Device):
-    uuid: Optional[UUID] = None
+class CreateDevice(CreateObject, DeviceBase, ObjectGeometry):
+    pass
+
+
+class UpdateDevice(UpdateObject, DeviceBase, ObjectGeometry):
     name: Optional[str] = None
+    station_uuid: Optional[UUID] = None
