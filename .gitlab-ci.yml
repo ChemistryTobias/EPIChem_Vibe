@@ -16,6 +16,7 @@
 stages:
   - lint
   - test
+  - docs
   - build
   - verify
   - deploy
@@ -137,6 +138,47 @@ test:postgres:
   # note that used to live here it is now a required job. The ADR 0004 revision
   # write path is verified against Postgres, not just sqlite.
 
+# -------------------------------------------------------------------- docs
+# docs.gitlab.com's own Zensical guide, adapted to this repo's docs/ layout.
+# The openapi.json export stays a separate job so it's reusable independent
+# of the site build (a local `docs:openapi` run is also how docs/API.md's
+# JS-rendered endpoint table gets its data outside CI).
+docs:openapi:
+  extends: .python
+  stage: docs
+  script:
+    - cd backend && python -c "
+        import json;
+        from app.main import app;
+        json.dump(app.openapi(), open('../docs/openapi.json', 'w'), indent=2)"
+  artifacts:
+    paths:
+      - docs/openapi.json
+    expire_in: 30 days
+
+# GitLab Pages: builds docs/ (Markdown + zensical.toml) into public/ and
+# publishes it as this project's Pages site. `needs: docs:openapi` pulls
+# openapi.json into the job's workspace before the build, so it's still
+# sitting in docs/ when Zensical copies non-Markdown files through — that's
+# what docs/API.md's inline script fetches at runtime. Job name and output
+# path (`public/`) are fixed by GitLab's Pages convention.
+# NOT YET VERIFIED — written the same way the rest of this pipeline was
+# before its first real run (see docs/HOST_SETUP.md's own honesty convention
+# about what's actually been executed vs. just written). Confirm the
+# instance has Pages enabled (Settings → Pages) before trusting the URL.
+pages:
+  stage: docs
+  image: python:3.13-slim
+  needs: ["docs:openapi"]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - pip install --no-cache-dir zensical
+    - zensical build
+  artifacts:
+    paths:
+      - public
+
 # ------------------------------------------------------------------- build
 .docker:
   image: docker:27-cli
@@ -241,7 +283,7 @@ verify:stack:
         --network epichem-prod_default \
         -v "$CI_PROJECT_DIR:/work" -w /work/deploy \
         -e EPICHEM_BASE_URL=http://web:8080 \
-        -e EPICHEM_SCREENSHOT_DIR=/work/docs/screenshots \
+        -e EPICHEM_SCREENSHOT_DIR=/work/docs/src \
         "mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-jammy" \
         sh -c "npm install --no-audit --no-fund && node screenshots.mjs"
   after_script:
@@ -251,7 +293,7 @@ verify:stack:
   artifacts:
     when: always
     paths:
-      - docs/screenshots/
+      - docs/src/
       - compose-logs.txt
     expire_in: 30 days
 

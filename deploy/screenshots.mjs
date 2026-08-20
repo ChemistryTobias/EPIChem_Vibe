@@ -23,7 +23,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const BASE_URL = process.env.EPICHEM_BASE_URL ?? "http://localhost:5173";
-const OUT_DIR = process.env.EPICHEM_SCREENSHOT_DIR ?? "docs/screenshots";
+const OUT_DIR = process.env.EPICHEM_SCREENSHOT_DIR ?? "docs/src";
 
 /** Deliberately not a round number the CSS might special-case. */
 const VIEWPORT = { width: 1440, height: 900 };

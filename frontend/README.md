@@ -79,7 +79,7 @@ src/
     devices/               card grid + filters
     samples/               table + register form + inspector
   styles/
-    tokens.css             MPG brand tokens, straight from project_plan/DESIGN.md
+    tokens.css             MPG brand tokens, straight from docs/project_plan/DESIGN.md
     base.css               reset + the .label / .mono / .muted primitives
 ```
 
@@ -88,7 +88,7 @@ a component is one place, not two directories. Only `tokens.css` and `base.css` 
 
 ## Choices worth knowing about
 
-- **No UI kit, no CSS framework.** `styles/tokens.css` is `project_plan/DESIGN.md` in
+- **No UI kit, no CSS framework.** `styles/tokens.css` is `docs/project_plan/DESIGN.md` in
   machine-readable form; if a value here and DESIGN.md disagree, DESIGN.md wins.
 - **No router dependency.** Four screens, no params, no nesting (the Device Management group is a
   nav affordance, not nested routes) — `useHashRoute.ts` is smaller than the README section

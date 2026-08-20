@@ -168,7 +168,71 @@ There is **one** alert look for the whole app — a flat card (`.notice`) with a
 
 ---
 
-## 7. Lab map & isometric layout
+## 7. Implementation reference (current frontend)
+
+This section pins down what `frontend/` actually built, so a rewrite (the
+Roadmap's 0.3) can match the current look pixel-for-pixel rather than
+re-deriving it from the brand rules above. Source of truth for these values
+is `frontend/src/styles/tokens.css` — if this section and that file ever
+disagree, the file wins; re-sync this section then.
+
+### Spacing scale
+
+A single 4px-based scale, used via `gap`/padding, not ad-hoc margins:
+
+```
+--space-1: 4px   --space-2: 8px   --space-3: 12px
+--space-4: 16px  --space-5: 24px  --space-6: 32px
+```
+
+### Shell dimensions
+
+```
+--sidebar-width:    236px   /* dark left rail, MPG green dark */
+--header-height:    72px    /* screen header: title/subtitle + outline buttons */
+--inspector-width:  316px   /* right-hand panel in list+inspector layouts */
+```
+
+### Additional tokens beyond §2/§3
+
+```
+--color-border-soft: #dcdcdc   /* lightened grey — table hairlines */
+--color-danger:       #c0392b  /* the one-off destructive red, §5 */
+--tracking-label:    0.08em    /* uppercase labels */
+--tracking-heading:  0.03em    /* headings */
+--tracking-button:   0.10em    /* button labels, §5's +50–80 spec */
+--radius:            1px       /* the sharp end of §5's 0–4px range, applied
+                                   uniformly to buttons/cards/inputs/alerts */
+```
+
+### Shared components (`frontend/src/components/`)
+
+The vocabulary a rewrite should keep, not reinvent — one component per
+concern, styled entirely off the tokens above:
+
+| Component | Role |
+|---|---|
+| `AppShell` | sidebar + header + content frame |
+| `Sidebar` | dark left rail, nav + section grouping |
+| `ScreenHeader` | 72px title/subtitle/actions bar |
+| `Inspector` | right-hand detail/edit panel |
+| `Button` | the one button primitive — standard + `sm` sizes, primary/secondary/text variants, no restyled `<button>` elsewhere (§5) |
+| `AsyncBoundary` | loading/error/empty triad around a data fetch |
+| `Notifications` | bottom-left toast stack (`useNotify()`) — info/success/warning/error, errors persist until dismissed |
+| `Pager` | limit/offset pagination control over `X-Total-Count` |
+| `StatusDot` | small live-state indicator |
+| `TokenField` | tag/chip-style input |
+
+Two gaps a rewrite should close rather than copy forward (flagged in the
+2026-08-20 backend/frontend audit, see `docs/PROJECT_HISTORY.md`): there is
+**no shared confirm/modal** component (one raw `window.confirm(...)` in the
+whole app) and no shared submit/error-handling hook (`try/catch → notify` is
+copy-pasted per screen). Both are small, token-driven additions — not a
+visual redesign — see `docs/project_plan/EPIChem_Roadmap.md` 0.3.
+
+---
+
+## 8. Lab map & isometric layout
 
 Design reference for the **Device Management → Lab Layout** editor (plan §10, ADR 0007/0009):
 the site map, the per-lab isometric floor, and the per-station device sub-layout. The brand's core
