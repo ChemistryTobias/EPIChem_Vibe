@@ -1,10 +1,12 @@
+import os
+
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 engine = create_engine(
     "sqlite:///./site.db",
     connect_args={"check_same_thread": False},
-    echo=True,
+    echo=os.environ.get("SQL_ECHO", "false").lower() == "true",
 )
 SessionLocal = sessionmaker(bind=engine)
 
