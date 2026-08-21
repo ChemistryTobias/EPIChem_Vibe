@@ -5,12 +5,12 @@ import { navigate } from "../hooks/useHashRoute";
 
 import "./NavRail.css";
 
-const DEVICE_MGMT_ROUTES: readonly Route[] = ["hierarchy", "device-status", "lab-layout"];
+const DEVICE_MGMT_ROUTES: readonly Route[] = ["hierarchy", "layout", "devices"];
 
 const DEVICE_MGMT_SUBS: { route: Route; label: string }[] = [
   { route: "hierarchy", label: "Hierarchy" },
-  { route: "device-status", label: "Device Status" },
-  { route: "lab-layout", label: "Lab Layout" },
+  { route: "layout", label: "Layout" },
+  { route: "devices", label: "Devices" },
 ];
 
 const LEAVES: { route: Route; label: string }[] = [

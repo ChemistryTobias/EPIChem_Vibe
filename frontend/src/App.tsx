@@ -1,10 +1,12 @@
-/** Route -> screen. Hierarchy/Device Status/Lab Layout are scaffolding only for now. */
+/** Route -> screen. The three Device Management pages are scaffolding only for now. */
 
 import { Suspense, lazy } from "react";
 
 import { AppShell } from "./components/AppShell";
-import { Placeholder } from "./components/Placeholder";
 import { useHashRoute } from "./hooks/useHashRoute";
+import { DevicesScreen } from "./screens/device-management/devices/DevicesScreen";
+import { HierarchyScreen } from "./screens/device-management/hierarchy/HierarchyScreen";
+import { LayoutScreen } from "./screens/device-management/layout/LayoutScreen";
 import { SamplesScreen } from "./screens/samples/SamplesScreen";
 
 const WorkflowScreen = lazy(() =>
@@ -16,9 +18,9 @@ export function App() {
 
   return (
     <AppShell route={route}>
-      {route === "hierarchy" && <Placeholder title="Hierarchy" />}
-      {route === "device-status" && <Placeholder title="Device Status" />}
-      {route === "lab-layout" && <Placeholder title="Lab Layout" />}
+      {route === "hierarchy" && <HierarchyScreen />}
+      {route === "layout" && <LayoutScreen />}
+      {route === "devices" && <DevicesScreen />}
       {route === "samples" && <SamplesScreen />}
       {route === "workflow" && (
         <Suspense fallback={<div className="label">Loading…</div>}>

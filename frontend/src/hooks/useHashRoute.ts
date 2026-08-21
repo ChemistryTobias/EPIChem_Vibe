@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export const ROUTES = ["hierarchy", "device-status", "lab-layout", "samples", "workflow"] as const;
+export const ROUTES = ["hierarchy", "devices", "layout", "samples", "workflow"] as const;
 export type Route = (typeof ROUTES)[number];
 export const DEFAULT_ROUTE: Route = "hierarchy";
 
