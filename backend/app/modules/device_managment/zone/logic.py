@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.geometry.schema import GeometryDescriptor
+from app.core.shared_schema.geometry.schema import GeometryDescriptor
 from app.modules.device_managment.lab.schema import LabDB
 from app.modules.device_managment.site.schema import SiteDB
 # ZoneDB not imported at module level: schema.py imports get_default_geometry from here, would be circular.

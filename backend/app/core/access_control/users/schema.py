@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Database
-from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
+from app.core.shared_schema.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 
 
 class UserDB(ObjectDB, Database):

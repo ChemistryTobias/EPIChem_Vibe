@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.core.geometry.schema import GeometryDescriptor
+from app.core.shared_schema.geometry.schema import GeometryDescriptor
 
 
 def get_system_timezone() -> str:

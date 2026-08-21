@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from app.core.geometry.logic import find_free_slot_2d
-from app.core.geometry.schema import GeometryDescriptor
+from app.core.shared_schema.geometry.logic import find_free_slot_2d
+from app.core.shared_schema.geometry.schema import GeometryDescriptor
 
 default_geometry_descriptor = GeometryDescriptor(
     detail="Module Outline",

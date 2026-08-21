@@ -5,8 +5,8 @@ from sqlalchemy import types
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
-from app.core.geometry.schema import GeometryDescriptor, ObjectGeometryListDB, ObjectGeometryList
-from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
+from app.core.shared_schema.geometry.schema import GeometryDescriptor, ObjectGeometryListDB, ObjectGeometryList
+from app.core.shared_schema.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 from app.modules.device_managment.lab.schema import Lab, LabDB
 
 from .logic import get_default_geometry, get_system_timezone

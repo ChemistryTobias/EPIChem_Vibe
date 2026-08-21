@@ -4,7 +4,7 @@ from pydantic import ConfigDict
 from sqlalchemy import Column, ForeignKey, Table
 
 from app.core.database import Database
-from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
+from app.core.shared_schema.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 
 group_membership = Table(
     "core_group_membership",

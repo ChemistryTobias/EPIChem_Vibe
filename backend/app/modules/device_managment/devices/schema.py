@@ -6,8 +6,8 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
-from app.core.geometry.schema import ObjectGeometryDB, ObjectGeometry, GeometryDescriptor
-from app.core.object.schema import CreateObject, Object, ObjectDB, UpdateObject
+from app.core.shared_schema.geometry.schema import ObjectGeometryDB, ObjectGeometry, GeometryDescriptor
+from app.core.shared_schema.object.schema import CreateObject, Object, ObjectDB, UpdateObject
 # StationDB already imported their own api.py; import here would cause circular imports.
 
 from .logic import get_default_geometry

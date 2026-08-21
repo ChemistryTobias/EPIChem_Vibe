@@ -6,7 +6,7 @@ from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Database
-from app.core.object.schema import Object, ObjectDB
+from app.core.shared_schema.object.schema import Object, ObjectDB
 
 
 class FileDB(ObjectDB, Database):
