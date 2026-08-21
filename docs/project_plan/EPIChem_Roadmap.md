@@ -158,6 +158,31 @@ pod-related commands (trigger a redeploy, check pod/queueserver status) and
 for the `epichem-runner` local-device path described above. Not built until
 one of those has a concrete first command to add.
 
+When it is built, avoid hand-writing one Typer command per endpoint that
+copies each `api.py` route's logic — a lot of what a route actually does
+(validation, revision recording, the auth check) lives in the route handler
+itself, not in `logic.py`, so a hand-copied CLI command would duplicate that
+and drift from it over time. Preferred shape: a generic OpenAPI→Typer
+bridge — at startup, walk `app.openapi()` (already exported to
+`docs/openapi.json` in CI) and dynamically generate one Typer command per
+operation (path params → CLI args, request model fields → CLI options,
+dispatched over `httpx` with the stored bearer token). New endpoints get a
+CLI command for free with nothing to hand-maintain, since it reads the live
+schema rather than a frozen copy of it. Real effort to get right (nested
+models, auth header, error formatting) — that's the actual reason to
+postpone it, not the idea itself.
+
+**Seeding a fresh deployment** (parked here since it's the same shape as the
+CLI question): don't write directly to the database. Old backend's `seed`
+compose service ran the `epichem` CLI/YAML importer straight against the DB.
+The equivalent here should be a short script issuing real API calls — create
+the bootstrap user, log in, `POST` the example site/lab/station layout —
+using the same auth path a human would. That keeps seeding honest to what
+the API actually accepts (schema drift can't silently desync a direct-DB
+seed script from validation the API enforces) and it's a natural first
+consumer of whatever CLI shape is chosen above. Not built now; no seed
+mechanism exists in the meantime.
+
 ---
 
 ## Milestone 2 — Workflow design

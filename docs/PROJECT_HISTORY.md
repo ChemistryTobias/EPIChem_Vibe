@@ -117,6 +117,15 @@ still matters for the rewrite even though the code paths named below
   Status/Context/Decision/Consequences; never edited to reverse a
   decision — a later ADR supersedes and says so.
 
+**`backend/app` rewrite (current)**
+- **No Alembic yet, on purpose.** `Database.metadata.create_all()` covers
+  both SQLite and Postgres identically and is deliberately kept while the
+  core entities (`Device` especially, per Roadmap 1.3) are still actively
+  gaining/reshaping fields — writing migrations for a schema that's about to
+  change again is pure overhead with no payoff yet. Introduce Alembic once
+  the entities stabilize, ideally right before the first production deploy
+  with data worth preserving across upgrades.
+
 ---
 
 ## Milestone history (condensed)
@@ -163,8 +172,9 @@ still matters for the rewrite even though the code paths named below
 ## Known gaps carried forward
 
 - **Auth was a shared bearer token, never real identity** (old backend);
-  the new backend (`backend/app/`) currently has none at all — see the
-  Roadmap's 0.2.
+  the new backend (`backend/app/`) now has real per-user auth (0.2, done),
+  but no access-*level* logic yet — any valid token grants full access to
+  everything, see `app/core/access_control/README.md`.
 - **No observability** in either backend yet — nothing to debug a
   distributed run with, but there's also no distributed run yet.
 - A few cosmetic (non-correctness) schema/spec mismatches were found and

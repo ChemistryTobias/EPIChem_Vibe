@@ -14,6 +14,13 @@ app = FastAPI()
 
 # Adds endpoints/routes and HTTP exception handlers
 install_exception_handlers(app)
-app.include_router(modules_router)
-app.include_router(core_router)
-# app.include_router(plugins_router)
+
+
+@app.get("/api/v1/health")
+def health():
+    return {"status": "ok"}
+
+
+app.include_router(modules_router, prefix="/api/v1")
+app.include_router(core_router, prefix="/api/v1")
+# app.include_router(plugins_router, prefix="/api/v1")
