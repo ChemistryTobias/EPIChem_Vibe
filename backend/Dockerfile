@@ -1,4 +1,4 @@
-# EPIChem backend image.
+# EPIChem backend image (backend/app — the active backend).
 #
 # Two targets from one file:
 #   --target dev      editable install + dev deps, for compose.yaml (hot reload)
@@ -31,30 +31,29 @@ FROM base AS dev
 # Copy only the metadata first so this layer caches across source edits.
 COPY pyproject.toml ./
 # setuptools needs the package present to resolve the editable install.
-COPY epichem ./epichem
+COPY app ./app
 RUN pip install -e ".[dev]"
 
 # compose.yaml bind-mounts ./backend over /app. The editable install writes a
 # path finder into site-packages that points back at /app, so the mounted
 # source is what actually gets imported — that is what makes --reload work.
 EXPOSE 8000
-CMD ["uvicorn", "epichem.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # ---------------------------------------------------------------- runtime
 FROM base AS runtime
 
 COPY pyproject.toml ./
-COPY epichem ./epichem
+COPY app ./app
 RUN pip install .
 
 # Non-root. Do this after the install so pip still writes to system paths.
-RUN useradd --create-home --uid 10001 epichem
+# chown /app too: the sqlite fallback (no DATABASE_URL set) writes its file
+# there, and it's root-owned from the COPY/pip steps above otherwise.
+RUN useradd --create-home --uid 10001 epichem \
+ && chown epichem:epichem /app
 USER epichem
 
 EXPOSE 8000
 
-# No --reload, and no migrations here on purpose: the schema is upgraded by a
-# separate one-shot step (the `migrate` service in compose, a pre-upgrade Helm
-# hook in Kubernetes). Two API replicas racing `alembic upgrade` is a genuine
-# way to corrupt a schema, and an entrypoint migration guarantees that race.
-CMD ["uvicorn", "epichem.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

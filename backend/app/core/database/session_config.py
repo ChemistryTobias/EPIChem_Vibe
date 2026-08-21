@@ -3,9 +3,13 @@ import os
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./site.db")
+# check_same_thread is a sqlite-only connect arg; psycopg rejects it.
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+
 engine = create_engine(
-    "sqlite:///./site.db",
-    connect_args={"check_same_thread": False},
+    DATABASE_URL,
+    connect_args=connect_args,
     echo=os.environ.get("SQL_ECHO", "false").lower() == "true",
 )
 SessionLocal = sessionmaker(bind=engine)
