@@ -2,15 +2,22 @@ import os
 
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./site.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite://")  # in-memory when unset
+is_sqlite = DATABASE_URL.startswith("sqlite")
 # check_same_thread is a sqlite-only connect arg; psycopg rejects it.
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+connect_args = {"check_same_thread": False} if is_sqlite else {}
+# In-memory sqlite is one throwaway DB per connection by default; StaticPool
+# pins the engine to a single connection so all requests see the same data.
+is_memory = DATABASE_URL in ("sqlite://", "sqlite:///:memory:")
+extra_kwargs = {"poolclass": StaticPool} if is_memory else {}
 
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
     echo=os.environ.get("SQL_ECHO", "false").lower() == "true",
+    **extra_kwargs,
 )
 SessionLocal = sessionmaker(bind=engine)
 
