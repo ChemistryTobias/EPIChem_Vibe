@@ -46,21 +46,19 @@ which is what the rest of 0.x and Milestone 1 close.
 
 ### 0.2 File storage, auth, users, groups, revisions
 - **File storage** — done (`core/file_storage/`).
-- **Auth + Users + Groups** — not started. A reasonable starting shape
-  (sketched, not yet built): a `User` (code/name/email, no global role
-  field), a `Group` (code/name + membership), and a scope-based
-  `AccessGrant` tying a subject (user or group) to a hierarchy node
-  (site/lab/zone/station/device, referenced polymorphically like `Revision`
-  already does) with a level of `none | read | read_write` — per-scope
-  access, not fixed role tiers. Treat this as a starting point to adjust,
-  not a locked design.
-- **Revisions** — not started, design intentionally still open. The old
-  backend's full-snapshot-per-write `Revision` table (ADR 0004) is a
-  reasonable reference for scope and mechanism, but the redesign you have in
-  mind hasn't been specified yet — this needs a decision before 0.2 can
-  close, and Milestone 1.3's "pod version push" and Milestone 2's workflow
-  runs will both want to hang off whatever the answer is (a plan revision
-  and a run should both be reconstructible after the fact).
+- **Auth + Users + Groups** — done and wired. `app/core/access_control/`
+  (auth/users/groups) is mounted; every endpoint across the API requires a
+  valid bearer token except `POST /users` (bootstrap path) and `POST
+  /auth/login`. What's *not* built yet: access **levels** — right now any
+  valid token grants full access to everything. The scope-based
+  `AccessGrant` design (subject → hierarchy node → `none | read |
+  read_write`, resolved via ancestor-walk) is recorded as the leading option
+  in `app/core/access_control/README.md`, not yet implemented.
+- **Revisions** — done and wired. `app/core/revisions/` records a full JSON
+  snapshot + actor on every create/update/delete, across all
+  `device_managment` entities plus `file_storage`/`users`/`groups`, viewable
+  via `GET /revisions`. Matches the old backend's ADR-0004 shape closely
+  enough that this is considered closed, not a placeholder.
 
 ### 0.3 A frontend that matches the new backend
 **Status: not started**, deliberately sequenced after Milestone 1's device
@@ -112,12 +110,53 @@ first setting up a dedicated git repo. This is meant as the fast
 onboarding/prototyping path — a device proven out this way should be able to graduates into a
 proper git-tracked pod when it's ready for production use (should be also be an option for easier onboarding as a parallel deployment mechanism).
 
-This is also where the audit's device-management gap gets closed: `Device`
-needs `CapabilityClass`, `ophyd_import`/`ophyd_args`, `transport_*`,
-`network_*`, `capabilities`, `envelope`, `safety_*`, `operational_mode` —
-the fields a pod's descriptor actually needs to be introspectable per §6.1
-and §9.2 (`plans_allowed`/`devices_allowed`). Do this before 2.2's node
-palette, which is generated directly from that introspection.
+This is also where the audit's device-management gap gets closed. Old
+backend's `epichem/models/{device,capability}.py` is the reference — port
+the fields, not necessarily the exact split (`app/`'s `Device` doesn't have
+old's `node_kind`/`parent_id` self-nesting since `Module` is already its own
+entity here):
+
+- **`CapabilityClass`** (new entity, `app/core/shared_schema/` or its own
+  `device_managment/capability_class/` slice — decide at build time): `name`
+  (unique), `iri: str | None`, `extends: list[str]`, `actions: dict` (the
+  RFC-2119 action contract — plan reference, params, contract lines, emitted
+  events; the compiler that maps abstract steps to a device's plan is M2/M3
+  work, not this milestone).
+- **`Device` gains**:
+  - `capability_class_uuid: UUID | None` (FK → `CapabilityClass`),
+    `capabilities: list[str]`
+  - `ophyd_import: str | None`, `ophyd_args: dict`
+  - `transport_protocol: str | None`, `transport_uri: str | None`,
+    `transport_ioc_host: str | None`, `transport_quality: str` (default
+    `"nominal"` — §6.2's nominal/degraded flag for the degraded vendor-bridge
+    onboarding path)
+  - `network_netbox_device_id: int | None`, `network_primary_ip: str | None`,
+    `network_mac: str | None`, `network_vlan: str | None` (kept even with
+    NetBox itself out of scope — these are just plain descriptive fields)
+  - `envelope: dict` (operating ranges — temperature/pressure/etc.
+    min/max/resolution/settling time, shape TBD per capability class)
+  - `safety_flags: list[str]`, `safety_interlocks: list[str]`,
+    `safety_max_unattended_minutes: int | None`
+  - `operational_mode: str` (default `"read_write"`), `operational_calibration:
+    dict | None`
+  - Pose/footprint: old backend had separate `pose_*_mm` and `size_*_mm`
+    columns; `app/`'s `object_geometry` mixin already covers position +
+    dimension, so fold pose into it rather than reintroducing a second set of
+    position fields — confirm this at build time rather than assuming.
+- **`Signal` child entity** (old: `device_id`, `name`, `dtype`, `units`,
+  `limits`, `precision`, `kind`) — populated by ophyd introspection (M2), not
+  by descriptor ingestion. Can stay unpopulated/unbuilt until introspection is
+  actually attempted; not a hard blocker for 1.3 itself.
+
+Do this before 2.2's node palette, which is generated directly from
+`plans_allowed`/`devices_allowed` introspection against these fields (§6.1,
+§9.2).
+
+**CLI**: `app/cli/` is currently an empty stub. No new scope planned for it
+ahead of Milestone 1.3 — once pods exist, this is the natural place for
+pod-related commands (trigger a redeploy, check pod/queueserver status) and
+for the `epichem-runner` local-device path described above. Not built until
+one of those has a concrete first command to add.
 
 ---
 
@@ -180,3 +219,9 @@ out, per your own "I don't know how to implement this yet."
 - 2.1/2.2 depend on 1.3's introspectable device descriptors existing; there
   is nothing for the node palette to generate from before that.
 - 3 depends on 2.x producing actual workflow runs to link samples to.
+- **List-endpoint filters** (`?station_uuid=` etc.) are deliberately not a
+  milestone item. Every entity's response already nests its children
+  (`Station.devices`, `Lab.stations`, ...), so "just this station's devices"
+  is already reachable without a filter — just less efficient at scale than a
+  dedicated paginated filter would be. Add one only when a screen or list
+  size actually needs it, not ahead of that.
