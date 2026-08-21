@@ -12,9 +12,16 @@ and dispatches; Bluesky/EPICS execute.
 docker compose up
 ```
 
-Open **<http://localhost:5173>**. That's the whole thing — Postgres, the
-schema migrated, an example lab seeded, the API on `:8000`, the console on
-`:5173`.
+That brings up Postgres, the API on `:8000`, the console on `:5173`. The
+database starts **empty** — see `scripts/README.md` for a local seed script,
+or just create things through the console.
+
+Open **<http://localhost:5173>**.
+
+> The console still targets the old backend's API shape — Roadmap milestone
+> 0.3 repoints it at the current backend. The API itself
+> (`docker compose up api`, or just `curl localhost:8000/api/v1/health`)
+> works today; the console doesn't yet.
 
 ```bash
 docker compose logs -f api     # follow one service

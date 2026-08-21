@@ -14,8 +14,7 @@ experiments itself; it administers and dispatches to Bluesky/EPICS, which do.
 - **[Project history](PROJECT_HISTORY.md)** — condensed decision log and
   milestone record for everything already built. Read this for "why is it
   built this way."
-- **[API reference](API.md)** — the backend's endpoints, generated from its
-  OpenAPI schema.
+- **[API reference](API.md)** — the backend's endpoints, plainly listed.
 
 ## Reference
 
@@ -35,5 +34,11 @@ experiments itself; it administers and dispatches to Bluesky/EPICS, which do.
 docker compose up   # → http://localhost:5173
 ```
 
-See the repo root [`README.md`](../README.md) for the short version, or
-`HOST_SETUP.md` above for the full operational picture.
+Starts empty — see [`../scripts/README.md`](../scripts/README.md) for a
+local-dev seed script. See the repo root [`README.md`](../README.md) for the
+short version, or `HOST_SETUP.md` above for the full operational picture.
+
+## Historical reference
+
+- **[`descriptors_old/`](descriptors_old/)** — the old backend's YAML
+  fixture set. Not used by anything today; kept for reference only.

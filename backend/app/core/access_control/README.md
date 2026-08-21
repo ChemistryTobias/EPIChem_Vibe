@@ -1,11 +1,12 @@
 # access_control
 
-Identity and (eventually) authorization for the app. Currently: `users`
-(accounts), `groups` (named collections of users), `auth` (login/logout,
-opaque bearer tokens, `get_current_user`). All built, all unwired -- nothing
-in `device_managment/` checks any of this yet, and no actual access
-*limitation* exists. See `router.py` for the aggregate router (also unwired,
-commented out in `app/core/router.py`).
+Identity and (eventually) authorization for the app. `users` (accounts),
+`groups` (named collections of users), `auth` (login/logout, opaque bearer
+tokens, `get_current_user`). Wired: every endpoint across the API requires
+`get_current_user` except `POST /auth/login` and `POST /users` (the
+bootstrap path). No access *limitation* exists yet -- any valid token grants
+full access to everything. See `router.py` for the aggregate router, mounted
+in `app/core/router.py`.
 
 ## Access limitation -- postponed, options on the table
 

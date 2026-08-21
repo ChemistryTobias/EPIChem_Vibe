@@ -125,6 +125,19 @@ still matters for the rewrite even though the code paths named below
   change again is pure overhead with no payoff yet. Introduce Alembic once
   the entities stabilize, ideally right before the first production deploy
   with data worth preserving across upgrades.
+- **`backend/epichem/` deleted outright**, not kept as a parallel reference
+  tree, once `backend/app/` reached parity + real auth + revisions. Its
+  design decisions stay documented above; its 101 tests' coverage is
+  summarized in `backend/tests/TESTED.md` rather than kept as dead code.
+  `compose.yaml`/`compose.prod.yaml`/`.gitlab-ci.yml` updated to build/run
+  `app/` — no `migrate` step (no Alembic yet) and no `seed` step (nothing
+  writes example data into a fresh deployment yet, see `scripts/README.md`
+  for the local-dev-only stand-in).
+- **Docs are plain Markdown, no static site.** GitLab Pages + Zensical
+  (`zensical.toml`, the `pages`/`docs:openapi` CI jobs) were tried, then
+  dropped in favor of Markdown files viewable directly in GitLab, entered
+  through the repo root `README.md`. `docs/API.md` is a hand-written static
+  snapshot of the endpoints now, not a live `openapi.json` fetch.
 
 ---
 

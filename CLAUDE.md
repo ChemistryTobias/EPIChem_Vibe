@@ -14,32 +14,31 @@ something. Design reference: [`docs/project_plan/DESIGN.md`](docs/project_plan/D
 this on any UI work, don't re-derive it from the brand manual). API
 reference: [`docs/API.md`](docs/API.md).
 
-## Two backends, one active
+## The backend
 
-- **`backend/app/`** — the active, in-progress rewrite. Vertical-slice:
-  one file per concern per entity (`modules/device_managment/<entity>/
-  {schema,api,logic}.py`), shared code in `app/core/` (`object` — id/name/
-  description mixins; `geometry` — `GeometryDescriptor` + the
-  `get_default_geometry` collision-free-placement pattern; `file_storage`;
-  `pagination`). **New backend work happens here.**
-- **`backend/epichem/`** — the original registry-pattern backend (models/
-  schemas/api split, YAML descriptor import/export, a versioned `Revision`
-  write service). Kept for reference — its design decisions are documented
-  in `docs/PROJECT_HISTORY.md`. Don't add new features here.
-- **`frontend/`** still targets the *old* API today. Repointing it at
-  `backend/app/` (flat bodies, PATCH instead of full-replace PUT) is
-  Roadmap milestone 0.3 — don't assume the frontend and `backend/app/`
-  are wired together yet.
+`backend/app/` is the only backend — a vertical slice per entity, one file
+per concern (`modules/device_managment/<entity>/{schema,api,logic}.py`),
+shared code in `app/core/`: `shared_schema` (`object` — id/name/description
+mixins; `geometry` — `GeometryDescriptor` + the `get_default_geometry`
+collision-free-placement pattern), `access_control` (auth/users/groups),
+`revisions` (audit trail, one row per write), `file_storage`, `pagination`.
+
+The original registry-pattern backend (`backend/epichem/`) was deleted once
+`app/` reached parity + auth + revisions — its design decisions are still
+documented in `docs/PROJECT_HISTORY.md`, and what its 101 tests covered is
+noted in `backend/tests/TESTED.md`.
+
+**`frontend/` still targets that old, now-deleted API shape** (envelope
+bodies, full-replace `PUT`). Repointing it at `backend/app/`'s flat
+bodies/`PATCH` is Roadmap milestone 0.3 — don't assume the frontend and
+`backend/app/` are wired together yet; running `docker compose up` today
+gives you a working API and a console that errors against it.
 
 ## Working in this repo
 
-- **`backend/app/`** (active): `backend/.venv/bin/pytest`,
-  `.venv/bin/ruff check app`. No Postgres needed for local dev — falls back
-  to a local sqlite file.
-- **`backend/epichem/`** (reference): `.venv/bin/pytest`, `.venv/bin/ruff
-  check epichem tests`, `.venv/bin/epichem <command>`. Descriptor YAML in
-  `descriptors/` at the repo root is this backend's import fixture and
-  `test_cli.py`'s fixture — don't restructure without checking that file.
+- **Backend**: `backend/.venv/bin/pytest`, `.venv/bin/ruff check app`. No
+  Postgres needed for local dev — falls back to an in-memory sqlite DB
+  (`DATABASE_URL` env var to point at real Postgres).
 - **`frontend/`**: `npm run dev` (proxies `/api` to `:8000`), `npm run
   typecheck`, `npm run build`. Read `frontend/README.md` before adding a
   dependency — no router/data-fetching-library/UI-kit/codegen is deliberate,
@@ -50,25 +49,29 @@ reference: [`docs/API.md`](docs/API.md).
 
 ## Conventions
 
-- **Registry mutation goes through a write service, not direct ORM writes**
-  — `backend/epichem/registry.py`'s `create_entity`/`update_entity`/
-  `delete_entity` record a `Revision` on every write (see
-  `docs/PROJECT_HISTORY.md`'s "database is the source of truth" decision).
-  `backend/app/` doesn't have a revision system yet — that's Roadmap 0.2,
-  still an open design question, not yet a locked pattern to follow.
-- **`backend/app/`'s geometry defaults**: each `Create*` schema's
-  `object_geometry` field uses a Pydantic `default_factory` that opens its
-  own short-lived DB session (Pydantic doesn't give a factory access to the
-  request's session) to find a collision-free slot near the parent's
-  existing children (`find_free_slot_2d`). See any `<entity>/logic.py`'s
-  `get_default_geometry` for the pattern; keep new entities consistent
-  with it rather than inventing a second placement mechanism.
+- **Every create/update/delete records a `Revision`** (`app/core/revisions/`)
+  — full JSON snapshot + acting user, queryable via `GET /revisions`. Follow
+  the pattern already in every `device_managment` entity's `api.py` rather
+  than inventing a second write path.
+- **Every endpoint requires a bearer token** (`app/core/access_control/`)
+  except `POST /auth/login` and `POST /users` (bootstrap). No access
+  *level* logic yet — see `app/core/access_control/README.md` for the
+  options on the table.
+- **Geometry defaults**: each `Create*` schema's `object_geometry` field
+  uses a Pydantic `default_factory` that opens its own short-lived DB
+  session (Pydantic doesn't give a factory access to the request's session)
+  to find a collision-free slot near the parent's existing children
+  (`find_free_slot_2d`). See any `<entity>/logic.py`'s `get_default_geometry`
+  for the pattern; keep new entities consistent with it.
 - **The frontend hand-mirrors backend response schemas** in
   `frontend/src/api/types.ts`. If a backend `*Out`/response model changes,
   update that file too — nothing checks it for you.
 - Enumerated fields (environment_class, atmosphere, operational mode, …)
-  are plain validated strings, not DB enums, in both backends — see the
-  module docstring in whichever `models`/`schema` file for why.
+  are plain validated strings, not DB enums — see the module docstring in
+  whichever `schema.py` for why.
+- **No Alembic yet, on purpose** — `Database.metadata.create_all()` covers
+  both sqlite and Postgres while the core entities are still actively
+  gaining fields. See `docs/PROJECT_HISTORY.md`'s decision log.
 
 ## Process
 

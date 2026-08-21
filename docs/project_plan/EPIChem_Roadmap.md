@@ -1,11 +1,9 @@
 # EPIChem — Roadmap (supersedes §14 milestones)
 
 **Status:** active roadmap, replaces the M0–M6 milestone numbering in
-`EPIChem_Project_Plan.md` §14 going forward. `PROJECT_MILESTONES.md` should
-be re-pointed at this numbering the next time it's updated — not done as
-part of writing this document, to keep this change to the plan only.
+`project_plan_outdated.md` §14 going forward.
 
-This document does **not** replace `EPIChem_Project_Plan.md`. That document
+This document does **not** replace `project_plan_outdated.md`. That document
 stays the binding spec for architecture, the canonical data model, and the
 sections referenced below by number — this roadmap only re-sequences *when*
 things get built and folds in decisions made since it was written. Where
