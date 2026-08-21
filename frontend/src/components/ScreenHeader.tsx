@@ -1,8 +1,4 @@
-/**
- * The 72px bar at the top of every screen: title + one-line subtitle on the
- * left, screen-specific actions on the right. Straight from the prototype's
- * layout language.
- */
+/** The 72px bar at the top of every screen: title/subtitle left, actions right. */
 
 import type { ReactNode } from "react";
 
@@ -19,7 +15,7 @@ export function ScreenHeader({ title, subtitle, actions }: ScreenHeaderProps) {
     <header className="screen-header">
       <div>
         <h1 className="screen-header__title">{title}</h1>
-        <p className="screen-header__subtitle">{subtitle}</p>
+        <p className="screen-header__subtitle muted">{subtitle}</p>
       </div>
       {actions && <div className="screen-header__actions">{actions}</div>}
     </header>

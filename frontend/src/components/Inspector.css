@@ -1,11 +1,24 @@
 .inspector {
-  width: var(--inspector-width);
-  flex: 0 0 var(--inspector-width);
+  width: 0;
+  flex: 0 0 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--color-border-soft);
-  background: var(--color-bg);
   overflow: hidden;
+  border-left: 0 solid var(--color-border-soft);
+  background: var(--color-bg);
+  transition: width 0.16s ease, border-left-width 0.16s ease;
+}
+
+.inspector--open {
+  width: var(--inspector-width);
+  flex: 0 0 var(--inspector-width);
+  border-left-width: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inspector {
+    transition: none;
+  }
 }
 
 .inspector__header {
@@ -24,37 +37,21 @@
 
 .inspector__title {
   font-size: 15px;
-  line-height: 1.3;
-}
-
-.inspector__subtitle {
-  margin: var(--space-1) 0 0;
-  color: var(--color-text-secondary);
 }
 
 .inspector__close {
   border: 0;
   background: transparent;
-  padding: 0 var(--space-1);
   font-size: 20px;
   line-height: 1;
   color: var(--color-text-secondary);
   cursor: pointer;
 }
 
-.inspector__close:hover {
-  color: var(--color-text);
-}
-
 .inspector__body {
   flex: 1;
   overflow-y: auto;
   padding: var(--space-4);
-}
-
-.inspector__placeholder {
-  margin: 0;
-  font-size: 13px;
 }
 
 .field + .field {
@@ -64,30 +61,4 @@
 .field__value {
   margin-top: 2px;
   word-break: break-word;
-}
-
-.field-group {
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border-soft);
-}
-
-.field-group:first-child {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-}
-
-/* When an actions row precedes the first data group, its own bottom divider is
- * the single line before the data — don't stack the group's top hairline on top
- * of it (the "two lines before the data starts" that read as redundant). */
-.node-actions + .field-group {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-}
-
-.field-group__title {
-  margin: 0 0 var(--space-3);
-  color: var(--color-primary-dark);
 }

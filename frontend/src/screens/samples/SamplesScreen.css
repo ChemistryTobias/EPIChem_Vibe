@@ -1,144 +1,29 @@
-/* Table. Hairline rules only — DESIGN.md's flat, geometric language means
- * no zebra striping and no card shadows around data. */
-
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius);
-}
-
 .table {
   width: 100%;
   border-collapse: collapse;
+  margin-top: var(--space-4);
+  font-size: 13px;
 }
 
-.table thead th {
-  position: sticky;
-  top: 0;
-  background: var(--color-surface-muted);
+.table th {
   text-align: left;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-border);
-  white-space: nowrap;
 }
 
 .table td {
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-border-soft);
-  vertical-align: middle;
-}
-
-.table tbody tr:last-child td {
-  border-bottom: 0;
 }
 
 .table__row {
   cursor: pointer;
 }
 
-.table__row:hover td {
+.table__row:hover {
   background: var(--color-surface-muted);
 }
 
-.table__row--selected td {
+.table__row--selected {
   background: var(--color-surface-muted);
-  box-shadow: inset 3px 0 0 var(--color-primary);
-}
-
-.table__code {
-  font-weight: 600;
-  color: var(--color-primary-dark);
-  white-space: nowrap;
-}
-
-/* --- register form -------------------------------------------------------- */
-
-.new-sample {
-  border: 1px solid var(--color-border-soft);
-  border-left: 3px solid var(--color-primary);
-  border-radius: var(--radius);
-  background: var(--color-surface-muted);
-  padding: var(--space-4);
-  margin-bottom: var(--space-4);
-}
-
-.new-sample__title {
-  margin: 0 0 var(--space-3);
-  color: var(--color-primary-dark);
-}
-
-.new-sample__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-3);
-}
-
-.new-sample__wide {
-  grid-column: span 2;
-}
-
-.new-sample label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.new-sample input,
-.new-sample select {
-  padding: 7px var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-bg);
-  font-size: 13px;
-}
-
-.new-sample__error {
-  margin: var(--space-3) 0 0;
-  border-left: 3px solid var(--color-danger);
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-bg);
-  font-size: 12px;
-  color: var(--color-danger);
-}
-
-.new-sample__actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
-
-/* --- inspector extras ----------------------------------------------------- */
-
-.inspector__note {
-  margin: var(--space-2) 0 0;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.inspector__error {
-  margin: var(--space-4) 0 0;
-  border-left: 3px solid var(--color-danger);
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-surface-muted);
-  font-size: 12px;
-  color: var(--color-danger);
-}
-
-.inspector__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border-soft);
-}
-
-.inspector select {
-  padding: 5px var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-bg);
-  font-size: 13px;
-  max-width: 100%;
 }

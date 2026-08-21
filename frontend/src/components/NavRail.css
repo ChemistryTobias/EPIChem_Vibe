@@ -1,0 +1,86 @@
+.nav-rail {
+  width: var(--nav-width);
+  flex: 0 0 var(--nav-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-primary-dark);
+  color: #ffffff;
+  padding: var(--space-5) 0;
+}
+
+.nav-rail__brand {
+  padding: 0 var(--space-5) var(--space-5);
+}
+
+.nav-rail__wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: 0.16em;
+}
+
+.nav-rail__nav {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-rail__item {
+  display: block;
+  width: 100%;
+  padding: 10px var(--space-5);
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 12px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  cursor: pointer;
+}
+
+.nav-rail__item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.nav-rail__item--active {
+  background: var(--color-primary);
+  border-left-color: #ffffff;
+  color: #ffffff;
+}
+
+.nav-rail__subnav {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-2);
+  background: var(--color-primary);
+}
+
+.nav-rail__subitem {
+  display: block;
+  width: 100%;
+  padding: 6px var(--space-5) 6px calc(var(--space-5) + var(--space-4));
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--font-display);
+  font-size: 11px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  cursor: pointer;
+}
+
+.nav-rail__subitem:hover {
+  color: #ffffff;
+}
+
+.nav-rail__subitem--active {
+  color: #ffffff;
+  font-weight: 700;
+}

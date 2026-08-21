@@ -1,0 +1,110 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 9px 20px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-button);
+  cursor: pointer;
+  /* Color only — no transform, no shadow (DESIGN.md §5: no depth effects). */
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+}
+
+
+.btn--primary {
+  background: var(--color-primary);
+  color: #ffffff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+
+.btn--primary:disabled {
+  background: var(--color-border);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.btn--secondary {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+}
+
+.btn--secondary:disabled {
+  border-color: var(--color-border);
+  color: var(--color-border);
+}
+
+.btn--danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+/* Low-emphasis text button. DESIGN.md §5 explicitly exempts these from the
+ * all-caps + tracking rule, where it would be visually too loud. */
+.btn--text {
+  padding: 4px 6px;
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-primary);
+}
+
+.btn--text:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* Compact companion button (`size="sm"`) — the "non-main" buttons that sit next
+ * to a primary action in a toolbar/overlay. White fill, not bold, quiet grey with
+ * a thin grey border. Placed last so it wins over the variant colours on equal
+ * specificity. */
+.btn--sm {
+  gap: var(--space-1);
+  padding: 5px 12px;
+  font-size: 10px;
+  font-weight: 400;
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+/* Like the location path: on hover only the *text* changes colour (the white
+ * fill and grey border stay put) — green normally, red for a destructive one.
+ * The fill/border are restated so a small button that is *also* `secondary`
+ * (the default variant) doesn't pick up `.btn--secondary:hover`'s grey fill. */
+.btn--sm:hover:not(:disabled) {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  color: var(--color-primary);
+}
+
+.btn--sm.btn--danger:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.btn--sm:disabled {
+  background: var(--color-bg);
+  border-color: var(--color-border-soft);
+  color: var(--color-border);
+}

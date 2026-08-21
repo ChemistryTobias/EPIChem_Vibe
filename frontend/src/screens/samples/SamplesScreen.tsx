@@ -1,157 +1,71 @@
-/**
- * Samples screen: search/filter, register, and a table of the real rows in
- * the `samples` table — `GET /api/v1/samples` (ADR 0005). No fixtures.
- */
+import { useState } from "react";
 
-import { useCallback, useMemo, useState } from "react";
-
-import { listSamples } from "../../api/samples";
-import { SAMPLE_STATES } from "../../api/types";
-import type { Sample } from "../../api/types";
-import { AsyncBoundary } from "../../components/AsyncBoundary";
-import { Button } from "../../components/Button";
-import { Pager } from "../../components/Pager";
+import { Alert } from "../../components/Alert";
+import { Field, Inspector } from "../../components/Inspector";
 import { ScreenHeader } from "../../components/ScreenHeader";
-import { useAsync } from "../../hooks/useAsync";
-import { NewSampleForm } from "./NewSampleForm";
-import { SampleInspector } from "./SampleInspector";
-import { SampleTable } from "./SampleTable";
+import { MOCK_SAMPLES } from "./mockSamples";
 
 import "./SamplesScreen.css";
 
-const PAGE_SIZE = 50;
-
 export function SamplesScreen() {
-  const [q, setQ] = useState("");
-  const [state, setState] = useState("");
-  const [offset, setOffset] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-
-  const samples = useAsync(
-    useCallback(
-      () =>
-        listSamples({
-          q: q || undefined,
-          state: state || undefined,
-          limit: PAGE_SIZE,
-          offset,
-        }),
-      [q, state, offset],
-    ),
-  );
-
-  // Changing a filter has to reset the offset, or you land on page 3 of a
-  // result set that now has one page and see an empty table.
-  const applyFilter = (apply: () => void) => {
-    apply();
-    setOffset(0);
-  };
-
-  // Track the selection by id and look the row up again on each render, so
-  // the inspector shows the *fresh* row after a write rather than the stale
-  // object that was clicked.
-  const selected = useMemo(
-    () => (samples.data?.items ?? []).find((s) => s.id === selectedId) ?? null,
-    [samples.data, selectedId],
-  );
-
-  const handleSelect = (sample: Sample) => setSelectedId(sample.id);
+  const selected = MOCK_SAMPLES.find((s) => s.uuid === selectedId) ?? null;
 
   return (
     <>
-      <ScreenHeader
-        title="Samples"
-        subtitle="Registered samples (§7.1, minimal model — see ADR 0005)."
-        actions={
-          <>
-            <Button onClick={() => setCreating((open) => !open)}>
-              {creating ? "Close form" : "New sample"}
-            </Button>
-            <Button variant="primary" onClick={samples.reload}>
-              Refresh
-            </Button>
-          </>
-        }
-      />
-
+      <ScreenHeader title="Samples" subtitle="Sample tracking — mockup" />
       <div className="screen">
         <div className="screen__content">
-          {creating && (
-            <NewSampleForm
-              onCreated={() => {
-                setCreating(false);
-                samples.reload();
-              }}
-              onCancel={() => setCreating(false)}
-            />
-          )}
+          <Alert kind="info">
+            Demo data — the Sample entity doesn't exist in the backend yet. These rows are static.
+          </Alert>
 
-          <div className="toolbar">
-            <input
-              type="search"
-              value={q}
-              onChange={(e) => applyFilter(() => setQ(e.target.value))}
-              placeholder="Search code, name or substance"
-              aria-label="Search samples"
-            />
-
-            <label className="label" htmlFor="sample-state">
-              State
-            </label>
-            <select
-              id="sample-state"
-              value={state}
-              onChange={(e) => applyFilter(() => setState(e.target.value))}
-            >
-              <option value="">All</option>
-              {SAMPLE_STATES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
+          <table className="table">
+            <thead>
+              <tr>
+                <th className="label">Code</th>
+                <th className="label">Name</th>
+                <th className="label">State</th>
+                <th className="label">Substance</th>
+                <th className="label">Amount</th>
+                <th className="label">Location</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MOCK_SAMPLES.map((sample) => (
+                <tr
+                  key={sample.uuid}
+                  className={sample.uuid === selectedId ? "table__row table__row--selected" : "table__row"}
+                  onClick={() => setSelectedId(sample.uuid)}
+                >
+                  <td className="mono">{sample.code}</td>
+                  <td>{sample.name}</td>
+                  <td>{sample.state}</td>
+                  <td className="mono">{sample.substance}</td>
+                  <td className="mono">{sample.amount}</td>
+                  <td className="mono">{sample.location}</td>
+                </tr>
               ))}
-            </select>
-
-            <span className="toolbar__spacer label">{samples.data?.total ?? 0} total</span>
-          </div>
-
-          <AsyncBoundary
-            state={samples}
-            isEmpty={(page) => page.total === 0}
-            empty={
-              <p>
-                No samples yet. Use <strong>New sample</strong> above, or{" "}
-                <code className="mono">
-                  epichem sample add SMP-2026-0001 &quot;First sample&quot;
-                </code>
-                .
-              </p>
-            }
-          >
-            {(page) => (
-              <>
-                <SampleTable
-                  samples={page.items}
-                  selectedId={selectedId}
-                  onSelect={handleSelect}
-                />
-                <Pager
-                  total={page.total}
-                  limit={PAGE_SIZE}
-                  offset={offset}
-                  onOffsetChange={setOffset}
-                  noun="samples"
-                />
-              </>
-            )}
-          </AsyncBoundary>
+            </tbody>
+          </table>
         </div>
 
-        <SampleInspector
-          sample={selected}
-          onChanged={samples.reload}
+        <Inspector
+          open={selected != null}
+          kind="Sample inspector"
+          title={selected?.name}
+          subtitle={selected?.code}
           onClose={() => setSelectedId(null)}
-        />
+        >
+          {selected && (
+            <>
+              <Field label="State">{selected.state}</Field>
+              <Field label="Substance">{selected.substance}</Field>
+              <Field label="Amount">{selected.amount}</Field>
+              <Field label="Location">{selected.location}</Field>
+            </>
+          )}
+        </Inspector>
       </div>
     </>
   );

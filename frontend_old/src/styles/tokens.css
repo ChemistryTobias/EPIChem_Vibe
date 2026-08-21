@@ -1,0 +1,64 @@
+/* MPG / MPI-FKF design tokens.
+ *
+ * Straight out of ../../docs/project_plan/DESIGN.md §2 and §3 — that file is the
+ * source of truth, this one is just its machine-readable form. If a value
+ * here disagrees with DESIGN.md, DESIGN.md wins.
+ *
+ * DESIGN.md's rules that CSS can't enforce, so they're on you:
+ *   - max 4 MPG colors per view, max 2 of them as large fills
+ *   - accents (green light / blue light / orange) only at small scale:
+ *     chips, status dots, chart series — never as a page background
+ *   - flat fills only: no gradients, no glossy highlights, no elevation
+ *     shadows. State changes are a flat color shift or a focus ring.
+ */
+
+:root {
+  /* Brand */
+  --color-primary: #006c66; /* MPG green — primary actions, links */
+  --color-primary-dark: #005555; /* MPG green dark — sidebar, hover/active */
+  --color-accent-alt: #29485d; /* MPG blue dark — institute variant */
+
+  /* Neutrals */
+  --color-text: #000000;
+  --color-text-secondary: #777777; /* MPG grey dark */
+  --color-border: #a7a7a8; /* MPG grey */
+  --color-border-soft: #dcdcdc; /* MPG grey, lightened — hairlines in tables */
+  --color-surface-muted: #eeeeee; /* MPG grey light */
+  --color-bg: #ffffff;
+
+  /* Accents — small-scale only (status dots, chips, chart series) */
+  --color-accent-green: #c6d325;
+  --color-accent-blue: #00b1ea;
+  --color-accent-orange: #ef7c00;
+  /* DESIGN.md §5: no red exists in the MPG palette; this is the deliberate
+   * one-off exception it sanctions for destructive/error states. */
+  --color-danger: #c0392b;
+
+  /* Type. DESIGN.md §3 wants self-hosted Roboto — see public/fonts/README.md.
+   * Until the files are dropped in, this falls through to the system UI face
+   * and then to Arial, which is DESIGN.md's own stated fallback. Nothing here
+   * ever loads fonts.googleapis.com (GDPR). */
+  --font-display: "Roboto", system-ui, Arial, sans-serif;
+  --font-body: "Roboto", system-ui, Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", monospace;
+
+  --tracking-label: 0.08em; /* uppercase labels */
+  --tracking-heading: 0.03em; /* headings */
+  --tracking-button: 0.1em; /* DESIGN.md §5: button labels, +50–80 */
+
+  /* Geometry. DESIGN.md §5: sharp to minimally rounded. Kept at the sharp end —
+   * a single hairline radius so corners read as clean rectangles. */
+  --radius: 1px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Shell */
+  --sidebar-width: 236px;
+  --header-height: 72px;
+  --inspector-width: 316px;
+}

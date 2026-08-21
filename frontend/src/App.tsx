@@ -1,24 +1,14 @@
-/**
- * Route → screen. That's the whole of it: the shell owns the chrome, each
- * screen owns its own header, fetching and layout.
- *
- * The layout screen is lazy-loaded because it pulls in `@joint/core`, which
- * is bigger than everything else here put together (~435 kB of a 656 kB
- * bundle). Splitting it means the three list screens don't pay for a
- * diagramming library they never touch — and it's a one-import change
- * precisely because routing is this simple.
- */
+/** Route -> screen. Hierarchy/Device Status/Lab Layout are scaffolding only for now. */
 
 import { Suspense, lazy } from "react";
 
 import { AppShell } from "./components/AppShell";
+import { Placeholder } from "./components/Placeholder";
 import { useHashRoute } from "./hooks/useHashRoute";
-import { DevicesScreen } from "./screens/devices/DevicesScreen";
 import { SamplesScreen } from "./screens/samples/SamplesScreen";
-import { TopologyScreen } from "./screens/topology/TopologyScreen";
 
-const LayoutScreen = lazy(() =>
-  import("./screens/layout/LayoutScreen").then((m) => ({ default: m.LayoutScreen })),
+const WorkflowScreen = lazy(() =>
+  import("./screens/workflow/WorkflowScreen").then((m) => ({ default: m.WorkflowScreen })),
 );
 
 export function App() {
@@ -26,14 +16,15 @@ export function App() {
 
   return (
     <AppShell route={route}>
-      {route === "lab-layout" && (
-        <Suspense fallback={<div className="async async--loading label">Loading floor plan…</div>}>
-          <LayoutScreen />
+      {route === "hierarchy" && <Placeholder title="Hierarchy" />}
+      {route === "device-status" && <Placeholder title="Device Status" />}
+      {route === "lab-layout" && <Placeholder title="Lab Layout" />}
+      {route === "samples" && <SamplesScreen />}
+      {route === "workflow" && (
+        <Suspense fallback={<div className="label">Loading…</div>}>
+          <WorkflowScreen />
         </Suspense>
       )}
-      {route === "hierarchy" && <TopologyScreen />}
-      {route === "device-status" && <DevicesScreen />}
-      {route === "samples" && <SamplesScreen />}
     </AppShell>
   );
 }
