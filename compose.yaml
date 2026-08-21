@@ -71,6 +71,24 @@ services:
       retries: 10
       start_period: 10s
 
+  # ---------------------------------------------------------------- seed
+  # Optional, local dev only. Creates an admin user (admin/12345678) + one
+  # site, two labs, one station via scripts/generate_seed.py -- see
+  # scripts/README.md for what it does and its abort-if-admin-exists caveat.
+  # Uncomment and run: docker compose run --rm seed
+  # seed:
+  #   build:
+  #     context: ./backend
+  #     target: dev
+  #   depends_on:
+  #     api:
+  #       condition: service_healthy
+  #   environment:
+  #     API_BASE_URL: http://api:8000
+  #   volumes:
+  #     - ./scripts:/scripts:ro
+  #   command: ["python", "/scripts/generate_seed.py"]
+
   # ----------------------------------------------------------------- web
   web:
     build:
