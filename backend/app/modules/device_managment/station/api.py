@@ -1,8 +1,12 @@
+from typing import Annotated
 from uuid import UUID
 
+from app.core.access_control.auth.api import get_current_user
+from app.core.access_control.users.schema import User
 from app.core.database import SessionDepends
 from app.core.pagination import LimitParam, OffsetParam, paginate
-from fastapi import APIRouter, HTTPException, Response
+from app.core.revisions.logic import record_revision
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.modules.device_managment.lab.schema import LabDB
@@ -12,16 +16,20 @@ from .schema import CreateStation, Station, StationDB, UpdateStation
 
 router = APIRouter()
 
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
 
 # --- GET ---------------------------------------------------------------------
 @router.get("/stations")
-def get_all_stations(session: SessionDepends, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
+def get_all_stations(
+    session: SessionDepends, user: CurrentUser, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0
+):
     """List all stations."""
     return paginate(session.query(StationDB), response, limit, offset)
 
 
 @router.get("/stations/{identifier}", response_model=Station)
-def get_station(identifier: str, session: SessionDepends):
+def get_station(identifier: str, session: SessionDepends, user: CurrentUser):
     """Get a single station by its UUID or name."""
     try:
         station = session.get(StationDB, UUID(identifier))
@@ -34,7 +42,7 @@ def get_station(identifier: str, session: SessionDepends):
 
 # --- POST --------------------------------------------------------------------
 @router.post("/stations", response_model=Station, status_code=201)
-def create_station(body: CreateStation, session: SessionDepends):
+def create_station(body: CreateStation, session: SessionDepends, user: CurrentUser):
     """Create a new station."""
     data = body.model_dump(exclude_none=True)
     if data.get("zone_uuid") is not None:
@@ -44,6 +52,15 @@ def create_station(body: CreateStation, session: SessionDepends):
         session.add(station)
         session.commit()
         session.refresh(station)
+        record_revision(
+            session,
+            entity_type=StationDB.__object_type__,
+            entity_uuid=station.uuid,
+            action="created",
+            snapshot=Station.model_validate(station).model_dump(mode="json"),
+            actor_uuid=user.uuid,
+        )
+        session.commit()
         return station
     except IntegrityError:
         session.rollback()
@@ -52,10 +69,10 @@ def create_station(body: CreateStation, session: SessionDepends):
 
 # --- PATCH -------------------------------------------------------------------
 @router.patch("/stations/{identifier}", response_model=Station)
-def patch_station(identifier: str, body: UpdateStation, session: SessionDepends):
+def patch_station(identifier: str, body: UpdateStation, session: SessionDepends, user: CurrentUser):
     """Partially update a station."""
     update_data = body.model_dump(exclude_unset=True)
-    station = get_station(identifier, session)
+    station = get_station(identifier, session, user)
 
     if not update_data:
         return station
@@ -71,6 +88,15 @@ def patch_station(identifier: str, body: UpdateStation, session: SessionDepends)
     try:
         session.commit()
         session.refresh(station)
+        record_revision(
+            session,
+            entity_type=StationDB.__object_type__,
+            entity_uuid=station.uuid,
+            action="updated",
+            snapshot=Station.model_validate(station).model_dump(mode="json"),
+            actor_uuid=user.uuid,
+        )
+        session.commit()
         return station
     except IntegrityError:
         session.rollback()
@@ -83,11 +109,21 @@ def patch_station(identifier: str, body: UpdateStation, session: SessionDepends)
 
 # --- DELETE ------------------------------------------------------------------
 @router.delete("/stations/{identifier}", status_code=204)
-def delete_station(identifier: str, session: SessionDepends):
+def delete_station(identifier: str, session: SessionDepends, user: CurrentUser):
     """Delete a station by UUID or name."""
-    station = get_station(identifier, session)
+    station = get_station(identifier, session, user)
+    snapshot = Station.model_validate(station).model_dump(mode="json")
     try:
         session.delete(station)
+        session.commit()
+        record_revision(
+            session,
+            entity_type=StationDB.__object_type__,
+            entity_uuid=station.uuid,
+            action="deleted",
+            snapshot=snapshot,
+            actor_uuid=user.uuid,
+        )
         session.commit()
         return None
     except IntegrityError:
