@@ -26,10 +26,6 @@ stages:
   - deploy
 
 variables:
-  # Pin once, use everywhere. The npm package and the browser binaries baked
-  # into the image must be the same version or Playwright refuses to launch,
-  # so these two are deliberately driven by one variable.
-  PLAYWRIGHT_VERSION: "1.49.0"
   BACKEND_IMAGE: $CI_REGISTRY_IMAGE/backend
   FRONTEND_IMAGE: $CI_REGISTRY_IMAGE/frontend
   PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
@@ -205,20 +201,17 @@ build:frontend:
       fi
 
 # ------------------------------------------------------------------ verify
-# Brings the production stack up from the images just built and drives it in a
-# real browser. The screenshots are a deliverable (docs/MILESTONE_CI_CD.md §5)
-# but they are also the assertion: screenshots.mjs fails the job on any
-# uncaught page error, so this is a smoke test that happens to produce
-# documentation.
-#
-# allow_failure: true for now — frontend/ still targets the old backend's API
-# shape (Roadmap milestone 0.3 repoints it at backend/app/), so the stack
-# comes up healthy but the console itself is expected to error. Drop
-# allow_failure once 0.3 lands and this is a real assertion again.
+# Brings the production stack up from the images just built and asserts it
+# reaches a healthy state — a real Postgres, migrations-free schema creation,
+# api actually answering. No browser step: that used to screenshot the
+# console (docs/MILESTONE_CI_CD.md §5) via deploy/screenshots.mjs, but
+# frontend/ still targets the old backend's API shape (Roadmap milestone
+# 0.3 repoints it at backend/app/), so a screenshot assertion would only ever
+# fail on a broken console, not a broken stack. Rebuild that step once 0.3
+# lands and there's something real to assert against.
 verify:stack:
   extends: .docker
   stage: verify
-  allow_failure: true
   variables:
     # compose.prod.yaml requires this (its `${VAR:?}` guard refuses to start
     # otherwise). Throwaway value: the stack is destroyed in after_script.
@@ -242,17 +235,6 @@ verify:stack:
         fi
         sleep 1
       done
-    # Playwright runs as a container ON the compose network, so it reaches the
-    # console at its service name. No published ports, and no guessing about
-    # how dind exposes them to the job container.
-    - |
-      docker run --rm \
-        --network epichem-prod_default \
-        -v "$CI_PROJECT_DIR:/work" -w /work/deploy \
-        -e EPICHEM_BASE_URL=http://web:8080 \
-        -e EPICHEM_SCREENSHOT_DIR=/work/docs/src \
-        "mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-jammy" \
-        sh -c "npm install --no-audit --no-fund && node screenshots.mjs"
   after_script:
     # Always collect logs — a failed verify job is useless without them.
     - docker compose -f compose.prod.yaml logs --no-color > compose-logs.txt 2>&1 || true
@@ -260,7 +242,6 @@ verify:stack:
   artifacts:
     when: always
     paths:
-      - docs/src/
       - compose-logs.txt
     expire_in: 30 days
 
