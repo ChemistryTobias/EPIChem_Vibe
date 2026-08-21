@@ -8,13 +8,16 @@
 #
 # What comes up, in order:
 #
-#     db  ->  migrate  ->  seed  ->  api  ->  web
+#     db  ->  api  ->  web
 #
-# The arrows are real dependencies, not just ordering: `migrate` and `seed` are
-# one-shot containers that must EXIT SUCCESSFULLY before the next service
-# starts. That is what makes a single `docker compose up` land on a console
-# with the example lab already in it, rather than on an empty database or —
-# worse — an API serving 500s while migrations are still running.
+# `api` creates its own tables on boot (no migration tool yet — see
+# docs/PROJECT_HISTORY.md's "no Alembic yet" decision) and there is no seed
+# step: nothing writes example data into a fresh database yet. See the
+# Roadmap's CLI section for the planned approach (seed via real API calls).
+#
+# NOTE: frontend/ still targets the old backend's API shape — Roadmap
+# milestone 0.3 repoints it at backend/app/. Until that lands this stack
+# boots, but the console will not work against api's actual endpoints.
 #
 # Production is a different file: compose.prod.yaml. This one bind-mounts
 # source, runs Vite and uvicorn --reload, and defaults to an open API. Do not
@@ -44,12 +47,8 @@ services:
       retries: 20
       start_period: 5s
 
-  # ------------------------------------------------------------- migrate
-  # Alembic to head, once, before anything can talk to the database. Kept as
-  # its own service rather than folded into the API's startup because two API
-  # replicas running `alembic upgrade` concurrently is a real way to corrupt a
-  # schema — see backend/Dockerfile.
-  migrate:
+  # ----------------------------------------------------------------- api
+  api:
     build:
       context: ./backend
       target: dev
@@ -57,54 +56,12 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: &database_url >-
+      DATABASE_URL: >-
         postgresql+psycopg://${POSTGRES_USER:-epichem}:${POSTGRES_PASSWORD:-epichem}@db:5432/${POSTGRES_DB:-epichem}
-    volumes:
-      - ./backend:/app
-    command: ["epichem", "db", "upgrade", "head"]
-    restart: "no"
-
-  # ---------------------------------------------------------------- seed
-  # The example virtual lab, so the console isn't empty on first load. Safe to
-  # re-run; see deploy/seed.sh for why that took explicit effort.
-  seed:
-    build:
-      context: ./backend
-      target: dev
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    environment:
-      DATABASE_URL: *database_url
-    volumes:
-      - ./backend:/app
-      - ./descriptors:/descriptors:ro
-      - ./deploy/seed.sh:/seed.sh:ro
-    command: ["sh", "/seed.sh"]
-    restart: "no"
-
-  # ----------------------------------------------------------------- api
-  api:
-    build:
-      context: ./backend
-      target: dev
-    depends_on:
-      seed:
-        condition: service_completed_successfully
-    environment:
-      DATABASE_URL: *database_url
-      # Empty by default: writes are unauthenticated locally, which is what
-      # you want for development. The API logs a warning saying so at startup.
-      # Set it in .env to exercise the auth path.
-      EPICHEM_API_TOKENS: ${EPICHEM_API_TOKENS:-}
-      # Not needed here — the browser reaches the API through Vite's proxy on
-      # the web service's origin, so there is no cross-origin request to allow.
-      EPICHEM_CORS_ORIGINS: ${EPICHEM_CORS_ORIGINS:-}
     volumes:
       # Bind mount + editable install in the image = uvicorn --reload picks up
       # edits made on the host.
       - ./backend:/app
-      - ./descriptors:/descriptors:ro
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     healthcheck:
