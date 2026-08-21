@@ -32,7 +32,7 @@ async def upload_file(
     else:
         filename_identifier = f"{upload.filename[:35]}..."
     for i in range(1, 99999999):
-        result = session.query.filter_by(name=filename_identifier).first()
+        result = session.query(FileDB).filter_by(name=filename_identifier).first()
         if result is None: break
         else: 
             filename_identifier = filename_identifier.strip(f'-{i-1}') + f'-{i}'
