@@ -1,26 +1,24 @@
 # EPIChem CI/CD — gitlab.gwdg.de
 #
-# Implements docs/MILESTONE_CI_CD.md §3. Read docs/HOST_SETUP.md before the
-# first run: this pipeline needs the container registry enabled, a runner that
-# can build images, and two CI/CD variables that only a project maintainer can
-# set.
+# Read docs/HOST_SETUP.md before the first run: this pipeline needs the
+# container registry enabled and a runner that can build images.
 #
 #     lint -> test(frontend only) -> build -> verify -> deploy
 #
 # `verify` is the stage that earns the rest. Anyone can build an image that
 # pushes successfully; this brings the ACTUAL PRODUCTION IMAGES up together
-# with a real Postgres, waits for health, and drives the console in a real
-# browser. A green build with a broken stack is the failure mode this exists
-# to catch.
+# with a real Postgres and waits for health. A green build with a broken
+# stack is the failure mode this exists to catch.
 #
-# No `test` stage: backend/tests/ (the old backend's 101 tests) was deleted
-# alongside backend/epichem/ — see backend/tests/TESTED.md for what it used
-# to cover. backend/app/ has zero tests today.
+# No `test` stage for the backend, and no `docs` stage: backend/tests/ (the
+# old backend's 101 tests) was deleted alongside backend/epichem/ — see
+# backend/tests/TESTED.md for what it used to cover, backend/app/ has zero
+# tests today. Docs are plain markdown, viewable in GitLab directly — no
+# build/publish step.
 
 stages:
   - lint
   - test
-  - docs
   - build
   - verify
   - deploy
@@ -96,47 +94,6 @@ test:frontend:
     when: always
     reports:
       junit: junit-frontend.xml
-
-# -------------------------------------------------------------------- docs
-# docs.gitlab.com's own Zensical guide, adapted to this repo's docs/ layout.
-# The openapi.json export stays a separate job so it's reusable independent
-# of the site build (a local `docs:openapi` run is also how docs/API.md's
-# JS-rendered endpoint table gets its data outside CI).
-docs:openapi:
-  extends: .python
-  stage: docs
-  script:
-    - cd backend && python -c "
-        import json;
-        from app.main import app;
-        json.dump(app.openapi(), open('../docs/openapi.json', 'w'), indent=2)"
-  artifacts:
-    paths:
-      - docs/openapi.json
-    expire_in: 30 days
-
-# GitLab Pages: builds docs/ (Markdown + zensical.toml) into public/ and
-# publishes it as this project's Pages site. `needs: docs:openapi` pulls
-# openapi.json into the job's workspace before the build, so it's still
-# sitting in docs/ when Zensical copies non-Markdown files through — that's
-# what docs/API.md's inline script fetches at runtime. Job name and output
-# path (`public/`) are fixed by GitLab's Pages convention.
-# NOT YET VERIFIED — written the same way the rest of this pipeline was
-# before its first real run (see docs/HOST_SETUP.md's own honesty convention
-# about what's actually been executed vs. just written). Confirm the
-# instance has Pages enabled (Settings → Pages) before trusting the URL.
-pages:
-  stage: docs
-  image: python:3.13-slim
-  needs: ["docs:openapi"]
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-  script:
-    - pip install --no-cache-dir zensical
-    - zensical build
-  artifacts:
-    paths:
-      - public
 
 # ------------------------------------------------------------------- build
 .docker:
