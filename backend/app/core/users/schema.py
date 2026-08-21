@@ -1,7 +1,4 @@
-"""User accounts. Reuses the same Object/uuid/name/description/timestamps
-mixin every entity in this app uses (app.core.object) -- `name` is the
-username, matching the house convention of a unique `name` as the lookup key.
-"""
+"""User accounts, on the same Object mixin every entity uses -- `name` is the username."""
 
 from typing import Optional
 
@@ -27,7 +24,7 @@ class UserBase(BaseModel):
 
 
 class User(Object, UserBase):
-    """Never carries password_hash -- this is the response shape."""
+    """Response shape -- never carries password_hash."""
 
     model_config = ConfigDict(from_attributes=True)
 

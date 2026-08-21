@@ -1,13 +1,4 @@
-"""Generic, cross-entity change log -- one row per create/update/delete on
-any entity in this app, keyed by (entity_type, entity_uuid) rather than a
-per-entity table (mirrors the old backend's Revision design, see
-docs/PROJECT_HISTORY.md's "database is the source of truth" decision).
-
-This is a simple starting version, not that full design: `record_revision`
-below is ready to be called from an entity's api.py, but nothing calls it
-yet -- no existing device-management route writes a revision. Wiring that in
-is a separate, deliberately deferred step (see CLAUDE.md/the Roadmap).
-"""
+"""Generic cross-entity change log, keyed by (entity_type, entity_uuid) -- a simple start, not the old backend's full audit trail."""
 
 from datetime import datetime
 from typing import Any, Optional
@@ -28,9 +19,7 @@ class RevisionDB(Database):
     entity_uuid: Mapped[UUID] = mapped_column(index=True)
     action: Mapped[str] = mapped_column(String(20))  # "created" | "updated" | "deleted"
     snapshot: Mapped[dict] = mapped_column(JSON)
-    # String FK target, not an imported UserDB -- same reasoning as
-    # app.core.auth.schema.AuthTokenDB.
-    actor_uuid: Mapped[Optional[UUID]] = mapped_column(ForeignKey("core_users.uuid"), default=None)
+    actor_uuid: Mapped[Optional[UUID]] = mapped_column(ForeignKey("core_users.uuid"), default=None)  # string FK, no import of UserDB
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

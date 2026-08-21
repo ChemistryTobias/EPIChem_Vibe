@@ -14,11 +14,7 @@ def record_revision(
     snapshot: dict[str, Any],
     actor_uuid: Optional[UUID] = None,
 ) -> RevisionDB:
-    """Adds a revision row to `session` -- does not commit. Call this inside
-    the same transaction as the write it's recording (before session.commit())
-    so a rollback discards both together. Not called from anywhere yet (see
-    module docstring in schema.py).
-    """
+    """Adds a revision row to `session`; caller commits. Not called from anywhere yet."""
     revision = RevisionDB(
         entity_type=entity_type,
         entity_uuid=entity_uuid,

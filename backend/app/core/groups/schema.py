@@ -1,11 +1,4 @@
-"""Groups: a named collection of users, meant as the subject for the coarse
-none/read/read-write access model this backend doesn't enforce yet (see the
-Roadmap). Membership is a plain association table, not a pydantic-nested
-list or an ORM relationship -- keeps this module import-independent from
-app.core.users (string FK target only), the same pattern app.core.auth's
-AuthTokenDB uses. Membership is read/written directly against the table in
-logic.py.
-"""
+"""Named user groups; membership is a plain association table, not a relationship, so this module has no import-time dependency on app.core.users."""
 
 from pydantic import ConfigDict
 from sqlalchemy import Column, ForeignKey, Table

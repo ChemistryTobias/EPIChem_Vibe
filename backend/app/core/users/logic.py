@@ -1,6 +1,4 @@
-"""Password hashing -- PBKDF2-HMAC-SHA256 via hashlib (stdlib only, no new
-dependency). Stored as "pbkdf2_sha256$<iterations>$<salt_hex>$<hash_hex>".
-"""
+"""Password hashing -- stdlib PBKDF2-HMAC-SHA256, no new dependency."""
 
 import hashlib
 import secrets

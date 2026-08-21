@@ -5,7 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.database import SessionDepends
 
-from .logic import authenticate_user, get_user_from_token, issue_token
+from .logic import authenticate_user, get_user_from_token, issue_token, revoke_token
 from .schema import LoginRequest, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -17,11 +17,7 @@ def get_current_user(
     session: SessionDepends,
     credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(_bearer)],
 ):
-    """Reusable dependency for future routes: 401s unless `Authorization:
-    Bearer <token>` resolves to an active, non-revoked-token user. Not wired
-    into any device-management route yet -- see the Roadmap for the
-    none/read/read-write access model this is meant to sit underneath.
-    """
+    """Reusable dependency for future routes; not wired into any device-management route yet."""
     if credentials is None:
         raise HTTPException(status_code=401, detail="Missing bearer token.")
     user = get_user_from_token(session, credentials.credentials)
@@ -40,8 +36,18 @@ def login(body: LoginRequest, session: SessionDepends):
     return TokenResponse(access_token=token)
 
 
+@router.post("/logout", status_code=204)
+def logout(
+    session: SessionDepends,
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(_bearer)],
+):
+    """Revokes the caller's own token."""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Missing bearer token.")
+    revoke_token(session, credentials.credentials)
+    session.commit()
+
+
 @router.get("/me")
 def me(user=Depends(get_current_user)):
-    # A plain dict, not the `User` schema from app.core.users -- keeps this
-    # module import-independent of app.core.users at load time (see logic.py).
-    return {"uuid": user.uuid, "name": user.name}
+    return {"uuid": user.uuid, "name": user.name}  # plain dict, not the User schema -- avoids importing app.core.users here

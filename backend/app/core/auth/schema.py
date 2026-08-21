@@ -1,8 +1,4 @@
-"""Opaque bearer tokens issued on login. The account they authenticate lives
-in app.core.users; a token is a random string in its own row rather than a
-signed/encoded value (JWT), so revoking one is a plain DELETE and there is
-nothing to decode or verify beyond a database lookup.
-"""
+"""Opaque bearer tokens issued on login -- a random string per row, not a JWT."""
 
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -19,9 +15,7 @@ class AuthTokenDB(Database):
 
     uuid: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    # String FK target (not an imported UserDB) so this module has no
-    # import-time dependency on app.core.users -- see logic.py for why.
-    user_uuid: Mapped[UUID] = mapped_column(ForeignKey("core_users.uuid"), index=True)
+    user_uuid: Mapped[UUID] = mapped_column(ForeignKey("core_users.uuid"), index=True)  # string FK, no import of UserDB
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 

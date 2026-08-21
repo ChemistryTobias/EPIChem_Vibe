@@ -7,14 +7,8 @@ from .schema import AuthTokenDB
 
 
 def authenticate_user(session: Session, name: str, password: str):
-    """Returns the matching UserDB row, or None if the name/password is wrong
-    or the account is inactive."""
-    # Deferred import: this module (auth) is built before app.core.users
-    # exists on disk (auth is committed first of the three additions), so
-    # importing at call time rather than module load time keeps this file
-    # valid on its own from the start -- same pattern the device-management
-    # modules already use to avoid circular imports.
-    from app.core.users.logic import verify_password
+    """Returns the matching UserDB row, or None if the name/password is wrong or inactive."""
+    from app.core.users.logic import verify_password  # deferred: app.core.users didn't exist when this file was first committed
     from app.core.users.schema import UserDB
 
     user = session.query(UserDB).filter_by(name=name).first()
@@ -33,11 +27,17 @@ def issue_token(session: Session, user_uuid: UUID) -> str:
 
 
 def get_user_from_token(session: Session, token: str):
-    """Resolves a bearer token to its UserDB row, or None if it doesn't
-    exist or has been revoked."""
+    """Resolves a bearer token to its UserDB row, or None if invalid/revoked."""
     from app.core.users.schema import UserDB
 
     entry = session.query(AuthTokenDB).filter_by(token=token, revoked=False).first()
     if entry is None:
         return None
     return session.get(UserDB, entry.user_uuid)
+
+
+def revoke_token(session: Session, token: str) -> None:
+    """Marks a token revoked. No-op if it doesn't exist. Caller commits."""
+    entry = session.query(AuthTokenDB).filter_by(token=token).first()
+    if entry is not None:
+        entry.revoked = True
