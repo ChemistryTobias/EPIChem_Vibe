@@ -1,8 +1,12 @@
 from pathlib import Path
+from typing import Annotated
 from uuid import UUID
 
+from app.core.access_control.auth.api import get_current_user
+from app.core.access_control.users.schema import User
 from app.core.database import SessionDepends
-from fastapi import APIRouter, Form, HTTPException
+from app.core.revisions.logic import record_revision
+from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi import File as FastAPIFile
 from fastapi import UploadFile
 from fastapi.responses import Response
@@ -12,11 +16,14 @@ from .schema import FileDB, FileMetadata
 
 router = APIRouter(prefix="/files", tags=["files"])
 
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
 
 # --- POST ----------------------------------------------------------------
 @router.post("", response_model=FileMetadata, status_code=201)
 async def upload_file(
     session: SessionDepends,
+    user: CurrentUser,
     owner_object_type: str = Form(...),
     owner_object_uuid: UUID = Form(...),
     upload: UploadFile = FastAPIFile(...),
@@ -34,7 +41,7 @@ async def upload_file(
     for i in range(1, 99999999):
         result = session.query(FileDB).filter_by(name=filename_identifier).first()
         if result is None: break
-        else: 
+        else:
             filename_identifier = filename_identifier.strip(f'-{i-1}') + f'-{i}'
 
     file_row = FileDB(
@@ -51,6 +58,15 @@ async def upload_file(
     session.refresh(file_row)
 
     save_bytes(file_row.uuid, data)
+    record_revision(
+        session,
+        entity_type="file",
+        entity_uuid=file_row.uuid,
+        action="created",
+        snapshot=FileMetadata.model_validate(file_row).model_dump(mode="json"),
+        actor_uuid=user.uuid,
+    )
+    session.commit()
     return file_row
 
 
@@ -58,6 +74,7 @@ async def upload_file(
 @router.get("", response_model=list[FileMetadata])
 def list_files(
     session: SessionDepends,
+    user: CurrentUser,
     owner_object_type: str | None = None,
     owner_object_uuid: UUID | None = None,
 ):
@@ -70,7 +87,7 @@ def list_files(
 
 
 @router.get("/{file_id}")
-def download_file(file_id: UUID, session: SessionDepends):
+def download_file(file_id: UUID, session: SessionDepends, user: CurrentUser):
     file_row = session.get(FileDB, file_id)
     if file_row is None:
         raise HTTPException(status_code=404, detail="No file found with the given id.")
@@ -84,10 +101,20 @@ def download_file(file_id: UUID, session: SessionDepends):
 
 # --- DELETE ------------------------------------------------------------------
 @router.delete("/{file_id}", status_code=204)
-def delete_file(file_id: UUID, session: SessionDepends):
+def delete_file(file_id: UUID, session: SessionDepends, user: CurrentUser):
     file_row = session.get(FileDB, file_id)
     if file_row is None:
         raise HTTPException(status_code=404, detail="No file found with the given id.")
+    snapshot = FileMetadata.model_validate(file_row).model_dump(mode="json")
     session.delete(file_row)
     session.commit()
     delete_bytes(file_row.uuid)
+    record_revision(
+        session,
+        entity_type="file",
+        entity_uuid=file_id,
+        action="deleted",
+        snapshot=snapshot,
+        actor_uuid=user.uuid,
+    )
+    session.commit()

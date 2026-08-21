@@ -1,8 +1,11 @@
+from typing import Annotated
 from uuid import UUID
 
+from app.core.access_control.auth.api import get_current_user
 from app.core.database import SessionDepends
 from app.core.pagination import LimitParam, OffsetParam, paginate
-from fastapi import APIRouter, HTTPException, Response
+from app.core.revisions.logic import record_revision
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 
 from .logic import hash_password
@@ -10,37 +13,49 @@ from .schema import CreateUser, User, UserDB, UpdateUser
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
 
 # --- GET ---------------------------------------------------------------------
 @router.get("")
-def get_all_users(session: SessionDepends, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
+def get_all_users(session: SessionDepends, user: CurrentUser, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
     """List all users."""
     return paginate(session.query(UserDB), response, limit, offset)
 
 
 @router.get("/{identifier}", response_model=User)
-def get_user(identifier: str, session: SessionDepends):
+def get_user(identifier: str, session: SessionDepends, user: CurrentUser):
     """Get a single user by its UUID or name."""
     try:
-        user = session.get(UserDB, UUID(identifier))
+        target = session.get(UserDB, UUID(identifier))
     except ValueError:
-        user = session.query(UserDB).filter_by(name=identifier).first()
-    if user is None:
+        target = session.query(UserDB).filter_by(name=identifier).first()
+    if target is None:
         raise HTTPException(status_code=404, detail="No user found with the given UUID or name.")
-    return user
+    return target
 
 
 # --- POST --------------------------------------------------------------------
+# No auth dependency: this is the bootstrap path to create the first account before any token exists.
 @router.post("", response_model=User, status_code=201)
 def create_user(body: CreateUser, session: SessionDepends):
     """Create a new user."""
     data = body.model_dump(exclude={"password"}, exclude_none=True)
-    user = UserDB(**data, password_hash=hash_password(body.password))
+    new_user = UserDB(**data, password_hash=hash_password(body.password))
     try:
-        session.add(user)
+        session.add(new_user)
         session.commit()
-        session.refresh(user)
-        return user
+        session.refresh(new_user)
+        record_revision(
+            session,
+            entity_type="user",
+            entity_uuid=new_user.uuid,
+            action="created",
+            snapshot=User.model_validate(new_user).model_dump(mode="json"),
+            actor_uuid=None,
+        )
+        session.commit()
+        return new_user
     except IntegrityError:
         session.rollback()
         raise HTTPException(status_code=409, detail="User with the same identifier (UUID or name) already exists.")
@@ -48,23 +63,32 @@ def create_user(body: CreateUser, session: SessionDepends):
 
 # --- PATCH -------------------------------------------------------------------
 @router.patch("/{identifier}", response_model=User)
-def patch_user(identifier: str, body: UpdateUser, session: SessionDepends):
+def patch_user(identifier: str, body: UpdateUser, session: SessionDepends, user: CurrentUser):
     """Partially update a user."""
     update_data = body.model_dump(exclude_unset=True, exclude={"password"})
-    user = get_user(identifier, session)
+    target = get_user(identifier, session, user)
 
     if body.password is not None:
-        user.password_hash = hash_password(body.password)
+        target.password_hash = hash_password(body.password)
     elif not update_data:
-        return user
+        return target
 
     for key, value in update_data.items():
-        setattr(user, key, value)
+        setattr(target, key, value)
 
     try:
         session.commit()
-        session.refresh(user)
-        return user
+        session.refresh(target)
+        record_revision(
+            session,
+            entity_type="user",
+            entity_uuid=target.uuid,
+            action="updated",
+            snapshot=User.model_validate(target).model_dump(mode="json"),
+            actor_uuid=user.uuid,
+        )
+        session.commit()
+        return target
     except IntegrityError:
         session.rollback()
         raise HTTPException(status_code=409, detail="User with the same identifier (UUID or name) already exists.")
@@ -72,11 +96,21 @@ def patch_user(identifier: str, body: UpdateUser, session: SessionDepends):
 
 # --- DELETE ------------------------------------------------------------------
 @router.delete("/{identifier}", status_code=204)
-def delete_user(identifier: str, session: SessionDepends):
+def delete_user(identifier: str, session: SessionDepends, user: CurrentUser):
     """Delete a user by UUID or name."""
-    user = get_user(identifier, session)
+    target = get_user(identifier, session, user)
+    snapshot = User.model_validate(target).model_dump(mode="json")
     try:
-        session.delete(user)
+        session.delete(target)
+        session.commit()
+        record_revision(
+            session,
+            entity_type="user",
+            entity_uuid=target.uuid,
+            action="deleted",
+            snapshot=snapshot,
+            actor_uuid=user.uuid,
+        )
         session.commit()
         return None
     except IntegrityError:
