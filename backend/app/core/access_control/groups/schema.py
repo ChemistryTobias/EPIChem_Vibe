@@ -1,4 +1,4 @@
-"""Named user groups; membership is a plain association table, not a relationship, so this module has no import-time dependency on app.core.users."""
+"""Named user groups; membership is a plain association table, not a relationship, so this module has no import-time dependency on app.core.access_control.users."""
 
 from pydantic import ConfigDict
 from sqlalchemy import Column, ForeignKey, Table

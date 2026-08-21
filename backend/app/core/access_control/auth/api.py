@@ -50,4 +50,4 @@ def logout(
 
 @router.get("/me")
 def me(user=Depends(get_current_user)):
-    return {"uuid": user.uuid, "name": user.name}  # plain dict, not the User schema -- avoids importing app.core.users here
+    return {"uuid": user.uuid, "name": user.name}  # plain dict, not the User schema -- avoids importing app.core.access_control.users here

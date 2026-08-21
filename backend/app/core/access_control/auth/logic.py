@@ -8,8 +8,8 @@ from .schema import AuthTokenDB
 
 def authenticate_user(session: Session, name: str, password: str):
     """Returns the matching UserDB row, or None if the name/password is wrong or inactive."""
-    from app.core.users.logic import verify_password  # deferred: app.core.users didn't exist when this file was first committed
-    from app.core.users.schema import UserDB
+    from app.core.access_control.users.logic import verify_password  # deferred: users module lands after auth in git history
+    from app.core.access_control.users.schema import UserDB
 
     user = session.query(UserDB).filter_by(name=name).first()
     if user is None or not user.active:
@@ -28,7 +28,7 @@ def issue_token(session: Session, user_uuid: UUID) -> str:
 
 def get_user_from_token(session: Session, token: str):
     """Resolves a bearer token to its UserDB row, or None if invalid/revoked."""
-    from app.core.users.schema import UserDB
+    from app.core.access_control.users.schema import UserDB
 
     entry = session.query(AuthTokenDB).filter_by(token=token, revoked=False).first()
     if entry is None:
