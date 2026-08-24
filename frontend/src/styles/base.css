@@ -8,20 +8,20 @@ html, body, #root {
 }
 
 body {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-body);
-  font-weight: 300;
-  font-size: 14px;
+  background: var(--color-white);
+  color: var(--color-black);
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-normal);
 }
 
 h1, h2, h3 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  margin: 0;
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-big);
 }
 
-.label {
+/* .label {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 11px;
@@ -35,5 +35,5 @@ h1, h2, h3 {
 }
 
 .muted {
-  color: var(--color-text-secondary);
-}
+  color: var(--color-grey-dark);
+} */

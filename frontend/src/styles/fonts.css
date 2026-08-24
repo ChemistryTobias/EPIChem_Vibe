@@ -1,5 +1,9 @@
-/* Self-hosted fonts (DESIGN.md §3: no Google Fonts CDN, GDPR). */
 @import "@fontsource/roboto/300.css";
 @import "@fontsource/roboto/400.css";
 @import "@fontsource/roboto/700.css";
+@import "@fontsource/merriweather/300.css";
 @import "@fontsource/merriweather/400.css";
+@import "@fontsource/merriweather/700.css";
+@import "@fontsource/roboto-mono/300.css";
+@import "@fontsource/roboto-mono/400.css";
+@import "@fontsource/roboto-mono/700.css";

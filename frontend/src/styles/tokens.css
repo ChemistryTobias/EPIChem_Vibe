@@ -1,35 +1,43 @@
-/* MPG / MPI-FKF design tokens — see docs/project_plan/DESIGN.md §2/§3/§7. */
-
 :root {
-  --color-primary: #006c66;
-  --color-primary-dark: #005555;
+  --color-mpg-green: #006c66;
+  --color-mpg-green-dark: #005555;
 
-  --color-text: #000000;
-  --color-text-secondary: #777777;
-  --color-border: #a7a7a8;
-  --color-border-soft: #dcdcdc;
-  --color-surface-muted: #eeeeee;
-  --color-bg: #ffffff;
+  --color-black: #000000;
+  --color-grey-dark: #777777;
+  --color-grey: #a7a7a8;
+  --color-grey-light: #eeeeee;
+  --color-white: #ffffff;
 
-  --color-accent-blue: #00b1ea;
+  --color-accent-green-light: #c6d325;
+  --color-accent-blue-light: #00b1ea;
+  --color-accent-blue-dark: #29485d;
   --color-accent-orange: #ef7c00;
-  --color-danger: #c0392b;
+  --color-danger: #c0392b; /* red not in MPG color scheme */
 
-  --font-display: "Roboto", system-ui, Arial, sans-serif;
-  --font-body: "Roboto", system-ui, Arial, sans-serif;
-  --font-editorial: "Merriweather", Georgia, serif; /* unused for now — no editorial content yet */
-  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", monospace;
 
-  --tracking-label: 0.08em;
+  --font-family-default: "Roboto", sans-serif;
+  --font-family-serif: "Merriweather", serif;
+  --font-family-mono: "Roboto Mono", monospace;
+
+  --font-size-big: 18px;
+  --font-size-normal: 16px;
+  --font-size-small: 14px;
+
+  --font-weight-light: 300;
+  --font-weight-regular: 400;
+  --font-weight-bold: 700;
+
+ 
+  /* --tracking-label: 0.08em;
   --tracking-button: 0.1em;
 
-  --radius: 1px; /* DESIGN.md §5: sharp corners, no gloss/shadow */
+  --radius: 1px;
 
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
-  --space-5: 24px;
+  --space-5: 24px; */
 
   --nav-width: 236px;
   --header-height: 72px;
