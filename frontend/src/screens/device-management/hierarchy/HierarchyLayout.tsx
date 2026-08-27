@@ -2,22 +2,19 @@
  * The Hierarchy section's frame: a one-line bar of views, then whichever one
  * is open.
  *
- * The bar is the tree, one entry per level, and a search. It never wraps —
- * when space runs short the levels drop off from the innermost end (Zones
- * first), while the tree and the search always stay, since they're how you
- * get back and how you find things.
+ * The bar is the tree, one entry per level, and a search — all one height,
+ * all always present.
  *
  * The query lives in a context because the views render through an
  * `<Outlet />`, which can't take props.
  */
 
-import { createContext, useContext, useRef, useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "../../../components/Button";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
-import { useFittingCount } from "../../../hooks/useFittingCount";
 import { LEVELS } from "./hierarchyTree";
 
 import "./hierarchy.css";
@@ -41,9 +38,6 @@ export const useHierarchySearch = () => useContext(SearchContext);
 export function HierarchyLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [query, setQuery] = useState("");
-
-  const levelsRef = useRef<HTMLDivElement>(null);
-  const visibleLevels = useFittingCount(levelsRef, LEVELS.length);
 
   const onTree = pathname === TREE_PATH;
   const current = onTree
@@ -88,8 +82,8 @@ export function HierarchyLayout() {
               <TreeIcon />
             </Link>
 
-            <div className="levels__list" ref={levelsRef}>
-              {LEVELS.slice(0, visibleLevels).map((level) => {
+            <div className="levels__list">
+              {LEVELS.map((level) => {
                 const path = LEVEL_PATHS[level];
                 return (
                   <Link

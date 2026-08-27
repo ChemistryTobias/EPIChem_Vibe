@@ -1,9 +1,10 @@
 /* --- level bar ------------------------------------------------------------ */
 
-/* Tree, the levels, and search — one row that never wraps. The levels block
- * shrinks and drops entries from its end (see useFittingCount); the tree and
- * search keep their width. */
+/* Tree, the levels, and search — one row, every item the same height so the
+ * bar reads as a single strip like the header's action buttons. */
 .levels {
+  --bar-height: 30px;
+
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -16,10 +17,12 @@
 .levels__item {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
   flex: 0 0 auto;
+  height: var(--bar-height);
   white-space: nowrap;
-  padding: var(--space-1) var(--space-3);
+  padding: 0 var(--space-3);
   border: 1px solid var(--color-grey-semilight);
   border-radius: var(--radius);
   background: var(--color-grey-light);
@@ -48,26 +51,23 @@
   flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
 }
 
 /* Square, so swapping the icon or its state never resizes the button. */
 .levels__item--icon {
-  flex: 0 0 auto;
-  padding: var(--space-1);
-  width: 30px;
-  height: 30px;
-  justify-content: center;
+  padding: 0;
+  width: var(--bar-height);
 }
 
-/* Icon and field as one bordered block, always open. */
+/* Icon and field as one bordered block, always open. Pushed to the far end so
+ * the levels stay grouped with the tree. */
 .levels__search {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex: 0 0 auto;
+  height: var(--bar-height);
+  margin-left: auto;
   padding: 0 var(--space-3);
   border: 1px solid var(--color-grey);
   border-radius: var(--radius);
@@ -82,7 +82,8 @@
 
 .levels__search input {
   width: 200px;
-  padding: var(--space-1) 0;
+  height: 100%;
+  padding: 0;
   border: 0;
   background: transparent;
   font-family: var(--font-family-default);
