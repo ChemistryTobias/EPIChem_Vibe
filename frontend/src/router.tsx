@@ -17,7 +17,15 @@ import {
 } from "@tanstack/react-router";
 
 import { AppShell } from "./components/AppShell";
-import { HierarchyScreen } from "./screens/device-management/hierarchy/HierarchyScreen";
+import { HierarchyLayout } from "./screens/device-management/hierarchy/HierarchyLayout";
+import { HierarchyTree } from "./screens/device-management/hierarchy/HierarchyTree";
+import {
+  LabsTable,
+  ModulesTable,
+  SitesTable,
+  StationsTable,
+  ZonesTable,
+} from "./screens/device-management/hierarchy/tables";
 import { LayoutScreen } from "./screens/device-management/layout/LayoutScreen";
 import { DeviceMonitoringScreen } from "./screens/device-management/monitoring/DeviceMonitoringScreen";
 import { SamplesScreen } from "./screens/samples/SamplesScreen";
@@ -38,10 +46,13 @@ export const DEVICE_ROUTES = [
  */
 export function lastDeviceRoute(): string {
   try {
-    const stored = window.localStorage.getItem(LAST_DEVICE_ROUTE_KEY);
-    return (DEVICE_ROUTES as readonly string[]).includes(stored ?? "")
-      ? (stored as string)
-      : DEFAULT_DEVICE_ROUTE;
+    const stored = window.localStorage.getItem(LAST_DEVICE_ROUTE_KEY) ?? "";
+    // Prefix match, so a level table under Hierarchy (…/hierarchy/labs) is
+    // remembered too, not just the three top-level subpages.
+    const known = DEVICE_ROUTES.some(
+      (route) => stored === route || stored.startsWith(`${route}/`),
+    );
+    return known ? stored : DEFAULT_DEVICE_ROUTE;
   } catch {
     return DEFAULT_DEVICE_ROUTE;
   }
@@ -80,11 +91,30 @@ const deviceMgmtIndexRoute = createRoute({
   },
 });
 
+/** The tree, plus one table route per level — all under the level bar. */
 const hierarchyRoute = createRoute({
   getParentRoute: () => deviceMgmtRoute,
   path: "hierarchy",
-  component: HierarchyScreen,
+  component: HierarchyLayout,
 });
+
+const hierarchyIndexRoute = createRoute({
+  getParentRoute: () => hierarchyRoute,
+  path: "/",
+  component: HierarchyTree,
+});
+
+const levelRoutes = (
+  [
+    ["sites", SitesTable],
+    ["labs", LabsTable],
+    ["zones", ZonesTable],
+    ["stations", StationsTable],
+    ["modules", ModulesTable],
+  ] as const
+).map(([path, component]) =>
+  createRoute({ getParentRoute: () => hierarchyRoute, path, component }),
+);
 
 const layoutRoute = createRoute({
   getParentRoute: () => deviceMgmtRoute,
@@ -114,7 +144,12 @@ const workflowRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  deviceMgmtRoute.addChildren([deviceMgmtIndexRoute, hierarchyRoute, layoutRoute, monitoringRoute]),
+  deviceMgmtRoute.addChildren([
+    deviceMgmtIndexRoute,
+    hierarchyRoute.addChildren([hierarchyIndexRoute, ...levelRoutes]),
+    layoutRoute,
+    monitoringRoute,
+  ]),
   samplesRoute,
   workflowRoute,
 ]);

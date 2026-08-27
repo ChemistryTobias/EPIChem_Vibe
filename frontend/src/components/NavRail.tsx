@@ -54,20 +54,24 @@ export function NavRail({ user }: { user: string }) {
 
           {deviceMgmtActive && (
             <ul className="nav-rail__subnav">
-              {DEVICE_MGMT_SUBS.map((sub) => (
-                <li key={sub.path}>
-                  <button
-                    className={
-                      pathname === sub.path
-                        ? "nav-rail__subitem nav-rail__subitem--active"
-                        : "nav-rail__subitem"
-                    }
-                    onClick={() => navigate({ to: sub.path })}
-                  >
-                    {sub.label}
-                  </button>
-                </li>
-              ))}
+              {DEVICE_MGMT_SUBS.map((sub) => {
+                // Prefix match so Hierarchy stays lit on its level tables.
+                const active = pathname === sub.path || pathname.startsWith(`${sub.path}/`);
+                return (
+                  <li key={sub.path}>
+                    <button
+                      className={
+                        active
+                          ? "nav-rail__subitem nav-rail__subitem--active"
+                          : "nav-rail__subitem"
+                      }
+                      onClick={() => navigate({ to: sub.path })}
+                    >
+                      {sub.label}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </li>

@@ -1,0 +1,100 @@
+/* --- level bar ------------------------------------------------------------ */
+
+/* The levels, each stepped right by the indent its depth uses in the tree, so
+ * the bar reads as a key to the hierarchy below it. */
+.levels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-grey-semilight);
+}
+
+.levels__item {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: var(--radius);
+  background: var(--color-grey-light);
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-small);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  text-decoration: none;
+  color: var(--color-grey-dark);
+}
+
+.levels__item:hover {
+  border-color: var(--color-mpg-green);
+  color: var(--color-mpg-green);
+}
+
+.levels__item--active {
+  background: var(--color-mpg-green);
+  border-color: var(--color-mpg-green);
+  color: var(--color-white);
+}
+
+/* --- tree ----------------------------------------------------------------- */
+
+.tree,
+.tree__children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.tree__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  /* padding-left is set inline per depth — see TreeRow.tsx */
+  padding-right: var(--space-3);
+  border-left: 3px solid transparent;
+}
+
+.tree__row:hover {
+  background: var(--color-grey-light);
+}
+
+.tree__twisty {
+  width: 18px;
+  flex: 0 0 18px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: var(--font-size-small);
+  line-height: 1;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.tree__twisty:disabled {
+  color: var(--color-grey);
+  cursor: default;
+}
+
+/* Fixed-width kind column so names line up down the tree despite indentation
+ * varying — it stays scannable as a list as well as a hierarchy. */
+.tree__kind {
+  width: 64px;
+  flex: 0 0 64px;
+}
+
+.tree__name {
+  padding: 7px 0;
+  color: var(--color-mpg-green-dark);
+}
+
+.tree__count {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-small);
+}
