@@ -28,7 +28,7 @@ import { useHierarchySearch, useSelect } from "./HierarchyLayout";
 
 /** The name is the control that opens the inspector on that row. */
 const nameCell = (name: string, onSelect: () => void) => (
-  <button type="button" className="table__name" onClick={onSelect}>
+  <button type="button" data-inspects className="table__name" onClick={onSelect}>
     {name}
   </button>
 );

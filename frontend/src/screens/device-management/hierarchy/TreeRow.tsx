@@ -47,6 +47,7 @@ export function TreeRow({ node, depth, expanded, onToggle, onSelect }: TreeRowPr
 
         <span className="tree__kind label">{node.kind}</span>
         <button
+          data-inspects
           className="tree__name"
           onClick={(event) => {
             event.stopPropagation();

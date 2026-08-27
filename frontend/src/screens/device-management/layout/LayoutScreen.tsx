@@ -26,11 +26,11 @@ import {
   stationsApi,
   zonesApi,
 } from "../../../api/entities";
-import type { EntityKind } from "../../../api/types";
 import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
 import { EntityInspector } from "../../../components/inspectors";
+import { InspectorNavContext, type InspectorTarget } from "../../../components/inspectors/nav";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import type { Rect } from "./constraints";
 import { API_FOR, buildLevel, drillInto, type LayoutBox, type LevelContext } from "./levels";
@@ -53,9 +53,13 @@ export function LayoutScreen() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, Rect>>({});
   const [selected, setSelected] = useState<string | null>(null);
+  /** What the panel is showing. Usually the selected box, but a reference
+   * field can send it somewhere that isn't on this level at all. */
+  const [inspect, setInspect] = useState<InspectorTarget | null>(null);
   const [hover, setHover] = useState<{ name: string; x: number; y: number } | null>(null);
   const [adding, setAdding] = useState(false);
   const view = useRef<ViewApi | null>(null);
+  const labelNodes = useRef(new Map<string, HTMLElement>());
 
   const data = {
     sites: sites.data ?? [],
@@ -115,10 +119,18 @@ export function LayoutScreen() {
   function go(patch: Partial<LevelContext>) {
     if (dirty) return;
     setSelected(null);
+    setInspect(null);
     // The box the cursor was over is gone with the level — its tooltip would
     // otherwise hang around naming something no longer on screen.
     setHover(null);
     setCtx({ ...context, ...patch });
+  }
+
+  /** Descend into a box — from its name on the canvas, or a double-click. */
+  function enter(uuid: string) {
+    const box = (model?.boxes ?? []).find((b) => b.uuid === uuid);
+    const patch = box && model ? drillInto(model, box) : null;
+    if (patch) go(patch);
   }
 
   /** What an Add on this level hangs the new row off. */
@@ -160,7 +172,7 @@ export function LayoutScreen() {
               Nothing to draw yet — this level has no geometry. Create a site with a floor first.
             </Alert>
           ) : (
-            <div className="layout__canvas">
+            <div className="layout__canvas" data-inspects>
               <LayoutCanvas
                 model={model}
                 boxes={boxes}
@@ -168,17 +180,41 @@ export function LayoutScreen() {
                 editing={editing}
                 selected={selected}
                 api={view}
-                onSelect={setSelected}
-                onDrill={(uuid) => {
-                  const box = boxes.find((b) => b.uuid === uuid);
-                  const patch = box ? drillInto(model, box) : null;
-                  if (patch) go(patch);
+                labelNodes={labelNodes}
+                onSelect={(uuid) => {
+                  setSelected(uuid);
+                  const box = uuid === null ? null : boxes.find((b) => b.uuid === uuid);
+                  setInspect(box ? { kind: box.kind, row: box.row } : null);
                 }}
+                onDrill={enter}
                 onGeometry={(uuid, rect) => setDraft((d) => ({ ...d, [uuid]: rect }))}
                 onHover={(box: LayoutBox | null, x: number, y: number) =>
                   setHover(box ? { name: box.name, x, y } : null)
                 }
               />
+
+              {/* The names, in the middle of what they name — rendered here
+                  and positioned by the scene. A box's name enters it, which is
+                  how the old editor drilled down; a zone's is just a caption. */}
+              <div className="layout__labels">
+                {[
+                  ...boxes.map((b) => ({ key: b.uuid, name: b.name, enter: true })),
+                  ...model.zones.map((z) => ({ key: z.uuid, name: z.name, enter: false })),
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    ref={(el) => {
+                      if (el) labelNodes.current.set(item.key, el);
+                      else labelNodes.current.delete(item.key);
+                    }}
+                    className={item.enter ? "layout__label layout__label--enter" : "layout__label"}
+                    onClick={item.enter ? () => enter(item.key) : undefined}
+                    title={item.enter ? `Enter ${item.name}` : item.name}
+                  >
+                    {item.name}
+                  </button>
+                ))}
+              </div>
 
               {/* Everything but the canvas floats over it: where you are on the
                   left, what you can do on the right, the view controls at the
@@ -255,15 +291,19 @@ export function LayoutScreen() {
         </div>
 
         <Inspector
-          open={selectedBox !== null}
-          kind={selectedBox ? `${selectedBox.kind} inspector` : "Inspector"}
-          title={selectedBox?.name}
-          subtitle={selectedBox?.uuid}
-          onClose={() => setSelected(null)}
+          open={inspect !== null}
+          kind={inspect ? `${inspect.kind} inspector` : "Inspector"}
+          title={inspect?.row.name}
+          subtitle={inspect?.row.uuid}
+          dismissable={!editing}
+          onClose={() => {
+            setInspect(null);
+            setSelected(null);
+          }}
         >
-          {selectedBox && (
-            <EntityInspector kind={selectedBox.kind as EntityKind} row={selectedBox.row} />
-          )}
+          <InspectorNavContext.Provider value={setInspect}>
+            {inspect && <EntityInspector kind={inspect.kind} row={inspect.row} />}
+          </InspectorNavContext.Provider>
         </Inspector>
       </div>
 

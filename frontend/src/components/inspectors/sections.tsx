@@ -12,35 +12,51 @@ import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { labsApi, sitesApi, stationsApi, zonesApi } from "../../api/entities";
-import type { GeometryDescriptor, ObjectBase } from "../../api/types";
+import type { EntityKind, GeometryDescriptor, ObjectBase } from "../../api/types";
 import { Field, FieldGroup } from "../Inspector";
+import { useInspectorNav, type InspectorTarget } from "./nav";
 
-/** uuid -> name across every entity that can be a parent. Reads the queries
- * the tables and tree already loaded, so it costs no extra requests. */
-export function useEntityNames(): Map<string, string> {
+/** uuid -> the record, across every entity that can be a parent. Reads the
+ * queries the tables and tree already loaded, so it costs no extra requests. */
+export function useEntityIndex(): Map<string, InspectorTarget> {
   const sites = useQuery({ queryKey: ["sites"], queryFn: sitesApi.list });
   const labs = useQuery({ queryKey: ["labs"], queryFn: labsApi.list });
   const zones = useQuery({ queryKey: ["zones"], queryFn: zonesApi.list });
   const stations = useQuery({ queryKey: ["stations"], queryFn: stationsApi.list });
 
-  return new Map(
-    [...(sites.data ?? []), ...(labs.data ?? []), ...(zones.data ?? []), ...(stations.data ?? [])].map(
-      (row) => [row.uuid, row.name],
-    ),
-  );
+  const index = new Map<string, InspectorTarget>();
+  const add = (kind: EntityKind, rows: ObjectBase[] | undefined) => {
+    for (const row of rows ?? []) index.set(row.uuid, { kind, row: row as InspectorTarget["row"] });
+  };
+  add("Site", sites.data);
+  add("Lab", labs.data);
+  add("Zone", zones.data);
+  add("Station", stations.data);
+  return index;
 }
 
-/** A reference to another entity: its name, with the id kept underneath for
- * anyone who needs to match it against the API. */
+/**
+ * A reference to another record. Just its name, in the body colour — the uuid
+ * is noise here, and the record it names is one click away anyway: the name
+ * moves the inspector onto it.
+ */
 export function ParentField({ label, uuid }: { label: string; uuid: string | null }) {
-  const names = useEntityNames();
+  const index = useEntityIndex();
+  const navigate = useInspectorNav();
   if (uuid === null) return <Field label={label}>{null}</Field>;
+
+  const target = index.get(uuid);
+  if (!target) return <Field label={label}>{null}</Field>;
 
   return (
     <Field label={label}>
-      {names.get(uuid) ?? <span className="muted">unknown</span>}
-      <br />
-      <span className="mono muted">{uuid}</span>
+      {navigate ? (
+        <button className="field__link" onClick={() => navigate(target)}>
+          {target.row.name}
+        </button>
+      ) : (
+        target.row.name
+      )}
     </Field>
   );
 }

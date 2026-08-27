@@ -17,6 +17,7 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
 import { EntityInspector } from "../../../components/inspectors";
+import { InspectorNavContext } from "../../../components/inspectors/nav";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
 import { CreateDialog } from "./CreateDialog";
@@ -147,7 +148,9 @@ export function HierarchyLayout() {
           subtitle={selected?.row.uuid}
           onClose={() => setSelected(null)}
         >
-          {selected && <EntityInspector kind={selected.kind} row={selected.row} />}
+          <InspectorNavContext.Provider value={setSelected}>
+            {selected && <EntityInspector kind={selected.kind} row={selected.row} />}
+          </InspectorNavContext.Provider>
         </Inspector>
       </div>
 

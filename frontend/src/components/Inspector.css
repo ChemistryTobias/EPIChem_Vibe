@@ -27,20 +27,23 @@
   background: var(--color-grey-light);
 }
 
-.inspector__heading {
+/* The kind and the close control share a line, so the × sits on the label
+ * rather than beside the name. */
+.inspector__top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  margin-top: var(--space-2);
 }
 
 .inspector__title {
+  margin: var(--space-2) 0 0;
   font-size: 15px;
 }
 
-/* The uuid, kept on one line — the panel is sized around it. */
+/* The uuid, kept on one line and tight under the name it belongs to. */
 .inspector__subtitle {
+  margin-top: 1px;
   font-size: var(--font-size-small);
   white-space: nowrap;
 }
@@ -88,4 +91,19 @@
 .field-group__title {
   margin: 0 0 var(--space-3);
   color: var(--color-grey-dark);
+}
+
+/* A reference to another record: reads as text, behaves as a link. */
+.field__link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.field__link:hover {
+  text-decoration: underline;
 }

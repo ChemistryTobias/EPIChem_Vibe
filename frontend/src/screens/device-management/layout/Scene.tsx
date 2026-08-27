@@ -18,12 +18,12 @@
  * to be under the cursor.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useLayoutEffect, useMemo, type RefObject } from "react";
+import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 
 import { clampToFloor, round3, slideTo, softSnap, type Rect, type Vec2 } from "./constraints";
-import type { LayoutBox, LevelModel } from "./levels";
+import type { LayoutBox, LayoutZone, LevelModel } from "./levels";
 import { EDGE, FLOOR, FLOOR_EDGE, GRID, LAB, SELECT, ZONE, type BoxFill } from "./palette";
 
 /** What the overlay's zoom controls drive. */
@@ -52,6 +52,9 @@ export interface SceneProps {
   onHover: (box: LayoutBox | null, clientX: number, clientY: number) => void;
   /** Filled in with the zoom/reset controls once the canvas is up. */
   api: RefObject<ViewApi | null>;
+  /** The name elements the screen rendered, keyed by uuid — the scene moves
+   * them, it doesn't own them. */
+  labelNodes: RefObject<Map<string, HTMLElement>>;
 }
 
 export function LayoutCanvas(props: SceneProps) {
@@ -79,6 +82,7 @@ function Contents({
   onGeometry,
   onHover,
   api,
+  labelNodes,
 }: SceneProps) {
   const { camera, gl, size } = useThree();
   const thin = Math.max(model.size.x, model.size.y) * 0.005;
@@ -116,11 +120,11 @@ function Contents({
   useLayoutEffect(fit, [fit]);
 
   /**
-   * Zoom and pan, on the DOM element rather than through the scene graph.
-   * `gesture` is what keeps the two apart: a box drag sets it, and this
-   * listener — added after R3F's, so it sees the flag — stands down.
+   * Zoom on the wheel, and the zoom controls the overlay drives. Panning is
+   * *not* here: it hangs off the floor mesh below, so R3F decides whether the
+   * pointer landed on a box or on the floor. Doing it on the DOM element
+   * raced R3F's own listener, and both a box and the camera moved at once.
    */
-  const gesture = useRef(false);
   useEffect(() => {
     const cam = camera as THREE.OrthographicCamera;
     const el = gl.domElement;
@@ -128,41 +132,38 @@ function Contents({
       cam.zoom = Math.max(1e-3, cam.zoom * by);
       cam.updateProjectionMatrix();
     };
-    if (api) api.current = { zoomIn: () => scale(1.25), zoomOut: () => scale(1 / 1.25), reset: fit };
+    api.current = { zoomIn: () => scale(1.25), zoomOut: () => scale(1 / 1.25), reset: fit };
 
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       scale(e.deltaY < 0 ? 1.1 : 1 / 1.1);
     };
-    const down = (e: PointerEvent) => {
-      if (gesture.current) return;
-      let last = { x: e.clientX, y: e.clientY };
-      const move = (m: PointerEvent) => {
-        const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
-        const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
-        cam.position
-          .addScaledVector(right, -(m.clientX - last.x) / cam.zoom)
-          .addScaledVector(up, (m.clientY - last.y) / cam.zoom);
-        last = { x: m.clientX, y: m.clientY };
-        cam.updateMatrixWorld();
-      };
-      const up = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-        el.style.cursor = "";
-      };
-      el.style.cursor = "grabbing";
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-    };
-
     el.addEventListener("wheel", wheel, { passive: false });
-    el.addEventListener("pointerdown", down);
-    return () => {
-      el.removeEventListener("wheel", wheel);
-      el.removeEventListener("pointerdown", down);
-    };
+    return () => el.removeEventListener("wheel", wheel);
   }, [camera, gl, api, fit]);
+
+  /** Drag the floor to pan. Boxes stop the event, so they never reach here. */
+  const pan = (event: ThreeEvent<PointerEvent>) => {
+    const cam = camera as THREE.OrthographicCamera;
+    let last = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
+    const move = (m: PointerEvent) => {
+      const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+      cam.position
+        .addScaledVector(right, -(m.clientX - last.x) / cam.zoom)
+        .addScaledVector(up, (m.clientY - last.y) / cam.zoom);
+      last = { x: m.clientX, y: m.clientY };
+      cam.updateMatrixWorld();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      gl.domElement.style.cursor = "";
+    };
+    gl.domElement.style.cursor = "grabbing";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   // ---- pointer → floor ----------------------------------------------------
   const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
@@ -184,11 +185,12 @@ function Contents({
 
   /** Start a move or a resize; both run off the same floor-plane maths. */
   const drag = (box: LayoutBox, mode: "move" | "resize") => (event: PointerEvent) => {
-    gesture.current = true;
     const start = floorPoint(event);
     const from = box.rect;
     const others = boxes.filter((b) => b.uuid !== box.uuid).map((b) => b.rect);
-    const tolerance = model.grid * 0.35;
+    // A quarter of a cell: close enough to help, small enough that the box
+    // still tracks the pointer for most of the drag.
+    const tolerance = model.grid * 0.25;
 
     const move = (e: PointerEvent) => {
       const now = floorPoint(e);
@@ -210,7 +212,6 @@ function Contents({
       }
     };
     const up = () => {
-      gesture.current = false;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -220,11 +221,13 @@ function Contents({
 
   return (
     <>
-      <Room size={model.size} grid={model.grid} thin={thin} />
+      <Room size={model.size} grid={model.grid} thin={thin} onPan={pan} />
 
       {model.zones.map((zone) => (
         <FlatArea key={zone.uuid} rect={zone.rect} y={thin * 0.05} colour={ZONE} />
       ))}
+
+      <LabelPositions boxes={boxes} zones={model.zones} nodes={labelNodes} />
 
       {boxes.map((box) =>
         box.flat ? (
@@ -283,7 +286,7 @@ function Edges({ geometry, color }: { geometry: THREE.BufferGeometry; color: str
  * The surface the layout sits on: a floor slab and its grid. The room's walls
  * are not drawn — the plan view of the surface is what's wanted here.
  */
-function Room({ size, grid, thin }: { size: Vec2; grid: number; thin: number }) {
+function Room({ size, grid, thin, onPan }: { size: Vec2; grid: number; thin: number; onPan: (e: ThreeEvent<PointerEvent>) => void }) {
   const floor = useMemo(() => new THREE.BoxGeometry(size.x, thin, size.y), [size.x, size.y, thin]);
 
   const lines = useMemo(() => {
@@ -297,7 +300,7 @@ function Room({ size, grid, thin }: { size: Vec2; grid: number; thin: number }) 
 
   return (
     <group>
-      <mesh geometry={floor} position={[size.x / 2, -thin / 2, size.y / 2]}>
+      <mesh geometry={floor} position={[size.x / 2, -thin / 2, size.y / 2]} onPointerDown={onPan}>
         <meshBasicMaterial color={FLOOR} />
       </mesh>
       <group position={[size.x / 2, -thin / 2, size.y / 2]}>
@@ -439,4 +442,41 @@ function BoxMesh({ box, selected, editing, thin, onSelect, onDrill, onDrag, onRe
       )}
     </group>
   );
+}
+
+/**
+ * Keeps each name over the middle of what it names.
+ *
+ * The elements themselves are rendered by the screen, outside the canvas —
+ * R3F reconciles everything inside `<Canvas>` as three.js objects, so DOM
+ * can't live in here. Positioning them imperatively in `useFrame` also means
+ * a pan doesn't re-render the screen sixty times a second.
+ */
+function LabelPositions({
+  boxes,
+  zones,
+  nodes,
+}: {
+  boxes: LayoutBox[];
+  zones: LayoutZone[];
+  nodes: RefObject<Map<string, HTMLElement>>;
+}) {
+  const { camera, size } = useThree();
+
+  useFrame(() => {
+    const v = new THREE.Vector3();
+    const place = (key: string, x: number, y: number, z: number) => {
+      const el = nodes.current?.get(key);
+      if (!el) return;
+      v.set(x, y, z).project(camera);
+      el.style.transform = `translate(-50%, -50%) translate(${(v.x * 0.5 + 0.5) * size.width}px, ${
+        (-v.y * 0.5 + 0.5) * size.height
+      }px)`;
+    };
+    for (const b of boxes)
+      place(b.uuid, b.rect.pos.x + b.rect.size.x / 2, b.height, b.rect.pos.y + b.rect.size.y / 2);
+    for (const z of zones) place(z.uuid, z.rect.pos.x + z.rect.size.x / 2, 0, z.rect.pos.y + z.rect.size.y / 2);
+  });
+
+  return null;
 }

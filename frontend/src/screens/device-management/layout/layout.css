@@ -1,19 +1,56 @@
 /* The canvas fills what's left under the header and scrolls nothing — the
  * camera fits the room to the space instead. */
+/* Full bleed: the drawing runs to the edges of the panel, with no padding
+ * and no frame around it — the controls float on top instead. */
 .layout {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 0;
 }
 
 .layout__canvas {
   position: relative;
   flex: 1;
   min-height: 0;
-  border: 1px solid var(--color-grey-semilight);
-  border-radius: var(--radius);
   background: var(--color-white);
   cursor: grab;
+}
+
+/* The names over the canvas. The layer is click-through; the names aren't. */
+.layout__labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.layout__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 1px var(--space-2);
+  border: 0;
+  background: rgba(255, 255, 255, 0.82);
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-small);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-grey-dark);
+  white-space: nowrap;
+}
+
+/* A name you can enter reads as a target; one you can't is just a caption. */
+.layout__label--enter {
+  pointer-events: auto;
+  color: var(--color-mpg-green-dark);
+  cursor: pointer;
+}
+
+.layout__label--enter:hover {
+  color: var(--color-mpg-green);
+  text-decoration: underline;
 }
 
 /* Every control floats over the canvas rather than sitting in a bar above it,
@@ -28,6 +65,11 @@
   gap: var(--space-2);
   padding: var(--space-3);
   pointer-events: none;
+}
+
+/* Above the names, so a control is never blocked by one. */
+.canvas-overlay {
+  z-index: 3;
 }
 
 .canvas-overlay__bar {

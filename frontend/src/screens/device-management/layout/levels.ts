@@ -93,10 +93,12 @@ function rectOf(g: GeometryDescriptor): { rect: Rect; height: number } {
   return { rect: { pos: { x, y }, size: { x: w, y: d } }, height: h };
 }
 
-/** A gridline every ~1/20th of the floor, rounded to something human. */
+/** A gridline every ~1/40th of the floor, rounded to something human. A
+ * coarser grid made dragging feel unresponsive: the snap owned most of the
+ * travel, so the box stopped following the pointer. */
 function gridFor(span: number): number {
   const steps = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10];
-  return steps.find((s) => span / s <= 24) ?? 10;
+  return steps.find((s) => span / s <= 40) ?? 10;
 }
 
 const box = (
