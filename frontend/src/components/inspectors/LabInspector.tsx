@@ -1,8 +1,8 @@
 /** A lab: which site it's in, and where in the building. */
 
 import type { Lab } from "../../api/types";
-import { Field, FieldGroup } from "../Inspector";
-import { DescriptionSection, GeometrySection, ParentField, RecordSection } from "./sections";
+import { FieldGroup } from "../Inspector";
+import { DescriptionSection, GeometrySection, ParentField, RecordSection, TextField } from "./sections";
 
 export function LabInspector({ row }: { row: Lab }) {
   return (
@@ -11,7 +11,7 @@ export function LabInspector({ row }: { row: Lab }) {
 
       <FieldGroup title="Lab">
         <ParentField label="Site" uuid={row.site_uuid} />
-        <Field label="Room">{row.room_number}</Field>
+        <TextField label="Room" row={row} field="room_number" />
         <ParentField label="Zone" uuid={row.zone_uuid} />
       </FieldGroup>
 

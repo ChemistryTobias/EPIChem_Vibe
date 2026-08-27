@@ -49,7 +49,6 @@ export interface SceneProps {
   onSelect: (uuid: string | null) => void;
   onDrill: (uuid: string) => void;
   onGeometry: (uuid: string, rect: Rect) => void;
-  onHover: (box: LayoutBox | null, clientX: number, clientY: number) => void;
   /** Filled in with the zoom/reset controls once the canvas is up. */
   api: RefObject<ViewApi | null>;
   /** The name elements the screen rendered, keyed by uuid — the scene moves
@@ -80,11 +79,10 @@ function Contents({
   onSelect,
   onDrill,
   onGeometry,
-  onHover,
   api,
   labelNodes,
 }: SceneProps) {
-  const { camera, gl, size } = useThree();
+  const { camera, gl } = useThree();
   const thin = Math.max(model.size.x, model.size.y) * 0.005;
 
   // ---- camera -------------------------------------------------------------
@@ -108,16 +106,24 @@ function Contents({
           minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
           minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
         }
-    cam.zoom = 0.88 * Math.min(size.width / (maxX - minX), size.height / (maxY - minY));
+    const view = gl.domElement;
+    cam.zoom =
+      0.88 * Math.min(view.clientWidth / (maxX - minX), view.clientHeight / (maxY - minY));
     // Re-centre on the drawing rather than on the floor's midpoint.
     const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
     cam.position.addScaledVector(right, (minX + maxX) / 2).addScaledVector(up, (minY + maxY) / 2);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
-  }, [camera, size, model.size.x, model.size.y, tallest, preset]);
+  }, [camera, gl, model.size.x, model.size.y, tallest, preset]);
 
-  useLayoutEffect(fit, [fit]);
+  /**
+   * Fit on the level and the projection, and nothing else. Depending on the
+   * canvas size meant any re-render that recreated it — a refetch, a draft
+   * change — silently threw away whatever you had zoomed to.
+   */
+  const fitKey = `${model.level}:${model.size.x}x${model.size.y}:${preset}`;
+  useLayoutEffect(() => fit(), [fitKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Zoom on the wheel, and the zoom controls the overlay drives. Panning is
@@ -244,8 +250,6 @@ function Contents({
             onDrag={editing ? drag(box, "move") : undefined}
             onResize={editing ? drag(box, "resize") : undefined}
             grip={thin * 3}
-            onHover={(x, y) => onHover(box, x, y)}
-            onLeave={() => onHover(null, 0, 0)}
           />
         ) : (
           <BoxMesh
@@ -258,7 +262,6 @@ function Contents({
             onDrill={() => onDrill(box.uuid)}
             onDrag={drag(box, "move")}
             onResize={drag(box, "resize")}
-            onHover={onHover}
           />
         ),
       )}
@@ -330,11 +333,9 @@ interface FlatAreaProps {
   onResize?: (event: PointerEvent) => void;
   /** Size of the resize grip, when this area can be resized. */
   grip?: number;
-  onHover?: (clientX: number, clientY: number) => void;
-  onLeave?: () => void;
 }
 
-function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResize, grip, onHover, onLeave }: FlatAreaProps) {
+function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResize, grip }: FlatAreaProps) {
   const { pos, size } = rect;
   const geometry = useMemo(() => new THREE.PlaneGeometry(size.x, size.y), [size.x, size.y]);
   return (
@@ -345,8 +346,6 @@ function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResi
         onClick={onSelect && ((e) => { e.stopPropagation(); onSelect(); })}
         onDoubleClick={onDrill && ((e) => { e.stopPropagation(); onDrill(); })}
         onPointerDown={onDrag && ((e) => { e.stopPropagation(); onSelect?.(); onDrag(e.nativeEvent); })}
-        onPointerOver={onHover && ((e) => { e.stopPropagation(); onHover(e.nativeEvent.clientX, e.nativeEvent.clientY); })}
-        onPointerOut={onLeave}
       >
         <meshBasicMaterial color={colour.fill} transparent opacity={colour.opacity} side={THREE.DoubleSide} />
       </mesh>
@@ -386,10 +385,9 @@ interface BoxMeshProps {
   onDrill: () => void;
   onDrag: (event: PointerEvent) => void;
   onResize: (event: PointerEvent) => void;
-  onHover: (box: LayoutBox | null, clientX: number, clientY: number) => void;
 }
 
-function BoxMesh({ box, selected, editing, thin, onSelect, onDrill, onDrag, onResize, onHover }: BoxMeshProps) {
+function BoxMesh({ box, selected, editing, thin, onSelect, onDrill, onDrag, onResize }: BoxMeshProps) {
   const { pos, size } = box.rect;
   // A box with no recorded height still needs to be a box you can grab.
   const height = Math.max(box.height, Math.max(size.x, size.y) * 0.05);
@@ -419,11 +417,6 @@ function BoxMesh({ box, selected, editing, thin, onSelect, onDrill, onDrag, onRe
           onSelect();
           onDrag(e.nativeEvent);
         }}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          onHover(box, e.nativeEvent.clientX, e.nativeEvent.clientY);
-        }}
-        onPointerOut={() => onHover(null, 0, 0)}
       />
       <Edges geometry={geometry} color={selected ? SELECT : EDGE} />
 

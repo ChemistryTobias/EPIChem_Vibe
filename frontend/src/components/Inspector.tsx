@@ -1,39 +1,55 @@
 /**
  * The right-hand detail panel every screen shares. Collapsed to 0 width by
  * default; expands only once something is selected (`open`).
+ *
+ * It has two modes. Reading is the default; the pencil switches it to its
+ * editor, where the name and the record's own fields become inputs and the
+ * header carries Save and Cancel. The screen owns the draft (see
+ * `inspectors/edit.ts`) — on the layout canvas a drag and a typed coordinate
+ * are the same edit, so they have to share one.
  */
 
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 
+import { Button } from "./Button";
+import { EyeIcon, PencilIcon } from "./icons";
+
 import "./Inspector.css";
+
+/** What the screen has to provide for the panel to be editable at all. */
+export interface InspectorEdit {
+  editing: boolean;
+  /** Whether anything has been altered — Save is dead until it has. */
+  dirty: boolean;
+  saving?: boolean;
+  /** Pencil / eye: into the editor, and back out of it. */
+  onToggle: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onRename: (name: string) => void;
+}
 
 interface InspectorProps {
   open: boolean;
+  /** The entity kind — the panel says "<kind> inspector" or "<kind> editor". */
   kind: string;
   title?: string;
   subtitle?: string;
   onClose?: () => void;
-  /** Whether clicking away closes it. Off while a screen is mid-edit, where
-   * losing the panel would lose the context you're editing in. */
-  dismissable?: boolean;
+  edit?: InspectorEdit;
   children?: ReactNode;
 }
 
-export function Inspector({
-  open,
-  kind,
-  title,
-  subtitle,
-  onClose,
-  dismissable = true,
-  children,
-}: InspectorProps) {
+export function Inspector({ open, kind, title, subtitle, onClose, edit, children }: InspectorProps) {
+  const editing = edit?.editing ?? false;
+
   // Click away to close. Anything that *chooses* what the inspector shows —
   // a name in a table, the canvas — marks itself `data-inspects` so its click
-  // isn't read as a click away.
+  // isn't read as a click away. The editor never closes this way: a stray
+  // click shouldn't cost you a draft.
   useEffect(() => {
-    if (!open || !onClose || !dismissable) return;
+    if (!open || !onClose || editing) return;
     const away = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest(".inspector, [data-inspects], dialog")) return;
@@ -41,7 +57,7 @@ export function Inspector({
     };
     document.addEventListener("pointerdown", away);
     return () => document.removeEventListener("pointerdown", away);
-  }, [open, onClose, dismissable]);
+  }, [open, onClose, editing]);
 
   return (
     <aside className={open ? "inspector inspector--open" : "inspector"} aria-label={kind} aria-hidden={!open}>
@@ -49,15 +65,48 @@ export function Inspector({
         <>
           <header className="inspector__header">
             <div className="inspector__top">
-              <p className="label">{kind}</p>
-              {onClose && (
-                <button className="inspector__close" onClick={onClose} aria-label="Close inspector">
-                  ×
-                </button>
-              )}
+              <p className="label">{`${kind} ${editing ? "editor" : "inspector"}`}</p>
+              <div className="inspector__tools">
+                {edit && (
+                  <button
+                    className="inspector__tool"
+                    onClick={edit.onToggle}
+                    title={editing ? "Back to reading" : "Edit this record"}
+                    aria-label={editing ? "Back to reading" : "Edit this record"}
+                  >
+                    {editing ? <EyeIcon /> : <PencilIcon />}
+                  </button>
+                )}
+                {onClose && (
+                  <button className="inspector__close" onClick={onClose} aria-label="Close inspector">
+                    ×
+                  </button>
+                )}
+              </div>
             </div>
-            <h2 className="inspector__title">{title}</h2>
+
+            {editing && edit ? (
+              <input
+                className="inspector__rename"
+                value={title ?? ""}
+                onChange={(e) => edit.onRename(e.target.value)}
+                aria-label="Name"
+              />
+            ) : (
+              <h2 className="inspector__title">{title}</h2>
+            )}
             {subtitle && <p className="inspector__subtitle mono muted">{subtitle}</p>}
+
+            {editing && edit && (
+              <div className="inspector__actions">
+                <Button size="sm" variant="primary" onClick={edit.onSave} disabled={!edit.dirty || edit.saving}>
+                  {edit.saving ? "Saving…" : "Save"}
+                </Button>
+                <Button size="sm" onClick={edit.onCancel}>
+                  Cancel
+                </Button>
+              </div>
+            )}
           </header>
           <div className="inspector__body">{children}</div>
         </>

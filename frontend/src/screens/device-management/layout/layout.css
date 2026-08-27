@@ -79,18 +79,20 @@
   gap: var(--space-2);
 }
 
-.canvas-overlay__bar > .btn {
+.canvas-overlay__bar > .btn,
+.canvas-overlay__bar > .path {
   pointer-events: auto;
-}
-
-/* Where you are now: the end of the breadcrumb, which is a label rather than
- * a button because there's nowhere for it to go. */
-.canvas-overlay__here {
-  color: var(--color-mpg-green-dark);
 }
 
 .canvas-overlay__spacer {
   flex: 1 1 auto;
+}
+
+/* The level-locked explanation, pinned under the bar. */
+.canvas-overlay__note {
+  align-self: flex-start;
+  max-width: 520px;
+  pointer-events: auto;
 }
 
 /* Bottom-right view controls (+ | − | [ ] | 2D/ISO): quiet grey, green on
@@ -137,4 +139,106 @@
   background: var(--color-white);
   color: var(--color-mpg-green-dark);
   pointer-events: none;
+}
+
+/* --- location path -------------------------------------------------------- */
+/* Ported from the old editor. One small button: white, thin grey rule, sharp,
+ * not bold. Only the writing of what's clickable turns green. */
+.path {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px var(--space-2);
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: var(--radius);
+  background: var(--color-white);
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-regular);
+  font-size: 10px; /* the old path's size — smaller than --font-size-small */
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+/* A level name. Ancestors are clickable and go green on hover; the level
+ * you're on ("you are here") is quiet and inert. */
+.path__step {
+  border: 0;
+  padding: 2px 4px;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.path__step:hover {
+  color: var(--color-mpg-green);
+}
+
+.path__step--current {
+  color: var(--color-grey);
+  cursor: default;
+}
+
+/* The `›` (and the `[N]` floor chip) that opens a level's option list. */
+.path__dd {
+  position: relative;
+  display: inline-flex;
+}
+
+.path__switch {
+  border: 0;
+  padding: 2px 4px;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.path__switch:hover {
+  color: var(--color-mpg-green);
+}
+
+/* Nothing to pick here: keep the `›` for spacing, but inert. */
+.path__switch--empty {
+  padding: 2px 4px;
+  color: var(--color-grey-semilight);
+  cursor: default;
+}
+
+/* The option list — a multiline take on the same small button. The selected
+ * entry is the only coloured one; hovering an item previews that green. */
+.path__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  min-width: 120px;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: var(--radius);
+  background: var(--color-white);
+}
+
+.path__menu-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 5px var(--space-2);
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.path__menu-item:hover,
+.path__menu-item--active {
+  color: var(--color-mpg-green);
 }

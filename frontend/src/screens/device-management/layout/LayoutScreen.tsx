@@ -1,24 +1,28 @@
 /**
  * Lab layout (plan §10): one editor over three levels — Site → Lab → Station —
- * drilling down by double-clicking a box and back up through the breadcrumb.
- * Each level is the *same* canvas; only the data and the target endpoint
+ * drilling down by a box's name on the canvas and back up through the location
+ * path. Each level is the *same* canvas; only the data and the target endpoint
  * differ (`levels.ts`).
  *
- * Editing is staged, as it was in the old editor: in edit mode, moves and
- * resizes accumulate in a local draft and nothing is written until Save.
- * Cancel discards them after a confirm, and the level can't be changed while
+ * Editing is staged, as it was in the old editor: in edit mode, moves, resizes
+ * and typed field changes accumulate in one draft and nothing is written until
+ * Save. Cancel discards after a confirm, and the level can't be changed while
  * a draft is open. The reason is the audit trail — every write records a
  * Revision, so a PATCH per drag would bury the history under hundreds of rows.
  *
+ * That draft is keyed by uuid and holds whole PATCH bodies, which is what lets
+ * a drag and a typed coordinate be the same edit: the canvas writes geometry
+ * into it, the inspector's editor writes any field into it, one Save sends it.
+ *
  * The canvas never holds authoritative state (plan §10.3): it renders the
- * draft, and a save writes the draft and refetches. Nothing round-trips
- * through three.js.
+ * draft, and a save writes the draft and refetches.
  */
 
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  API_BY_KIND,
   devicesApi,
   labsApi,
   modulesApi,
@@ -26,18 +30,27 @@ import {
   stationsApi,
   zonesApi,
 } from "../../../api/entities";
+import type { EntityKind, GeometryDescriptor } from "../../../api/types";
 import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
 import { EntityInspector } from "../../../components/inspectors";
+import { EditContext } from "../../../components/inspectors/edit";
 import { InspectorNavContext, type InspectorTarget } from "../../../components/inspectors/nav";
 import { ScreenHeader } from "../../../components/ScreenHeader";
-import type { Rect } from "./constraints";
-import { API_FOR, buildLevel, drillInto, type LayoutBox, type LevelContext } from "./levels";
 import { CreateDialog } from "../hierarchy/CreateDialog";
+import type { Rect } from "./constraints";
+import { buildLevel, drillInto, type LevelContext } from "./levels";
+import { LocationPath } from "./LocationPath";
 import { LayoutCanvas, type Preset, type ViewApi } from "./Scene";
 
 import "./layout.css";
+
+/** One record's pending changes: the body a Save will PATCH. */
+interface DraftEntry {
+  kind: EntityKind;
+  body: Record<string, unknown>;
+}
 
 export function LayoutScreen() {
   const queryClient = useQueryClient();
@@ -51,13 +64,13 @@ export function LayoutScreen() {
   const [ctx, setCtx] = useState<LevelContext>({ site: null, lab: null, station: null, floor: 0 });
   const [preset, setPreset] = useState<Preset>("iso");
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<Record<string, Rect>>({});
+  const [draft, setDraft] = useState<Record<string, DraftEntry>>({});
   const [selected, setSelected] = useState<string | null>(null);
   /** What the panel is showing. Usually the selected box, but a reference
    * field can send it somewhere that isn't on this level at all. */
   const [inspect, setInspect] = useState<InspectorTarget | null>(null);
-  const [hover, setHover] = useState<{ name: string; x: number; y: number } | null>(null);
   const [adding, setAdding] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const view = useRef<ViewApi | null>(null);
   const labelNodes = useRef(new Map<string, HTMLElement>());
 
@@ -73,74 +86,114 @@ export function LayoutScreen() {
   // Nothing chosen yet means the first site — the editor always opens on
   // something rather than on a picker.
   const context: LevelContext = ctx.site ? ctx : { ...ctx, site: data.sites[0] ?? null };
-  const model = useMemo(() => buildLevel(context, data), [context, sites.data, labs.data, zones.data, stations.data, modules.data, devices.data]);
+  const model = useMemo(
+    () => buildLevel(context, data),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [context, sites.data, labs.data, zones.data, stations.data, modules.data, devices.data],
+  );
 
   const dirty = Object.keys(draft).length > 0;
-  const boxes = (model?.boxes ?? []).map((b) => (draft[b.uuid] ? { ...b, rect: draft[b.uuid] } : b));
+
+  /** The level's boxes with the draft applied — what's on screen, not what's
+   * saved. */
+  const boxes = (model?.boxes ?? []).map((box) => {
+    const body = draft[box.uuid]?.body;
+    if (!body) return box;
+    const geometry = (body.object_geometry as GeometryDescriptor | undefined) ?? box.geometry;
+    const [x, y] = geometry.box_position_xyz;
+    const [w, d, h] = geometry.box_dimension_xyz;
+    return {
+      ...box,
+      name: (body.name as string | undefined) ?? box.name,
+      rect: { pos: { x, y }, size: { x: w, y: d } },
+      height: box.flat ? 0 : h,
+      geometry,
+    };
+  });
   const selectedBox = boxes.find((b) => b.uuid === selected) ?? null;
+
+  function patch(target: InspectorTarget, field: string, value: unknown) {
+    setDraft((d) => ({
+      ...d,
+      [target.row.uuid]: {
+        kind: target.kind,
+        body: { ...d[target.row.uuid]?.body, [field]: value },
+      },
+    }));
+  }
+
+  /** A drag or a handle: the same edit a typed coordinate makes, so it goes
+   * into the same draft — and opens the editor on what you just moved. */
+  function setRect(uuid: string, rect: Rect) {
+    const box = boxes.find((b) => b.uuid === uuid);
+    if (!box) return;
+    const target = { kind: box.kind, row: box.row };
+    const g = box.geometry;
+    patch(target, "object_geometry", {
+      ...g,
+      box_position_xyz: [rect.pos.x, rect.pos.y, g.box_position_xyz[2]],
+      box_dimension_xyz: [rect.size.x, rect.size.y, g.box_dimension_xyz[2]],
+    });
+    setSelected(uuid);
+    setInspect(target);
+  }
 
   const save = useMutation({
     mutationFn: async () => {
-      for (const box of boxes) {
-        const rect = draft[box.uuid];
-        if (!rect) continue;
-        const g = box.geometry;
-        await API_FOR[box.kind].update(box.uuid, {
-          object_geometry: {
-            ...g,
-            box_position_xyz: [rect.pos.x, rect.pos.y, g.box_position_xyz[2]],
-            box_dimension_xyz: [rect.size.x, rect.size.y, g.box_dimension_xyz[2]],
-          },
-        });
+      for (const [uuid, entry] of Object.entries(draft)) {
+        await API_BY_KIND[entry.kind].update(uuid, entry.body);
       }
     },
     onSuccess: async () => {
       setDraft({});
       setEditing(false);
+      setNote(null);
       await queryClient.invalidateQueries();
     },
   });
 
   const remove = useMutation({
-    mutationFn: (box: LayoutBox) => API_FOR[box.kind].remove(box.uuid),
+    mutationFn: (target: InspectorTarget) => API_BY_KIND[target.kind].remove(target.row.uuid),
     onSuccess: async () => {
       setSelected(null);
+      setInspect(null);
       await queryClient.invalidateQueries();
     },
   });
 
+  /** Leaving the editor with unsaved work asks first. */
   function leaveEditing() {
-    if (dirty && !confirm("Discard the unsaved layout changes?")) return;
+    if (dirty && !confirm("You have unsaved changes. Discard them?")) return;
     setDraft({});
     setEditing(false);
+    setNote(null);
   }
 
   /** Level changes are blocked while a draft is open — save or cancel first. */
-  function go(patch: Partial<LevelContext>) {
+  function go(next: Partial<LevelContext>) {
     if (dirty) return;
     setSelected(null);
     setInspect(null);
-    // The box the cursor was over is gone with the level — its tooltip would
-    // otherwise hang around naming something no longer on screen.
-    setHover(null);
-    setCtx({ ...context, ...patch });
+    setNote(null);
+    setCtx({ ...context, ...next });
   }
 
   /** Descend into a box — from its name on the canvas, or a double-click. */
   function enter(uuid: string) {
     const box = (model?.boxes ?? []).find((b) => b.uuid === uuid);
-    const patch = box && model ? drillInto(model, box) : null;
-    if (patch) go(patch);
+    const next = box && model ? drillInto(model, box) : null;
+    if (next) go(next);
+  }
+
+  function select(uuid: string | null) {
+    setSelected(uuid);
+    const box = uuid === null ? null : boxes.find((b) => b.uuid === uuid);
+    setInspect(box ? { kind: box.kind, row: box.row } : null);
   }
 
   /** What an Add on this level hangs the new row off. */
   const parentUuid = context.station?.uuid ?? context.lab?.uuid ?? context.site?.uuid;
-
-  const crumbs = [
-    { label: context.site?.name ?? "Site", to: { lab: null, station: null } },
-    ...(context.lab ? [{ label: context.lab.name, to: { station: null } }] : []),
-    ...(context.station ? [{ label: context.station.name, to: {} }] : []),
-  ];
+  const draftBody = inspect ? (draft[inspect.row.uuid]?.body ?? {}) : {};
 
   return (
     <>
@@ -181,16 +234,9 @@ export function LayoutScreen() {
                 selected={selected}
                 api={view}
                 labelNodes={labelNodes}
-                onSelect={(uuid) => {
-                  setSelected(uuid);
-                  const box = uuid === null ? null : boxes.find((b) => b.uuid === uuid);
-                  setInspect(box ? { kind: box.kind, row: box.row } : null);
-                }}
+                onSelect={select}
                 onDrill={enter}
-                onGeometry={(uuid, rect) => setDraft((d) => ({ ...d, [uuid]: rect }))}
-                onHover={(box: LayoutBox | null, x: number, y: number) =>
-                  setHover(box ? { name: box.name, x, y } : null)
-                }
+                onGeometry={setRect}
               />
 
               {/* The names, in the middle of what they name — rendered here
@@ -221,23 +267,39 @@ export function LayoutScreen() {
                   bottom. The bar itself is click-through. */}
               <div className="canvas-overlay">
                 <div className="canvas-overlay__bar">
-                  {crumbs.map((crumb, i) =>
-                    i === crumbs.length - 1 ? (
-                      <span key={i} className="canvas-overlay__here label">
-                        {crumb.label}
-                      </span>
-                    ) : (
-                      <Button
-                        key={i}
-                        size="sm"
-                        onClick={() => go(crumb.to)}
-                        disabled={dirty}
-                        title={dirty ? "Save or cancel first" : undefined}
-                      >
-                        {crumb.label}
-                      </Button>
-                    ),
-                  )}
+                  <LocationPath
+                    sites={data.sites}
+                    labs={data.labs}
+                    stations={data.stations}
+                    site={context.site}
+                    lab={context.lab}
+                    station={context.station}
+                    floor={context.floor}
+                    level={model.level}
+                    locked={dirty}
+                    onLocked={() =>
+                      setNote(
+                        "Changing level needs a clean slate — Save your changes, or Cancel to discard them.",
+                      )
+                    }
+                    onPickSite={(uuid) =>
+                      go({
+                        site: data.sites.find((s) => s.uuid === uuid) ?? null,
+                        lab: null,
+                        station: null,
+                        floor: 0,
+                      })
+                    }
+                    onPickFloor={(floor) => go({ floor })}
+                    onEnterLab={(uuid) =>
+                      go({ lab: data.labs.find((l) => l.uuid === uuid) ?? null, station: null })
+                    }
+                    onEnterStation={(uuid) =>
+                      go({ station: data.stations.find((s) => s.uuid === uuid) ?? null })
+                    }
+                    onGoToSite={() => go({ lab: null, station: null })}
+                    onGoToLab={() => go({ station: null })}
+                  />
 
                   <span className="canvas-overlay__spacer" />
 
@@ -250,13 +312,21 @@ export function LayoutScreen() {
                         size="sm"
                         variant="danger"
                         disabled={selectedBox === null || remove.isPending}
-                        onClick={() => selectedBox && remove.mutate(selectedBox)}
+                        onClick={() =>
+                          selectedBox && remove.mutate({ kind: selectedBox.kind, row: selectedBox.row })
+                        }
                       >
                         Remove
                       </Button>
                     </>
                   )}
                 </div>
+
+                {note && (
+                  <div className="canvas-overlay__note">
+                    <Alert kind="info">{note}</Alert>
+                  </div>
+                )}
 
                 <div className="zoombar">
                   <button className="zoombar__btn" title="Zoom in" onClick={() => view.current?.zoomIn()}>
@@ -280,39 +350,45 @@ export function LayoutScreen() {
                   </button>
                 </div>
               </div>
-
-              {hover && (
-                <span className="layout__tip label" style={{ left: hover.x + 12, top: hover.y + 12 }}>
-                  {hover.name}
-                </span>
-              )}
             </div>
           )}
         </div>
 
         <Inspector
           open={inspect !== null}
-          kind={inspect ? `${inspect.kind} inspector` : "Inspector"}
-          title={inspect?.row.name}
+          kind={inspect?.kind ?? "Inspector"}
+          title={(draftBody.name as string | undefined) ?? inspect?.row.name}
           subtitle={inspect?.row.uuid}
-          dismissable={!editing}
           onClose={() => {
             setInspect(null);
             setSelected(null);
           }}
+          edit={{
+            editing,
+            dirty,
+            saving: save.isPending,
+            onToggle: () => (editing ? leaveEditing() : setEditing(true)),
+            onSave: () => save.mutate(),
+            onCancel: leaveEditing,
+            onRename: (name) => inspect && patch(inspect, "name", name),
+          }}
         >
           <InspectorNavContext.Provider value={setInspect}>
-            {inspect && <EntityInspector kind={inspect.kind} row={inspect.row} />}
+            <EditContext.Provider
+              value={{
+                editing,
+                draft: draftBody,
+                set: (field, value) => inspect && patch(inspect, field, value),
+              }}
+            >
+              {inspect && <EntityInspector kind={inspect.kind} row={inspect.row} />}
+            </EditContext.Provider>
           </InspectorNavContext.Provider>
         </Inspector>
       </div>
 
       {adding && model && (
-        <CreateDialog
-          kind={model.childKind}
-          parentUuid={parentUuid}
-          onClose={() => setAdding(false)}
-        />
+        <CreateDialog kind={model.childKind} parentUuid={parentUuid} onClose={() => setAdding(false)} />
       )}
     </>
   );

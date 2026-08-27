@@ -12,12 +12,15 @@
  */
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
 import { EntityInspector } from "../../../components/inspectors";
+import { EditContext } from "../../../components/inspectors/edit";
 import { InspectorNavContext } from "../../../components/inspectors/nav";
+import { API_BY_KIND } from "../../../api/entities";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
 import { CreateDialog } from "./CreateDialog";
@@ -59,9 +62,41 @@ export function HierarchyLayout() {
   const [selected, setSelected] = useState<Selection | null>(null);
   /** The kind the create dialog is open on, if it's open at all. */
   const [creating, setCreating] = useState<EntityKind | null>(null);
+  /** The inspector's editor: whether it's open, and what it's changed. */
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Record<string, unknown>>({});
+  const queryClient = useQueryClient();
+  const dirty = Object.keys(draft).length > 0;
 
   // A row selected on one view isn't the row you're looking at on the next.
   useEffect(() => setSelected(null), [pathname]);
+
+  const save = useMutation({
+    mutationFn: (): Promise<unknown> =>
+      selected
+        ? API_BY_KIND[selected.kind].update(selected.row.uuid, draft)
+        : Promise.resolve(null),
+    onSuccess: async () => {
+      setDraft({});
+      setEditing(false);
+      await queryClient.invalidateQueries();
+    },
+  });
+
+  /** Leaving the editor with unsaved work asks first. */
+  function leaveEditing() {
+    if (dirty && !confirm("You have unsaved changes. Discard them?")) return;
+    setDraft({});
+    setEditing(false);
+  }
+
+  /** Moving the panel to another record ends the edit it was in. */
+  function show(next: Selection | null) {
+    if (dirty && !confirm("You have unsaved changes. Discard them?")) return;
+    setDraft({});
+    setEditing(false);
+    setSelected(next);
+  }
 
   const onTree = pathname === TREE_PATH;
   const current = onTree
@@ -135,7 +170,7 @@ export function HierarchyLayout() {
           </nav>
 
           <SearchContext.Provider value={query}>
-            <SelectContext.Provider value={setSelected}>
+            <SelectContext.Provider value={show}>
               <Outlet />
             </SelectContext.Provider>
           </SearchContext.Provider>
@@ -143,13 +178,30 @@ export function HierarchyLayout() {
 
         <Inspector
           open={selected !== null}
-          kind={selected ? `${selected.kind} inspector` : "Inspector"}
-          title={selected?.row.name}
+          kind={selected?.kind ?? "Inspector"}
+          title={(draft.name as string | undefined) ?? selected?.row.name}
           subtitle={selected?.row.uuid}
-          onClose={() => setSelected(null)}
+          onClose={() => show(null)}
+          edit={{
+            editing,
+            dirty,
+            saving: save.isPending,
+            onToggle: () => (editing ? leaveEditing() : setEditing(true)),
+            onSave: () => save.mutate(),
+            onCancel: leaveEditing,
+            onRename: (name) => setDraft((d) => ({ ...d, name })),
+          }}
         >
-          <InspectorNavContext.Provider value={setSelected}>
-            {selected && <EntityInspector kind={selected.kind} row={selected.row} />}
+          <InspectorNavContext.Provider value={show}>
+            <EditContext.Provider
+              value={{
+                editing,
+                draft,
+                set: (field, value) => setDraft((d) => ({ ...d, [field]: value })),
+              }}
+            >
+              {selected && <EntityInspector kind={selected.kind} row={selected.row} />}
+            </EditContext.Provider>
           </InspectorNavContext.Provider>
         </Inspector>
       </div>

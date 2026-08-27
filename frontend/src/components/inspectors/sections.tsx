@@ -14,6 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { labsApi, sitesApi, stationsApi, zonesApi } from "../../api/entities";
 import type { EntityKind, GeometryDescriptor, ObjectBase } from "../../api/types";
 import { Field, FieldGroup } from "../Inspector";
+import { useEditSession, useFieldValue } from "./edit";
 import { useInspectorNav, type InspectorTarget } from "./nav";
 
 /** uuid -> the record, across every entity that can be a parent. Reads the
@@ -61,9 +62,30 @@ export function ParentField({ label, uuid }: { label: string; uuid: string | nul
   );
 }
 
+/**
+ * One of the record's own fields: read as text, edited as a compact input in
+ * the same idiom as the hierarchy's search box.
+ */
+export function TextField({ label, row, field }: { label: string; row: object; field: string }) {
+  const session = useEditSession();
+  const value = useFieldValue<string | null>(row, field);
+
+  if (!session?.editing) return <Field label={label}>{value}</Field>;
+
+  return (
+    <Field label={label}>
+      <input
+        className="field__input"
+        value={value ?? ""}
+        onChange={(e) => session.set(field, e.target.value === "" ? null : e.target.value)}
+      />
+    </Field>
+  );
+}
+
 /** What the record is, aside from its name and its uuid (both in the header). */
 export function DescriptionSection({ row }: { row: ObjectBase }) {
-  return <Field label="Description">{row.description}</Field>;
+  return <TextField label="Description" row={row} field="description" />;
 }
 
 /** Whole numbers stay whole; anything else gets two digits — 0.004 reads as
@@ -79,13 +101,37 @@ const triple = (xyz: [number, number, number]) => xyz.map(round).join(" × ");
  * Placement, when there is any. A site carries a list (one entry per floor);
  * everything else carries at most one, so the entry's `detail` only earns a
  * mention when there's more than one to tell apart.
+ *
+ * In the editor each axis is a float you can type — which is the only way to
+ * place something exactly, since a drag is always to the nearest pixel.
  */
 export function GeometrySection({
   geometry,
 }: {
   geometry: GeometryDescriptor | GeometryDescriptor[] | null;
 }) {
-  const list = geometry === null ? [] : Array.isArray(geometry) ? geometry : [geometry];
+  const session = useEditSession();
+  const single = geometry !== null && !Array.isArray(geometry);
+  const edited = useFieldValue<GeometryDescriptor | undefined>({}, "object_geometry");
+  const current = single ? (edited ?? (geometry as GeometryDescriptor)) : null;
+
+  // A site's geometry is a list of floors; editing that needs a floor editor,
+  // which doesn't exist yet, so it stays read-only.
+  if (session?.editing && current) {
+    const write = (key: "box_position_xyz" | "box_dimension_xyz", axis: number, value: number) => {
+      const next = { ...current, [key]: [...current[key]] as [number, number, number] };
+      next[key][axis] = value;
+      session.set("object_geometry", next);
+    };
+    return (
+      <FieldGroup title="Geometry">
+        <Triple label="Position" values={current.box_position_xyz} onChange={(a, v) => write("box_position_xyz", a, v)} />
+        <Triple label="Dimensions" values={current.box_dimension_xyz} onChange={(a, v) => write("box_dimension_xyz", a, v)} />
+      </FieldGroup>
+    );
+  }
+
+  const list = geometry === null ? [] : Array.isArray(geometry) ? geometry : [current ?? geometry];
   if (list.length === 0) return null;
 
   return (
@@ -104,6 +150,34 @@ export function GeometrySection({
         );
       })}
     </FieldGroup>
+  );
+}
+
+/** Three floats on one line — x, y, z of a position or an extent. */
+function Triple({
+  label,
+  values,
+  onChange,
+}: {
+  label: string;
+  values: [number, number, number];
+  onChange: (axis: number, value: number) => void;
+}) {
+  return (
+    <Field label={label}>
+      <div className="field__triple">
+        {values.map((v, axis) => (
+          <input
+            key={axis}
+            className="field__input mono"
+            type="number"
+            step="0.01"
+            value={v}
+            onChange={(e) => onChange(axis, Number(e.target.value))}
+          />
+        ))}
+      </div>
+    </Field>
   );
 }
 

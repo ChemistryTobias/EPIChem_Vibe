@@ -2,7 +2,7 @@
 
 import type { Zone } from "../../api/types";
 import { Field, FieldGroup } from "../Inspector";
-import { DescriptionSection, GeometrySection, ParentField, RecordSection } from "./sections";
+import { DescriptionSection, GeometrySection, ParentField, RecordSection, TextField } from "./sections";
 
 export function ZoneInspector({ row }: { row: Zone }) {
   return (
@@ -10,7 +10,7 @@ export function ZoneInspector({ row }: { row: Zone }) {
       <DescriptionSection row={row} />
 
       <FieldGroup title="Zone">
-        <Field label="Tag">{row.tag}</Field>
+        <TextField label="Tag" row={row} field="tag" />
         <ParentField label="Parent" uuid={row.parent_uuid} />
         {/* Derived server-side from what parent_uuid points at. */}
         <Field label="Parent kind">{row.parent_type}</Field>

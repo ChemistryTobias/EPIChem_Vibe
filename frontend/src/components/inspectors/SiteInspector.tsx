@@ -2,7 +2,7 @@
 
 import type { Site } from "../../api/types";
 import { Field, FieldGroup } from "../Inspector";
-import { DescriptionSection, GeometrySection, RecordSection } from "./sections";
+import { DescriptionSection, GeometrySection, RecordSection, TextField } from "./sections";
 
 export function SiteInspector({ row }: { row: Site }) {
   return (
@@ -10,9 +10,9 @@ export function SiteInspector({ row }: { row: Site }) {
       <DescriptionSection row={row} />
 
       <FieldGroup title="Site">
-        <Field label="Organisation">{row.organisation}</Field>
-        <Field label="Address">{row.address}</Field>
-        <Field label="Timezone">{row.timezone}</Field>
+        <TextField label="Organisation" row={row} field="organisation" />
+        <TextField label="Address" row={row} field="address" />
+        <TextField label="Timezone" row={row} field="timezone" />
         <Field label="Coordinates">
           {row.coordinates && (
             <span className="mono">{`${row.coordinates.latitude}, ${row.coordinates.longitude}`}</span>
