@@ -107,11 +107,8 @@
 .nav-rail__subitem {
   display: block;
   width: 100%;
-  /* The 3px left padding lost to the marker slot is taken off the indent, so
-     the labels line up whether or not one is active. */
-  padding: 6px var(--space-5) 6px calc(var(--space-5) + var(--space-4) - 3px);
+  padding: 6px var(--space-5) 6px calc(var(--space-5) + var(--space-4));
   border: 0;
-  border-left: 3px solid transparent;
   background: transparent;
   color: rgba(255, 255, 255, 0.75);
   font-family: var(--font-family-default);
@@ -131,7 +128,6 @@
 }
 
 .nav-rail__subitem--active {
-  border-left-color: var(--color-accent-green-light);
   color: var(--color-white);
   font-weight: var(--font-weight-bold);
 }
