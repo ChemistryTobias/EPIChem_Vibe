@@ -15,7 +15,7 @@
  * through three.js.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -34,7 +34,8 @@ import { EntityInspector } from "../../../components/inspectors";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import type { Rect } from "./constraints";
 import { API_FOR, buildLevel, drillInto, type LayoutBox, type LevelContext } from "./levels";
-import { LayoutCanvas, type Preset } from "./Scene";
+import { CreateDialog } from "../hierarchy/CreateDialog";
+import { LayoutCanvas, type Preset, type ViewApi } from "./Scene";
 
 import "./layout.css";
 
@@ -53,6 +54,8 @@ export function LayoutScreen() {
   const [draft, setDraft] = useState<Record<string, Rect>>({});
   const [selected, setSelected] = useState<string | null>(null);
   const [hover, setHover] = useState<{ name: string; x: number; y: number } | null>(null);
+  const [adding, setAdding] = useState(false);
+  const view = useRef<ViewApi | null>(null);
 
   const data = {
     sites: sites.data ?? [],
@@ -94,6 +97,14 @@ export function LayoutScreen() {
     },
   });
 
+  const remove = useMutation({
+    mutationFn: (box: LayoutBox) => API_FOR[box.kind].remove(box.uuid),
+    onSuccess: async () => {
+      setSelected(null);
+      await queryClient.invalidateQueries();
+    },
+  });
+
   function leaveEditing() {
     if (dirty && !confirm("Discard the unsaved layout changes?")) return;
     setDraft({});
@@ -104,8 +115,14 @@ export function LayoutScreen() {
   function go(patch: Partial<LevelContext>) {
     if (dirty) return;
     setSelected(null);
+    // The box the cursor was over is gone with the level — its tooltip would
+    // otherwise hang around naming something no longer on screen.
+    setHover(null);
     setCtx({ ...context, ...patch });
   }
+
+  /** What an Add on this level hangs the new row off. */
+  const parentUuid = context.station?.uuid ?? context.lab?.uuid ?? context.site?.uuid;
 
   const crumbs = [
     { label: context.site?.name ?? "Site", to: { lab: null, station: null } },
@@ -136,37 +153,6 @@ export function LayoutScreen() {
 
       <div className="screen">
         <div className="screen__content layout">
-          <nav className="levels" aria-label="Layout level">
-            <div className="levels__list">
-              {crumbs.map((crumb, i) => (
-                <button
-                  key={i}
-                  className={i === crumbs.length - 1 ? "levels__item levels__item--active" : "levels__item"}
-                  onClick={() => go(crumb.to)}
-                  disabled={dirty}
-                  title={dirty ? "Save or cancel first" : undefined}
-                >
-                  {crumb.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="levels__search layout__views">
-              <button
-                className={preset === "iso" ? "levels__item levels__item--active" : "levels__item"}
-                onClick={() => setPreset("iso")}
-              >
-                Isometric
-              </button>
-              <button
-                className={preset === "top" ? "levels__item levels__item--active" : "levels__item"}
-                onClick={() => setPreset("top")}
-              >
-                Top down
-              </button>
-            </div>
-          </nav>
-
           {save.isError && <Alert kind="error">{(save.error as Error).message}</Alert>}
 
           {model === null ? (
@@ -181,6 +167,7 @@ export function LayoutScreen() {
                 preset={preset}
                 editing={editing}
                 selected={selected}
+                api={view}
                 onSelect={setSelected}
                 onDrill={(uuid) => {
                   const box = boxes.find((b) => b.uuid === uuid);
@@ -192,6 +179,72 @@ export function LayoutScreen() {
                   setHover(box ? { name: box.name, x, y } : null)
                 }
               />
+
+              {/* Everything but the canvas floats over it: where you are on the
+                  left, what you can do on the right, the view controls at the
+                  bottom. The bar itself is click-through. */}
+              <div className="canvas-overlay">
+                <div className="canvas-overlay__bar">
+                  {crumbs.map((crumb, i) =>
+                    i === crumbs.length - 1 ? (
+                      <span key={i} className="canvas-overlay__here label">
+                        {crumb.label}
+                      </span>
+                    ) : (
+                      <Button
+                        key={i}
+                        size="sm"
+                        onClick={() => go(crumb.to)}
+                        disabled={dirty}
+                        title={dirty ? "Save or cancel first" : undefined}
+                      >
+                        {crumb.label}
+                      </Button>
+                    ),
+                  )}
+
+                  <span className="canvas-overlay__spacer" />
+
+                  {editing && (
+                    <>
+                      <Button size="sm" onClick={() => setAdding(true)}>
+                        Add {model.childLabel}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        disabled={selectedBox === null || remove.isPending}
+                        onClick={() => selectedBox && remove.mutate(selectedBox)}
+                      >
+                        Remove
+                      </Button>
+                    </>
+                  )}
+                </div>
+
+                <div className="zoombar">
+                  <button className="zoombar__btn" title="Zoom in" onClick={() => view.current?.zoomIn()}>
+                    +
+                  </button>
+                  <span className="zoombar__sep" aria-hidden="true">|</span>
+                  <button className="zoombar__btn" title="Zoom out" onClick={() => view.current?.zoomOut()}>
+                    −
+                  </button>
+                  <span className="zoombar__sep" aria-hidden="true">|</span>
+                  <button className="zoombar__btn" title="Fit to view" onClick={() => view.current?.reset()}>
+                    [ ]
+                  </button>
+                  <span className="zoombar__sep" aria-hidden="true">|</span>
+                  <button
+                    className="zoombar__btn"
+                    title={preset === "iso" ? "Switch to top down" : "Switch to isometric"}
+                    onClick={() => setPreset(preset === "iso" ? "top" : "iso")}
+                  >
+                    {preset === "iso" ? "2D" : "ISO"}
+                  </button>
+                </div>
+              </div>
+
               {hover && (
                 <span className="layout__tip label" style={{ left: hover.x + 12, top: hover.y + 12 }}>
                   {hover.name}
@@ -213,6 +266,14 @@ export function LayoutScreen() {
           )}
         </Inspector>
       </div>
+
+      {adding && model && (
+        <CreateDialog
+          kind={model.childKind}
+          parentUuid={parentUuid}
+          onClose={() => setAdding(false)}
+        />
+      )}
     </>
   );
 }

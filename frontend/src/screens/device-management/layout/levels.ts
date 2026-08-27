@@ -75,14 +75,15 @@ export interface LayoutZone {
 
 export interface LevelModel {
   level: Level;
-  /** Floor extent in metres, plus the wall height the room shell is drawn to. */
+  /** Floor extent in metres. */
   size: Vec2;
-  wall: number;
   grid: number;
   boxes: LayoutBox[];
   zones: LayoutZone[];
   /** What a box at this level is, for labels and empty states. */
   childLabel: string;
+  /** The entity an Add on this level creates. */
+  childKind: EntityKind;
 }
 
 /** Backend Z-up geometry → a floor footprint plus a height, in metres. */
@@ -136,17 +137,17 @@ export function buildLevel(ctx: LevelContext, data: LayoutData): LevelModel | nu
   return null;
 }
 
-function frame(size: Vec2, wall: number) {
-  return { size, wall, grid: gridFor(Math.max(size.x, size.y)) };
+function frame(size: Vec2) {
+  return { size, grid: gridFor(Math.max(size.x, size.y)) };
 }
 
 function siteLevel(site: Site, data: LayoutData, floor: number): LevelModel | null {
   const plan = site.object_geometry[floor] ?? site.object_geometry[0];
   if (!plan) return null;
-  const { rect, height } = rectOf(plan);
+  const { rect } = rectOf(plan);
   return {
     level: "site",
-    ...frame(rect.size, height),
+    ...frame(rect.size),
     // Labs carry no floor number yet, so every lab draws on whichever floor
     // is showing — the single-floor case, which is all that exists today.
     boxes: data.labs
@@ -155,30 +156,32 @@ function siteLevel(site: Site, data: LayoutData, floor: number): LevelModel | nu
       .filter((b): b is LayoutBox => b !== null),
     zones: zonesOf(data.zones, site.uuid),
     childLabel: "lab",
+    childKind: "Lab",
   };
 }
 
 function labLevel(lab: Lab, data: LayoutData): LevelModel | null {
   if (lab.object_geometry === null) return null;
-  const { rect, height } = rectOf(lab.object_geometry);
+  const { rect } = rectOf(lab.object_geometry);
   return {
     level: "lab",
-    ...frame(rect.size, height),
+    ...frame(rect.size),
     boxes: data.stations
       .filter((s) => s.lab_uuid === lab.uuid)
       .map((s) => box("Station", s, FILL_ACTIVE))
       .filter((b): b is LayoutBox => b !== null),
     zones: zonesOf(data.zones, lab.uuid),
     childLabel: "station",
+    childKind: "Station",
   };
 }
 
 function stationLevel(station: Station, data: LayoutData): LevelModel | null {
   if (station.object_geometry === null) return null;
-  const { rect, height } = rectOf(station.object_geometry);
+  const { rect } = rectOf(station.object_geometry);
   return {
     level: "station",
-    ...frame(rect.size, height),
+    ...frame(rect.size),
     boxes: [
       ...data.modules
         .filter((m) => m.station_uuid === station.uuid)
@@ -189,11 +192,15 @@ function stationLevel(station: Station, data: LayoutData): LevelModel | null {
     ].filter((b): b is LayoutBox => b !== null),
     zones: [],
     childLabel: "device",
+    childKind: "Device",
   };
 }
 
 /** Which endpoint owns a box, for writing its geometry back. */
-export const API_FOR: Record<string, { update: (id: string, body: unknown) => Promise<unknown> }> = {
+export const API_FOR: Record<
+  string,
+  { update: (id: string, body: unknown) => Promise<unknown>; remove: (id: string) => Promise<unknown> }
+> = {
   Site: sitesApi,
   Lab: labsApi,
   Station: stationsApi,

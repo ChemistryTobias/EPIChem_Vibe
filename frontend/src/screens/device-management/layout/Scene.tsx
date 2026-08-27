@@ -18,25 +18,20 @@
  * to be under the cursor.
  */
 
-import { useLayoutEffect, useMemo } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
 import { clampToFloor, round3, slideTo, softSnap, type Rect, type Vec2 } from "./constraints";
 import type { LayoutBox, LevelModel } from "./levels";
-import {
-  EDGE,
-  FLOOR,
-  FLOOR_EDGE,
-  GRID,
-  LAB,
-  SELECT,
-  WALL_EDGE,
-  WALL_LEFT,
-  WALL_RIGHT,
-  ZONE,
-  type BoxFill,
-} from "./palette";
+import { EDGE, FLOOR, FLOOR_EDGE, GRID, LAB, SELECT, ZONE, type BoxFill } from "./palette";
+
+/** What the overlay's zoom controls drive. */
+export interface ViewApi {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  reset: () => void;
+}
 
 export type Preset = "iso" | "top";
 
@@ -55,6 +50,8 @@ export interface SceneProps {
   onDrill: (uuid: string) => void;
   onGeometry: (uuid: string, rect: Rect) => void;
   onHover: (box: LayoutBox | null, clientX: number, clientY: number) => void;
+  /** Filled in with the zoom/reset controls once the canvas is up. */
+  api: RefObject<ViewApi | null>;
 }
 
 export function LayoutCanvas(props: SceneProps) {
@@ -81,14 +78,16 @@ function Contents({
   onDrill,
   onGeometry,
   onHover,
+  api,
 }: SceneProps) {
   const { camera, gl, size } = useThree();
   const thin = Math.max(model.size.x, model.size.y) * 0.005;
 
   // ---- camera -------------------------------------------------------------
-  useLayoutEffect(() => {
+  const tallest = boxes.reduce((h, b) => Math.max(h, b.height), 0);
+  const fit = useCallback(() => {
     const cam = camera as THREE.OrthographicCamera;
-    const centre = new THREE.Vector3(model.size.x / 2, model.wall / 2, model.size.y / 2);
+    const centre = new THREE.Vector3(model.size.x / 2, tallest / 2, model.size.y / 2);
     cam.up.set(0, 1, 0);
     if (preset === "top") cam.up.set(0, 0, -1); // backend +y runs down the screen
     cam.position.copy(centre).addScaledVector(preset === "iso" ? ISO_DIR : TOP_DIR, 500);
@@ -99,22 +98,71 @@ function Contents({
     const inv = cam.matrixWorldInverse;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const x of [0, model.size.x])
-      for (const y of [0, model.wall])
+      for (const y of [0, tallest])
         for (const z of [0, model.size.y]) {
           const v = new THREE.Vector3(x, y, z).applyMatrix4(inv);
           minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
           minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
         }
-    cam.zoom = 0.82 * Math.min(size.width / (maxX - minX), size.height / (maxY - minY));
-    // Re-centre on the drawing rather than on the room's midpoint.
+    cam.zoom = 0.88 * Math.min(size.width / (maxX - minX), size.height / (maxY - minY));
+    // Re-centre on the drawing rather than on the floor's midpoint.
     const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
     const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
-    cam.position
-      .addScaledVector(right, (minX + maxX) / 2)
-      .addScaledVector(up, (minY + maxY) / 2);
+    cam.position.addScaledVector(right, (minX + maxX) / 2).addScaledVector(up, (minY + maxY) / 2);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
-  }, [camera, size, model.size.x, model.size.y, model.wall, preset]);
+  }, [camera, size, model.size.x, model.size.y, tallest, preset]);
+
+  useLayoutEffect(fit, [fit]);
+
+  /**
+   * Zoom and pan, on the DOM element rather than through the scene graph.
+   * `gesture` is what keeps the two apart: a box drag sets it, and this
+   * listener — added after R3F's, so it sees the flag — stands down.
+   */
+  const gesture = useRef(false);
+  useEffect(() => {
+    const cam = camera as THREE.OrthographicCamera;
+    const el = gl.domElement;
+    const scale = (by: number) => {
+      cam.zoom = Math.max(1e-3, cam.zoom * by);
+      cam.updateProjectionMatrix();
+    };
+    if (api) api.current = { zoomIn: () => scale(1.25), zoomOut: () => scale(1 / 1.25), reset: fit };
+
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      scale(e.deltaY < 0 ? 1.1 : 1 / 1.1);
+    };
+    const down = (e: PointerEvent) => {
+      if (gesture.current) return;
+      let last = { x: e.clientX, y: e.clientY };
+      const move = (m: PointerEvent) => {
+        const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+        cam.position
+          .addScaledVector(right, -(m.clientX - last.x) / cam.zoom)
+          .addScaledVector(up, (m.clientY - last.y) / cam.zoom);
+        last = { x: m.clientX, y: m.clientY };
+        cam.updateMatrixWorld();
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        el.style.cursor = "";
+      };
+      el.style.cursor = "grabbing";
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    };
+
+    el.addEventListener("wheel", wheel, { passive: false });
+    el.addEventListener("pointerdown", down);
+    return () => {
+      el.removeEventListener("wheel", wheel);
+      el.removeEventListener("pointerdown", down);
+    };
+  }, [camera, gl, api, fit]);
 
   // ---- pointer → floor ----------------------------------------------------
   const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
@@ -136,6 +184,7 @@ function Contents({
 
   /** Start a move or a resize; both run off the same floor-plane maths. */
   const drag = (box: LayoutBox, mode: "move" | "resize") => (event: PointerEvent) => {
+    gesture.current = true;
     const start = floorPoint(event);
     const from = box.rect;
     const others = boxes.filter((b) => b.uuid !== box.uuid).map((b) => b.rect);
@@ -161,6 +210,7 @@ function Contents({
       }
     };
     const up = () => {
+      gesture.current = false;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -170,7 +220,7 @@ function Contents({
 
   return (
     <>
-      <Room size={model.size} wall={model.wall} grid={model.grid} thin={thin} />
+      <Room size={model.size} grid={model.grid} thin={thin} />
 
       {model.zones.map((zone) => (
         <FlatArea key={zone.uuid} rect={zone.rect} y={thin * 0.05} colour={ZONE} />
@@ -230,13 +280,11 @@ function Edges({ geometry, color }: { geometry: THREE.BufferGeometry; color: str
 }
 
 /**
- * The room the layout sits in: a floor slab and the two far walls, drawn as a
- * cutaway so the space reads as a room rather than a plane.
+ * The surface the layout sits on: a floor slab and its grid. The room's walls
+ * are not drawn — the plan view of the surface is what's wanted here.
  */
-function Room({ size, wall, grid, thin }: { size: Vec2; wall: number; grid: number; thin: number }) {
+function Room({ size, grid, thin }: { size: Vec2; grid: number; thin: number }) {
   const floor = useMemo(() => new THREE.BoxGeometry(size.x, thin, size.y), [size.x, size.y, thin]);
-  const left = useMemo(() => new THREE.BoxGeometry(thin, wall, size.y), [thin, wall, size.y]);
-  const right = useMemo(() => new THREE.BoxGeometry(size.x, wall, thin), [size.x, wall, thin]);
 
   const lines = useMemo(() => {
     const points: number[] = [];
@@ -259,20 +307,6 @@ function Room({ size, wall, grid, thin }: { size: Vec2; wall: number; grid: numb
       <lineSegments geometry={lines} position={[0, thin * 0.02, 0]}>
         <lineBasicMaterial color={GRID} />
       </lineSegments>
-
-      <mesh geometry={left} position={[-thin / 2, wall / 2, size.y / 2]}>
-        <meshBasicMaterial color={WALL_LEFT} />
-      </mesh>
-      <group position={[-thin / 2, wall / 2, size.y / 2]}>
-        <Edges geometry={left} color={WALL_EDGE} />
-      </group>
-
-      <mesh geometry={right} position={[size.x / 2, wall / 2, -thin / 2]}>
-        <meshBasicMaterial color={WALL_RIGHT} />
-      </mesh>
-      <group position={[size.x / 2, wall / 2, -thin / 2]}>
-        <Edges geometry={right} color={WALL_EDGE} />
-      </group>
     </group>
   );
 }

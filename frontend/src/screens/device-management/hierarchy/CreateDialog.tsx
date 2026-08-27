@@ -37,11 +37,18 @@ const PARENTS: Partial<Record<EntityKind, { field: string; label: string; from: 
   Device: { field: "station_uuid", label: "Station", from: ["Station"] },
 };
 
-export function CreateDialog({ kind: initial, onClose }: { kind: EntityKind; onClose: () => void }) {
+interface CreateDialogProps {
+  kind: EntityKind;
+  /** Preselect the parent — the layout editor knows which one you're inside. */
+  parentUuid?: string;
+  onClose: () => void;
+}
+
+export function CreateDialog({ kind: initial, parentUuid, onClose }: CreateDialogProps) {
   const [kind, setKind] = useState<EntityKind>(initial);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [parent, setParent] = useState("");
+  const [parent, setParent] = useState(parentUuid ?? "");
   const queryClient = useQueryClient();
 
   // The parent lists, already cached by the tree and the tables.

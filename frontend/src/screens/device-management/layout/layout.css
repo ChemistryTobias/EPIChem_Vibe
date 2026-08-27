@@ -1,5 +1,5 @@
-/* The canvas fills what's left under the level bar and scrolls nothing —
- * the camera fits the room to the space instead. */
+/* The canvas fills what's left under the header and scrolls nothing — the
+ * camera fits the room to the space instead. */
 .layout {
   display: flex;
   flex-direction: column;
@@ -13,14 +13,76 @@
   border: 1px solid var(--color-grey-semilight);
   border-radius: var(--radius);
   background: var(--color-white);
+  cursor: grab;
 }
 
-/* The two view presets, grouped at the far end like the hierarchy's search. */
-.layout__views {
+/* Every control floats over the canvas rather than sitting in a bar above it,
+ * so the drawing gets the whole panel. The overlay itself is click-through —
+ * only the real controls take pointer events. */
+.canvas-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-  padding: 0;
+  padding: var(--space-3);
+  pointer-events: none;
+}
+
+.canvas-overlay__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.canvas-overlay__bar > .btn {
+  pointer-events: auto;
+}
+
+/* Where you are now: the end of the breadcrumb, which is a label rather than
+ * a button because there's nowhere for it to go. */
+.canvas-overlay__here {
+  color: var(--color-mpg-green-dark);
+}
+
+.canvas-overlay__spacer {
+  flex: 1 1 auto;
+}
+
+/* Bottom-right view controls (+ | − | [ ] | 2D/ISO): quiet grey, green on
+ * hover, no border and no fill — they sit on the drawing, not beside it. */
+.zoombar {
+  margin-top: auto;
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-family-default);
+  font-size: var(--font-size-small);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+.zoombar__btn {
+  pointer-events: auto;
   border: 0;
-  background: transparent;
+  padding: 2px 5px;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.zoombar__btn:hover {
+  color: var(--color-mpg-green);
+}
+
+.zoombar__sep {
+  color: var(--color-grey-semilight);
 }
 
 /* Names live on hover rather than floating over every box — the boxes are the
