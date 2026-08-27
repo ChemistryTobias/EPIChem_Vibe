@@ -12,8 +12,12 @@ import type { Device, Lab, Module, Site, Station, Zone } from "../../../api/type
 
 export type Kind = "Site" | "Lab" | "Zone" | "Station" | "Module" | "Device";
 
-/** The levels the bar offers, outermost first. "Module" covers devices too. */
-export const LEVELS: Kind[] = ["Site", "Lab", "Zone", "Station", "Module"];
+/**
+ * The levels the bar offers: the containment chain outermost first, then
+ * Zone — it groups rather than contains, so it sits apart at the end.
+ * "Module" covers devices too.
+ */
+export const LEVELS: Kind[] = ["Site", "Lab", "Station", "Module", "Zone"];
 
 export interface TreeNode {
   uuid: string;

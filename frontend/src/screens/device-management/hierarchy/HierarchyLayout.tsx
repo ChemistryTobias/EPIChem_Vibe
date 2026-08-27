@@ -10,6 +10,7 @@
 import { createContext, useContext, useState } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 
+import { Button } from "../../../components/Button";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
 import { LEVELS } from "./hierarchyTree";
@@ -44,20 +45,29 @@ export function HierarchyLayout() {
 
   return (
     <>
-      <ScreenHeader title="Hierarchy" subtitle={onTree ? "Tree" : `${current}s`} />
+      <ScreenHeader
+        title="Hierarchy"
+        subtitle={onTree ? "Tree" : `${current}s`}
+        actions={
+          <>
+            {/* Disabled until the create flow exists — the backend accepts
+                these writes, but there are no forms to build the bodies. */}
+            <Button variant="primary" disabled title="Create forms aren't built yet">
+              New device
+            </Button>
+            <Button disabled title="Create forms aren't built yet">
+              Add
+            </Button>
+            <Button disabled title="Importing isn't possible yet">
+              Import
+            </Button>
+          </>
+        }
+      />
 
       <div className="screen">
         <div className="screen__content">
           <nav className="levels" aria-label="Hierarchy views">
-            <Link
-              to={TREE_PATH}
-              className={onTree ? "levels__item levels__item--active" : "levels__item"}
-              title="Tree"
-              aria-label="Tree"
-            >
-              <TreeIcon />
-            </Link>
-
             {LEVELS.map((level) => {
               const path = LEVEL_PATHS[level];
               return (
@@ -73,32 +83,53 @@ export function HierarchyLayout() {
               );
             })}
 
-            <button
-              type="button"
-              className={searching ? "levels__item levels__item--active" : "levels__item"}
-              // Closing the search clears it, so a hidden query can't keep
-              // filtering a view that looks unfiltered.
-              onClick={() => {
-                setSearching((open) => !open);
-                if (searching) setQuery("");
-              }}
-              title="Search"
-              aria-label="Search"
-              aria-expanded={searching}
-            >
-              <SearchIcon />
-            </button>
+            {/* The tree and search sit apart from the levels: they act on a
+                view rather than being one. */}
+            <div className="levels__tools">
+              {searching && (
+                <input
+                  className="levels__search"
+                  type="search"
+                  value={query}
+                  autoFocus
+                  placeholder={onTree ? "Search everything" : `Search ${current.toLowerCase()}s`}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              )}
 
-            {searching && (
-              <input
-                className="levels__search"
-                type="search"
-                value={query}
-                autoFocus
-                placeholder={onTree ? "Search everything" : `Search ${current.toLowerCase()}s`}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            )}
+              <button
+                type="button"
+                className={
+                  searching
+                    ? "levels__item levels__item--icon levels__item--active"
+                    : "levels__item levels__item--icon"
+                }
+                // Closing the search clears it, so a hidden query can't keep
+                // filtering a view that looks unfiltered.
+                onClick={() => {
+                  setSearching((open) => !open);
+                  if (searching) setQuery("");
+                }}
+                title="Search"
+                aria-label="Search"
+                aria-expanded={searching}
+              >
+                <SearchIcon />
+              </button>
+
+              <Link
+                to={TREE_PATH}
+                className={
+                  onTree
+                    ? "levels__item levels__item--icon levels__item--active"
+                    : "levels__item levels__item--icon"
+                }
+                title="Tree"
+                aria-label="Tree"
+              >
+                <TreeIcon />
+              </Link>
+            </div>
           </nav>
 
           <SearchContext.Provider value={query}>

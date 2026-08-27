@@ -21,3 +21,10 @@
   display: flex;
   gap: var(--space-2);
 }
+
+/* One width for every header action, so the row stays put whatever the
+ * labels say and whichever state a button is in. */
+.screen-header__actions .btn {
+  min-width: 128px;
+  justify-content: center;
+}

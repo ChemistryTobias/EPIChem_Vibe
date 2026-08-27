@@ -12,7 +12,10 @@
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wide);
   cursor: pointer;
-  /* Colour only — no transform, no shadow (DESIGN.md §5: no depth effects). */
+  /* Colour only — no transform, no shadow (DESIGN.md §5: no depth effects).
+   * Every state below changes colour alone: the border stays 1px and the
+   * padding never moves, so a button keeps its dimensions when hovered,
+   * pressed, disabled or made active. */
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
