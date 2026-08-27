@@ -3,10 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { labsApi, modulesApi, sitesApi, stationsApi, zonesApi } from "../../../api/entities";
+import {
+  devicesApi,
+  labsApi,
+  modulesApi,
+  sitesApi,
+  stationsApi,
+  zonesApi,
+} from "../../../api/entities";
 import { Alert } from "../../../components/Alert";
-import { Button } from "../../../components/Button";
-import { buildTree, collectUuids } from "./hierarchyTree";
+import { useHierarchySearch } from "./HierarchyLayout";
+import { buildTree, collectUuids, filterTree } from "./hierarchyTree";
 import { TreeRow } from "./TreeRow";
 
 export function HierarchyTree() {
@@ -15,9 +22,13 @@ export function HierarchyTree() {
   const zones = useQuery({ queryKey: ["zones"], queryFn: zonesApi.list });
   const stations = useQuery({ queryKey: ["stations"], queryFn: stationsApi.list });
   const modules = useQuery({ queryKey: ["modules"], queryFn: modulesApi.list });
+  const devices = useQuery({ queryKey: ["devices"], queryFn: devicesApi.list });
 
-  const loading = [sites, labs, zones, stations, modules].some((q) => q.isPending);
-  const failed = [sites, labs, zones, stations, modules].find((q) => q.isError);
+  const queries = [sites, labs, zones, stations, modules, devices];
+  const loading = queries.some((q) => q.isPending);
+  const failed = queries.find((q) => q.isError);
+
+  const search = useHierarchySearch();
 
   const tree = useMemo(
     () =>
@@ -27,17 +38,21 @@ export function HierarchyTree() {
         zones: zones.data ?? [],
         stations: stations.data ?? [],
         modules: modules.data ?? [],
+        devices: devices.data ?? [],
       }),
-    [sites.data, labs.data, zones.data, stations.data, modules.data],
+    [sites.data, labs.data, zones.data, stations.data, modules.data, devices.data],
   );
+
+  const shown = useMemo(() => filterTree(tree, search), [tree, search]);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Everything starts expanded — a registry this size is more useful open
-  // than as a row of collapsed sites.
+  // than as a row of collapsed sites. Re-expands whatever a search narrowed
+  // to, so matches deep in the tree aren't hidden behind a collapsed parent.
   useEffect(() => {
-    setExpanded(new Set(collectUuids(tree)));
-  }, [tree]);
+    setExpanded(new Set(collectUuids(shown)));
+  }, [shown]);
 
   function toggle(uuid: string) {
     setExpanded((prev) => {
@@ -51,23 +66,13 @@ export function HierarchyTree() {
   if (failed) return <Alert kind="error">{failed.error.message}</Alert>;
   if (loading) return <p className="muted">Loading…</p>;
   if (tree.length === 0) return <p className="muted">No sites yet.</p>;
+  if (shown.length === 0) return <p className="muted">Nothing matches “{search}”.</p>;
 
   return (
-    <>
-      <div className="tree__actions">
-        <Button size="sm" onClick={() => setExpanded(new Set(collectUuids(tree)))}>
-          Expand all
-        </Button>
-        <Button size="sm" onClick={() => setExpanded(new Set())}>
-          Collapse all
-        </Button>
-      </div>
-
-      <ul className="tree">
-        {tree.map((node) => (
-          <TreeRow key={node.uuid} node={node} depth={0} expanded={expanded} onToggle={toggle} />
-        ))}
-      </ul>
-    </>
+    <ul className="tree">
+      {shown.map((node) => (
+        <TreeRow key={node.uuid} node={node} depth={0} expanded={expanded} onToggle={toggle} />
+      ))}
+    </ul>
   );
 }

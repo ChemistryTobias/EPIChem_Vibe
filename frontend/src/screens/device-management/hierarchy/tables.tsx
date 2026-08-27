@@ -1,20 +1,30 @@
 /**
  * One table page per level — what the level bar links to.
  *
- * Each is a plain sortable table of that entity, with parent references
- * resolved to the parent's name so a row reads without cross-referencing
- * UUIDs by hand.
+ * Each is a sortable table of that entity, with parent references resolved to
+ * the parent's name so a row reads without cross-referencing UUIDs by hand,
+ * and narrowed by the bar's search. Modules and devices share the innermost
+ * table: both are station children of the same shape, told apart by a Kind
+ * column rather than by which endpoint they came from.
  */
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { labsApi, modulesApi, sitesApi, stationsApi, zonesApi } from "../../../api/entities";
+import {
+  devicesApi,
+  labsApi,
+  modulesApi,
+  sitesApi,
+  stationsApi,
+  zonesApi,
+} from "../../../api/entities";
 import type { Lab, Module, Site, Station, Zone } from "../../../api/types";
 import { DataTable } from "../../../components/DataTable";
 import type { Columns } from "../../../components/DataTable";
 import { QueryBoundary } from "../../../components/QueryBoundary";
-import { formatDate, nameMap, orDash } from "../../format";
+import { formatDate, matchesQuery, nameMap, orDash } from "../../format";
+import { useHierarchySearch } from "./HierarchyLayout";
 
 const nameCell = (name: string) => <span className="table__name">{name}</span>;
 
@@ -27,6 +37,7 @@ const updatedColumn = {
 
 export function SitesTable() {
   const sites = useQuery({ queryKey: ["sites"], queryFn: sitesApi.list });
+  const search = useHierarchySearch();
 
   const columns: Columns<Site> = useMemo(
     () => [
@@ -42,7 +53,15 @@ export function SitesTable() {
 
   return (
     <QueryBoundary query={sites}>
-      {(rows) => <DataTable data={rows} columns={columns} empty="No sites yet." />}
+      {(rows) => (
+        <DataTable
+          data={rows.filter((r) =>
+            matchesQuery(search, r.name, r.description, r.organisation, r.address, r.timezone),
+          )}
+          columns={columns}
+          empty="No sites here."
+        />
+      )}
     </QueryBoundary>
   );
 }
@@ -51,6 +70,7 @@ export function LabsTable() {
   const labs = useQuery({ queryKey: ["labs"], queryFn: labsApi.list });
   const sites = useQuery({ queryKey: ["sites"], queryFn: sitesApi.list });
   const siteNames = useMemo(() => nameMap(sites.data), [sites.data]);
+  const search = useHierarchySearch();
 
   const columns: Columns<Lab> = useMemo(
     () => [
@@ -70,7 +90,15 @@ export function LabsTable() {
 
   return (
     <QueryBoundary query={labs}>
-      {(rows) => <DataTable data={rows} columns={columns} empty="No labs yet." />}
+      {(rows) => (
+        <DataTable
+          data={rows.filter((r) =>
+            matchesQuery(search, r.name, r.description, r.room_number, siteNames.get(r.site_uuid)),
+          )}
+          columns={columns}
+          empty="No labs here."
+        />
+      )}
     </QueryBoundary>
   );
 }
@@ -85,6 +113,7 @@ export function ZonesTable() {
     () => new Map([...nameMap(sites.data), ...nameMap(labs.data)]),
     [sites.data, labs.data],
   );
+  const search = useHierarchySearch();
 
   const columns: Columns<Zone> = useMemo(
     () => [
@@ -105,7 +134,15 @@ export function ZonesTable() {
 
   return (
     <QueryBoundary query={zones}>
-      {(rows) => <DataTable data={rows} columns={columns} empty="No zones yet." />}
+      {(rows) => (
+        <DataTable
+          data={rows.filter((r) =>
+            matchesQuery(search, r.name, r.description, r.tag, r.parent_type, parentNames.get(r.parent_uuid)),
+          )}
+          columns={columns}
+          empty="No zones here."
+        />
+      )}
     </QueryBoundary>
   );
 }
@@ -114,6 +151,7 @@ export function StationsTable() {
   const stations = useQuery({ queryKey: ["stations"], queryFn: stationsApi.list });
   const labs = useQuery({ queryKey: ["labs"], queryFn: labsApi.list });
   const labNames = useMemo(() => nameMap(labs.data), [labs.data]);
+  const search = useHierarchySearch();
 
   const columns: Columns<Station> = useMemo(
     () => [
@@ -132,19 +170,41 @@ export function StationsTable() {
 
   return (
     <QueryBoundary query={stations}>
-      {(rows) => <DataTable data={rows} columns={columns} empty="No stations yet." />}
+      {(rows) => (
+        <DataTable
+          data={rows.filter((r) =>
+            matchesQuery(search, r.name, r.description, labNames.get(r.lab_uuid)),
+          )}
+          columns={columns}
+          empty="No stations here."
+        />
+      )}
     </QueryBoundary>
   );
 }
 
+/** A module or device, tagged with which one it is. */
+type StationChild = Module & { kind: "Module" | "Device" };
+
 export function ModulesTable() {
   const modules = useQuery({ queryKey: ["modules"], queryFn: modulesApi.list });
+  const devices = useQuery({ queryKey: ["devices"], queryFn: devicesApi.list });
   const stations = useQuery({ queryKey: ["stations"], queryFn: stationsApi.list });
   const stationNames = useMemo(() => nameMap(stations.data), [stations.data]);
+  const search = useHierarchySearch();
 
-  const columns: Columns<Module> = useMemo(
+  const rows: StationChild[] = useMemo(
+    () => [
+      ...(modules.data ?? []).map((m) => ({ ...m, kind: "Module" as const })),
+      ...(devices.data ?? []).map((d) => ({ ...d, kind: "Device" as const })),
+    ],
+    [modules.data, devices.data],
+  );
+
+  const columns: Columns<StationChild> = useMemo(
     () => [
       { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name) },
+      { accessorKey: "kind", header: "Kind" },
       {
         id: "station",
         header: "Station",
@@ -159,7 +219,15 @@ export function ModulesTable() {
 
   return (
     <QueryBoundary query={modules}>
-      {(rows) => <DataTable data={rows} columns={columns} empty="No modules yet." />}
+      {() => (
+        <DataTable
+          data={rows.filter((r) =>
+            matchesQuery(search, r.name, r.description, r.kind, stationNames.get(r.station_uuid)),
+          )}
+          columns={columns}
+          empty="No modules or devices here."
+        />
+      )}
     </QueryBoundary>
   );
 }

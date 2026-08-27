@@ -1,11 +1,10 @@
 /* --- level bar ------------------------------------------------------------ */
 
-/* The levels, each stepped right by the indent its depth uses in the tree, so
- * the bar reads as a key to the hierarchy below it. */
+/* Tree, the levels, and search — one left-aligned row sharing a button look. */
 .levels {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-5);
   padding-bottom: var(--space-3);
@@ -13,6 +12,9 @@
 }
 
 .levels__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-grey-semilight);
   border-radius: var(--radius);
@@ -37,6 +39,20 @@
   color: var(--color-white);
 }
 
+.levels__search {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-grey);
+  border-radius: var(--radius);
+  font-family: var(--font-family-default);
+  font-size: var(--font-size-small);
+  min-width: 200px;
+}
+
+.levels__search:focus {
+  outline: 2px solid var(--color-accent-blue-light);
+  outline-offset: 1px;
+}
+
 /* --- tree ----------------------------------------------------------------- */
 
 .tree,
@@ -44,12 +60,6 @@
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.tree__actions {
-  display: flex;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
 }
 
 .tree__row {

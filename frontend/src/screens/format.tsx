@@ -19,3 +19,10 @@ export function formatDate(iso: string): string {
 export function nameMap(rows: { uuid: string; name: string }[] | undefined) {
   return new Map((rows ?? []).map((row) => [row.uuid, row.name]));
 }
+
+/** True when any of the given fields contains `query` (blank query matches). */
+export function matchesQuery(query: string, ...fields: (string | null | undefined)[]): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return fields.some((f) => f?.toLowerCase().includes(q));
+}

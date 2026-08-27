@@ -3,15 +3,16 @@
  * Site → Lab → Zone(optional) → Station → Module containment tree.
  *
  * Pure — no React, no fetching — so the shape of the hierarchy can be
- * reasoned about on its own. Devices are deliberately absent: they live on
- * the Device Monitoring screen, not in the containment tree.
+ * reasoned about on its own. Devices sit alongside modules under a station:
+ * both are station children of the same shape, so they share the innermost
+ * level even though they're separate entities.
  */
 
-import type { Lab, Module, Site, Station, Zone } from "../../../api/types";
+import type { Device, Lab, Module, Site, Station, Zone } from "../../../api/types";
 
-export type Kind = "Site" | "Lab" | "Zone" | "Station" | "Module";
+export type Kind = "Site" | "Lab" | "Zone" | "Station" | "Module" | "Device";
 
-/** The levels, outermost first — also their indentation order in the tree. */
+/** The levels the bar offers, outermost first. "Module" covers devices too. */
 export const LEVELS: Kind[] = ["Site", "Lab", "Zone", "Station", "Module"];
 
 export interface TreeNode {
@@ -27,6 +28,7 @@ export interface Snapshot {
   zones: Zone[];
   stations: Station[];
   modules: Module[];
+  devices: Device[];
 }
 
 /** Group rows by the key naming their parent, skipping null keys. */
@@ -44,8 +46,9 @@ function groupBy<T>(rows: T[], parentOf: (row: T) => string | null): Map<string,
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
-export function buildTree({ sites, labs, zones, stations, modules }: Snapshot): TreeNode[] {
+export function buildTree({ sites, labs, zones, stations, modules, devices }: Snapshot): TreeNode[] {
   const modulesByStation = groupBy(modules, (m) => m.station_uuid);
+  const devicesByStation = groupBy(devices, (d) => d.station_uuid);
   // A station's parent is its zone when it has one, otherwise its lab.
   const stationsByZone = groupBy(stations, (s) => s.zone_uuid);
   const stationsByLab = groupBy(stations, (s) => (s.zone_uuid === null ? s.lab_uuid : null));
@@ -61,7 +64,10 @@ export function buildTree({ sites, labs, zones, stations, modules }: Snapshot): 
   });
 
   const stationNode = (s: Station): TreeNode =>
-    node("Station", s, (modulesByStation.get(s.uuid) ?? []).sort(byName).map((m) => node("Module", m)));
+    node("Station", s, [
+      ...(modulesByStation.get(s.uuid) ?? []).sort(byName).map((m) => node("Module", m)),
+      ...(devicesByStation.get(s.uuid) ?? []).sort(byName).map((d) => node("Device", d)),
+    ]);
 
   const zoneNode = (z: Zone): TreeNode =>
     node("Zone", z, (stationsByZone.get(z.uuid) ?? []).sort(byName).map(stationNode));
@@ -83,4 +89,23 @@ export function buildTree({ sites, labs, zones, stations, modules }: Snapshot): 
 /** Every uuid in the tree — used to expand everything by default. */
 export function collectUuids(nodes: TreeNode[]): string[] {
   return nodes.flatMap((n) => [n.uuid, ...collectUuids(n.children)]);
+}
+
+/**
+ * Keep nodes matching `query`, and the ancestors needed to reach them. A node
+ * that matches keeps its whole subtree — you asked for it, so you get what's
+ * inside it.
+ */
+export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return nodes;
+
+  const walk = (list: TreeNode[]): TreeNode[] =>
+    list.flatMap((n) => {
+      if (n.name.toLowerCase().includes(q) || n.kind.toLowerCase().includes(q)) return [n];
+      const children = walk(n.children);
+      return children.length ? [{ ...n, children }] : [];
+    });
+
+  return walk(nodes);
 }
