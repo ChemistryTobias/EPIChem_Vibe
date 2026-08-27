@@ -11,6 +11,11 @@
   min-width: 0;
 }
 
+.shell__booting {
+  padding: var(--space-5);
+}
+
+/* Every screen fills what's left below its header. */
 .screen {
   flex: 1;
   display: flex;
@@ -22,4 +27,15 @@
   min-width: 0;
   overflow: auto;
   padding: var(--space-5);
+}
+
+/* A titled block of content within a screen — the Hierarchy page stacks one
+ * per level (Sites / Labs / Stations). */
+.section + .section {
+  margin-top: var(--space-5);
+}
+
+.section__title {
+  margin: 0 0 var(--space-3);
+  color: var(--color-mpg-green-dark);
 }

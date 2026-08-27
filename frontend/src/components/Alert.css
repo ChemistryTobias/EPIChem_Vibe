@@ -1,19 +1,22 @@
+/* DESIGN.md §5: one alert look — a flat card with a coloured left edge
+ * carrying the meaning. No gloss, no shadow, sharp corners. */
+
 .notice {
-  border-left: 3px solid var(--color-border);
-  background: var(--color-bg);
-  color: var(--color-text);
+  border-left: 3px solid var(--color-grey);
+  background: var(--color-white);
+  color: var(--color-black);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);
-  font-size: 12px;
+  font-size: var(--font-size-normal);
   line-height: 1.4;
 }
 
 .notice--info {
-  border-left-color: var(--color-accent-blue);
+  border-left-color: var(--color-accent-blue-light);
 }
 
 .notice--success {
-  border-left-color: var(--color-primary);
+  border-left-color: var(--color-mpg-green);
 }
 
 .notice--warning {

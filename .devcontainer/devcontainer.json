@@ -71,6 +71,15 @@
 
   "postCreateCommand": "bash .devcontainer/post-create.sh",
 
+  // Auto-forward both frontend dev-server ports (frontend/ and, when running
+  // a second instance for comparison, frontend_old/) plus the backend API.
+  "forwardPorts": [5173, 5174, 8000],
+  "portsAttributes": {
+    "5173": { "label": "frontend" },
+    "5174": { "label": "frontend_old" },
+    "8000": { "label": "backend API" }
+  },
+
   "customizations": {
     "vscode": {
       "settings": {

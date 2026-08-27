@@ -6,12 +6,13 @@
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 11px;
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-small);
   text-transform: uppercase;
-  letter-spacing: var(--tracking-button);
+  letter-spacing: var(--letter-spacing-wide);
   cursor: pointer;
+  /* Colour only — no transform, no shadow (DESIGN.md §5: no depth effects). */
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
@@ -20,21 +21,31 @@
 }
 
 .btn--primary {
-  background: var(--color-primary);
-  color: #ffffff;
+  background: var(--color-mpg-green);
+  color: var(--color-white);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: var(--color-primary-dark);
+  background: var(--color-mpg-green-dark);
+}
+
+.btn--primary:disabled {
+  background: var(--color-grey);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .btn--secondary {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-mpg-green);
+  color: var(--color-mpg-green);
 }
 
 .btn--secondary:hover:not(:disabled) {
-  background: var(--color-surface-muted);
+  background: var(--color-grey-light);
+}
+
+.btn--secondary:disabled {
+  border-color: var(--color-grey);
+  color: var(--color-grey);
 }
 
 .btn--danger {
@@ -44,33 +55,42 @@
 
 .btn--danger:hover:not(:disabled) {
   background: var(--color-danger);
-  color: #ffffff;
+  color: var(--color-white);
 }
 
+/* Low-emphasis text button — DESIGN.md §5 exempts these from the all-caps
+ * and tracking rule, where it would be visually too loud. */
 .btn--text {
-  padding: 4px 6px;
-  font-family: var(--font-body);
-  font-weight: 400;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-2);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-normal);
   text-transform: none;
-  letter-spacing: 0;
-  color: var(--color-primary);
+  letter-spacing: var(--letter-spacing-normal);
+  color: var(--color-mpg-green);
 }
 
 .btn--text:hover:not(:disabled) {
   text-decoration: underline;
 }
 
+/* Compact companion button — the "non-main" buttons sitting next to a
+ * primary action. Quiet until hovered, when only the text takes the colour. */
 .btn--sm {
   gap: var(--space-1);
   padding: 5px 12px;
-  font-size: 10px;
-  font-weight: 400;
-  background: var(--color-bg);
-  border-color: var(--color-border);
-  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-small);
+  background: var(--color-white);
+  border-color: var(--color-grey);
+  color: var(--color-grey-dark);
 }
 
 .btn--sm:hover:not(:disabled) {
-  color: var(--color-primary);
+  background: var(--color-white);
+  border-color: var(--color-grey);
+  color: var(--color-mpg-green);
+}
+
+.btn--sm.btn--danger:hover:not(:disabled) {
+  color: var(--color-danger);
 }

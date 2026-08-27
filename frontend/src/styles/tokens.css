@@ -5,6 +5,7 @@
   --color-black: #000000;
   --color-grey-dark: #777777;
   --color-grey: #a7a7a8;
+  --color-grey-semilight: #dcdcdc; /* not in MPG color scheme */
   --color-grey-light: #eeeeee;
   --color-white: #ffffff;
 
@@ -12,34 +13,35 @@
   --color-accent-blue-light: #00b1ea;
   --color-accent-blue-dark: #29485d;
   --color-accent-orange: #ef7c00;
-  --color-danger: #c0392b; /* red not in MPG color scheme */
+  --color-danger: #c0392b; /* not in MPG color scheme */
 
 
   --font-family-default: "Roboto", sans-serif;
   --font-family-serif: "Merriweather", serif;
   --font-family-mono: "Roboto Mono", monospace;
 
-  --font-size-big: 18px;
-  --font-size-normal: 16px;
-  --font-size-small: 14px;
+  --font-size-big: 16px;
+  --font-size-normal: 14px;
+  --font-size-small: 12px;
 
   --font-weight-light: 300;
   --font-weight-regular: 400;
   --font-weight-bold: 700;
 
- 
-  /* --tracking-label: 0.08em;
-  --tracking-button: 0.1em;
+  --letter-spacing-normal: 0em;
+  --letter-spacing-wide: 0.05em;
+  --letter-spacing-max: 0.16em;
 
-  --radius: 1px;
+  --radius: 1px; /* DESIGN.md §5: sharp corners, no gloss/shadow */
 
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
-  --space-5: 24px; */
+  --space-5: 24px;
 
   --nav-width: 236px;
+  --nav-footer-height: 200px;
   --header-height: 72px;
   --inspector-width: 316px;
 }

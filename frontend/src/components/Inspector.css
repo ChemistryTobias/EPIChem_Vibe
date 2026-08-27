@@ -4,8 +4,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-left: 0 solid var(--color-border-soft);
-  background: var(--color-bg);
+  border-left: 0 solid var(--color-grey-semilight);
+  background: var(--color-white);
   transition: width 0.16s ease, border-left-width 0.16s ease;
 }
 
@@ -23,8 +23,8 @@
 
 .inspector__header {
   padding: var(--space-4) var(--space-4) var(--space-3);
-  border-bottom: 1px solid var(--color-border-soft);
-  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-grey-semilight);
+  background: var(--color-grey-light);
 }
 
 .inspector__heading {
@@ -44,7 +44,7 @@
   background: transparent;
   font-size: 20px;
   line-height: 1;
-  color: var(--color-text-secondary);
+  color: var(--color-grey-dark);
   cursor: pointer;
 }
 

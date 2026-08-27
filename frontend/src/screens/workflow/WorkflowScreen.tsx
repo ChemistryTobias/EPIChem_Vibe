@@ -18,7 +18,7 @@ export function WorkflowScreen() {
           </Alert>
           <div className="workflow-canvas__flow">
             <ReactFlow nodes={MOCK_NODES} edges={MOCK_EDGES} fitView>
-              <Background color="var(--color-border-soft)" />
+              <Background color="var(--color-grey-semilight)" />
             </ReactFlow>
           </div>
         </div>

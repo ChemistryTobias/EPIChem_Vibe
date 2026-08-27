@@ -3,62 +3,105 @@
   flex: 0 0 var(--nav-width);
   display: flex;
   flex-direction: column;
-  background: var(--color-primary-dark);
-  color: #ffffff;
-  padding: var(--space-5) 0;
+  background: var(--color-mpg-green-dark);
+  color: var(--color-white);
 }
 
-.nav-rail__brand {
-  padding: 0 var(--space-5) var(--space-5);
+.nav-rail__header {
+  height: var(--header-height);
+  border-bottom: 1px solid var(--color-mpg-green);
+  display: flex;
+  align-items: center; 
+  padding: 0 var(--space-5) 0;
 }
 
-.nav-rail__wordmark {
+.nav-rail__header-wordmark {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 19px;
-  letter-spacing: 0.16em;
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: 20px;
+  letter-spacing: var(--letter-spacing-max);
 }
 
-.nav-rail__nav {
+.nav-rail__menu {
+  flex: 1;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--space-5) 0 var(--space-5);
+  overflow-y: auto;
 }
+
+
+.nav-rail__footer {
+  height: var(--nav-footer-height);
+  border-top: 1px solid var(--color-mpg-green);
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; 
+  justify-content: flex-end;
+  padding: var(--space-5) var(--space-5) var(--space-5);
+
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-light);
+  font-size: var(--font-size-small);
+  margin: 0;
+  text-align: left;
+  opacity: 0.7;
+}
+
+.nav-rail__footer-section-header {
+  text-transform: uppercase;
+  font-weight: var(--font-weight-bold);
+}
+
 
 .nav-rail__item {
   display: block;
   width: 100%;
   padding: 10px var(--space-5);
   border: 0;
+  /* The active marker sits in the border-left slot so switching screens
+     doesn't shift the label by 3px. */
   border-left: 3px solid transparent;
   background: transparent;
   color: rgba(255, 255, 255, 0.85);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 12px;
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-small);
   text-align: left;
   text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--letter-spacing-wide);
   cursor: pointer;
 }
 
 .nav-rail__item:hover {
   background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  color: var(--color-white);
 }
 
 .nav-rail__item--active {
-  background: var(--color-primary);
-  border-left-color: #ffffff;
-  color: #ffffff;
+  background: var(--color-mpg-green);
+  border-left-color: var(--color-accent-green-light);
+  color: var(--color-white);
 }
 
+/* A selected section keeps its green base on hover, lightened by the same 8%
+   white overlay a subitem gets — so it hovers like the subitems instead of
+   losing the green. Placed after `:hover` so it wins the specificity tie. */
+.nav-rail__item--active:hover {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.08)),
+    var(--color-mpg-green);
+}
+
+/* Subsections of the active section: smaller and quieter than the section
+   label above them, indented under it. The active one is bold. */
 .nav-rail__subnav {
   list-style: none;
   margin: 0;
   padding: var(--space-1) 0 var(--space-2);
-  background: var(--color-primary);
+  background: var(--color-mpg-green);
 }
 
 .nav-rail__subitem {
@@ -68,19 +111,30 @@
   border: 0;
   background: transparent;
   color: rgba(255, 255, 255, 0.6);
-  font-family: var(--font-display);
-  font-size: 11px;
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-small);
   text-align: left;
   text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--letter-spacing-wide);
   cursor: pointer;
 }
 
 .nav-rail__subitem:hover {
-  color: #ffffff;
+  color: var(--color-white);
 }
 
 .nav-rail__subitem--active {
-  color: #ffffff;
-  font-weight: 700;
+  color: var(--color-white);
+  font-weight: var(--font-weight-bold);
+}
+
+.nav-rail__signout {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--color-accent-green-light);
+  text-decoration: underline;
+  cursor: pointer;
 }

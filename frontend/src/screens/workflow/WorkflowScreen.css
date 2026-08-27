@@ -7,23 +7,23 @@
 .workflow-canvas__flow {
   flex: 1;
   min-height: 400px;
-  border: 1px solid var(--color-border-soft);
+  border: 1px solid var(--color-grey-semilight);
 }
 
 /* Flat, sharp-cornered nodes/edges — DESIGN.md §5, overriding React Flow's
  * default rounded/shadowed look. */
 .workflow-canvas__flow .react-flow__node {
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--color-mpg-green);
   border-radius: var(--radius);
-  background: var(--color-bg);
+  background: var(--color-white);
   box-shadow: none;
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: 700;
+  font-family: var(--font-family-default);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-bold);
   text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--letter-spacing-wide);
 }
 
 .workflow-canvas__flow .react-flow__edge-path {
-  stroke: var(--color-primary);
+  stroke: var(--color-mpg-green);
 }

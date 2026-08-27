@@ -11,29 +11,47 @@ body {
   background: var(--color-white);
   color: var(--color-black);
   font-family: var(--font-family-default);
-  font-weight: var(--font-weight-regular);
+  font-weight: var(--font-weight-light);
   font-size: var(--font-size-normal);
+  letter-spacing: var(--letter-spacing-normal);
 }
 
-h1, h2, h3 {
-  font-family: var(--font-family-default);
+h1 {
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-big);
+  letter-spacing: var(--letter-spacing-max);
+  text-transform: uppercase;
 }
 
-/* .label {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 11px;
+h2 {
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-big);
+  letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
-  color: var(--color-text-secondary);
+}
+
+h3 {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-normal);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+}
+
+
+
+.label {
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-small);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-grey-dark);
 }
 
 .mono {
-  font-family: var(--font-mono);
+  font-family: var(--font-family-mono);
 }
 
 .muted {
   color: var(--color-grey-dark);
-} */
+}
