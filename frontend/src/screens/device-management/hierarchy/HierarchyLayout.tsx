@@ -1,31 +1,36 @@
 /**
- * The Hierarchy section's frame: a bar of views, then whichever one is open.
+ * The Hierarchy section's frame: a one-line bar of views, then whichever one
+ * is open.
  *
- * The bar is the tree plus one entry per level, all sharing a button design,
- * and a search that narrows whatever is currently open — the whole tree on
- * the tree view, that level's rows on a table. The query lives in a context
- * because the views render through an `<Outlet />`, which can't take props.
+ * The bar is the tree, one entry per level, and a search. It never wraps —
+ * when space runs short the levels drop off from the innermost end (Zones
+ * first), while the tree and the search always stay, since they're how you
+ * get back and how you find things.
+ *
+ * The query lives in a context because the views render through an
+ * `<Outlet />`, which can't take props.
  */
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "../../../components/Button";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
+import { useFittingCount } from "../../../hooks/useFittingCount";
 import { LEVELS } from "./hierarchyTree";
 
 import "./hierarchy.css";
 
 const TREE_PATH = "/devices/hierarchy";
 
-/** Level -> the table route that lists it, and the label the bar shows. */
+/** Level -> the table route that lists it. */
 const LEVEL_PATHS: Record<string, string> = {
   Site: `${TREE_PATH}/sites`,
   Lab: `${TREE_PATH}/labs`,
-  Zone: `${TREE_PATH}/zones`,
   Station: `${TREE_PATH}/stations`,
   Module: `${TREE_PATH}/modules`,
+  Zone: `${TREE_PATH}/zones`,
 };
 
 const SearchContext = createContext("");
@@ -36,7 +41,9 @@ export const useHierarchySearch = () => useContext(SearchContext);
 export function HierarchyLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
+
+  const levelsRef = useRef<HTMLDivElement>(null);
+  const visibleLevels = useFittingCount(levelsRef, LEVELS.length);
 
   const onTree = pathname === TREE_PATH;
   const current = onTree
@@ -68,67 +75,44 @@ export function HierarchyLayout() {
       <div className="screen">
         <div className="screen__content">
           <nav className="levels" aria-label="Hierarchy views">
-            {LEVELS.map((level) => {
-              const path = LEVEL_PATHS[level];
-              return (
-                <Link
-                  key={level}
-                  to={path}
-                  className={
-                    pathname === path ? "levels__item levels__item--active" : "levels__item"
-                  }
-                >
-                  {level}s
-                </Link>
-              );
-            })}
+            <Link
+              to={TREE_PATH}
+              className={
+                onTree
+                  ? "levels__item levels__item--icon levels__item--active"
+                  : "levels__item levels__item--icon"
+              }
+              title="Tree"
+              aria-label="Tree"
+            >
+              <TreeIcon />
+            </Link>
 
-            {/* The tree and search sit apart from the levels: they act on a
-                view rather than being one. */}
-            <div className="levels__tools">
-              {searching && (
-                <input
-                  className="levels__search"
-                  type="search"
-                  value={query}
-                  autoFocus
-                  placeholder={onTree ? "Search everything" : `Search ${current.toLowerCase()}s`}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              )}
+            <div className="levels__list" ref={levelsRef}>
+              {LEVELS.slice(0, visibleLevels).map((level) => {
+                const path = LEVEL_PATHS[level];
+                return (
+                  <Link
+                    key={level}
+                    to={path}
+                    className={
+                      pathname === path ? "levels__item levels__item--active" : "levels__item"
+                    }
+                  >
+                    {level}s
+                  </Link>
+                );
+              })}
+            </div>
 
-              <button
-                type="button"
-                className={
-                  searching
-                    ? "levels__item levels__item--icon levels__item--active"
-                    : "levels__item levels__item--icon"
-                }
-                // Closing the search clears it, so a hidden query can't keep
-                // filtering a view that looks unfiltered.
-                onClick={() => {
-                  setSearching((open) => !open);
-                  if (searching) setQuery("");
-                }}
-                title="Search"
-                aria-label="Search"
-                aria-expanded={searching}
-              >
-                <SearchIcon />
-              </button>
-
-              <Link
-                to={TREE_PATH}
-                className={
-                  onTree
-                    ? "levels__item levels__item--icon levels__item--active"
-                    : "levels__item levels__item--icon"
-                }
-                title="Tree"
-                aria-label="Tree"
-              >
-                <TreeIcon />
-              </Link>
+            <div className="levels__search">
+              <SearchIcon />
+              <input
+                type="search"
+                value={query}
+                placeholder={onTree ? "Search everything" : `Search ${current.toLowerCase()}s`}
+                onChange={(e) => setQuery(e.target.value)}
+              />
             </div>
           </nav>
 

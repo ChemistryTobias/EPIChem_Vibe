@@ -1,9 +1,11 @@
 /* --- level bar ------------------------------------------------------------ */
 
-/* Tree, the levels, and search — one left-aligned row sharing a button look. */
+/* Tree, the levels, and search — one row that never wraps. The levels block
+ * shrinks and drops entries from its end (see useFittingCount); the tree and
+ * search keep their width. */
 .levels {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-5);
@@ -15,6 +17,8 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  flex: 0 0 auto;
+  white-space: nowrap;
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-grey-semilight);
   border-radius: var(--radius);
@@ -39,35 +43,54 @@
   color: var(--color-white);
 }
 
-/* Pushed to the far end, so the levels read as one block and the tools that
- * act on them as another. */
-.levels__tools {
+.levels__list {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
-  margin-left: auto;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* Square, so swapping the icon or its state never resizes the button. */
 .levels__item--icon {
+  flex: 0 0 auto;
   padding: var(--space-1);
   width: 30px;
   height: 30px;
   justify-content: center;
 }
 
+/* Icon and field as one bordered block, always open. */
 .levels__search {
-  padding: var(--space-1) var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  padding: 0 var(--space-3);
   border: 1px solid var(--color-grey);
   border-radius: var(--radius);
-  font-family: var(--font-family-default);
-  font-size: var(--font-size-small);
-  min-width: 200px;
+  background: var(--color-white);
+  color: var(--color-grey-dark);
 }
 
-.levels__search:focus {
-  outline: 2px solid var(--color-accent-blue-light);
-  outline-offset: 1px;
+.levels__search:focus-within {
+  border-color: var(--color-mpg-green);
+  color: var(--color-mpg-green);
+}
+
+.levels__search input {
+  width: 200px;
+  padding: var(--space-1) 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-family-default);
+  font-size: var(--font-size-small);
+}
+
+.levels__search input:focus {
+  outline: none;
 }
 
 /* --- tree ----------------------------------------------------------------- */
