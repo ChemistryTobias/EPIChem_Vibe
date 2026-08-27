@@ -2,12 +2,12 @@
 
 import type { Zone } from "../../api/types";
 import { Field, FieldGroup } from "../Inspector";
-import { GeometrySection, IdentitySection, ParentField, RecordSection } from "./sections";
+import { DescriptionSection, GeometrySection, ParentField, RecordSection } from "./sections";
 
 export function ZoneInspector({ row }: { row: Zone }) {
   return (
     <>
-      <IdentitySection row={row} />
+      <DescriptionSection row={row} />
 
       <FieldGroup title="Zone">
         <Field label="Tag">{row.tag}</Field>

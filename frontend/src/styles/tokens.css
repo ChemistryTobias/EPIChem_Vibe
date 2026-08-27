@@ -43,5 +43,5 @@
   --nav-width: 236px;
   --nav-footer-height: 200px;
   --header-height: 72px;
-  --inspector-width: 316px;
+  --inspector-width: 340px; /* wide enough for a uuid on one line */
 }

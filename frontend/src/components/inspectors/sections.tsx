@@ -3,11 +3,12 @@
  *
  * Each entity has a uuid, a name, a description and created/updated stamps,
  * so those get one implementation here and the per-entity files only describe
- * what makes that entity different. The name isn't a field — it's the
- * inspector's title — and the timestamps sit last, since they're the least
- * interesting thing about a record.
+ * what makes that entity different. Name and uuid aren't fields — they're the
+ * inspector's title and subtitle — and the timestamps sit last, since they're
+ * the least interesting thing about a record.
  */
 
+import { Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { labsApi, sitesApi, stationsApi, zonesApi } from "../../api/entities";
@@ -44,27 +45,24 @@ export function ParentField({ label, uuid }: { label: string; uuid: string | nul
   );
 }
 
-/** What the record is, aside from its name. */
-export function IdentitySection({ row }: { row: ObjectBase }) {
-  return (
-    <FieldGroup title="Identity">
-      <Field label="Description">{row.description}</Field>
-      <Field label="UUID">
-        <span className="mono">{row.uuid}</span>
-      </Field>
-    </FieldGroup>
-  );
+/** What the record is, aside from its name and its uuid (both in the header). */
+export function DescriptionSection({ row }: { row: ObjectBase }) {
+  return <Field label="Description">{row.description}</Field>;
 }
 
-function geometryLine(g: GeometryDescriptor) {
-  const [w, d, h] = g.box_dimension_xyz;
-  const [x, y, z] = g.box_position_xyz;
-  return `${g.shape} · ${w}×${d}×${h} m @ (${x}, ${y}, ${z})`;
+/** Whole numbers stay whole; anything else gets two digits — 0.004 reads as
+ * `0`, 0.008 as `0.01`. */
+function round(value: number) {
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
 }
+
+const triple = (xyz: [number, number, number]) => xyz.map(round).join(" × ");
 
 /**
  * Placement, when there is any. A site carries a list (one entry per floor);
- * everything else carries at most one.
+ * everything else carries at most one, so the entry's `detail` only earns a
+ * mention when there's more than one to tell apart.
  */
 export function GeometrySection({
   geometry,
@@ -76,11 +74,19 @@ export function GeometrySection({
 
   return (
     <FieldGroup title="Geometry">
-      {list.map((g, i) => (
-        <Field key={i} label={g.detail || `Volume ${i + 1}`}>
-          <span className="mono">{geometryLine(g)}</span>
-        </Field>
-      ))}
+      {list.map((g, i) => {
+        const suffix = list.length > 1 ? ` — ${g.detail || i + 1}` : "";
+        return (
+          <Fragment key={i}>
+            <Field label={`Position${suffix}`}>
+              <span className="mono">{triple(g.box_position_xyz)}</span>
+            </Field>
+            <Field label={`Dimensions${suffix}`}>
+              <span className="mono">{triple(g.box_dimension_xyz)}</span>
+            </Field>
+          </Fragment>
+        );
+      })}
     </FieldGroup>
   );
 }

@@ -141,7 +141,7 @@ export function HierarchyLayout() {
           open={selected !== null}
           kind={selected ? `${selected.kind} inspector` : "Inspector"}
           title={selected?.row.name}
-          subtitle={selected?.kind}
+          subtitle={selected?.row.uuid}
           onClose={() => setSelected(null)}
         >
           {selected && <EntityInspector kind={selected.kind} row={selected.row} />}

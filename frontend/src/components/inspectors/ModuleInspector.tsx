@@ -6,12 +6,12 @@
 
 import type { Module } from "../../api/types";
 import { FieldGroup } from "../Inspector";
-import { GeometrySection, IdentitySection, ParentField, RecordSection } from "./sections";
+import { DescriptionSection, GeometrySection, ParentField, RecordSection } from "./sections";
 
 export function ModuleInspector({ row, kind }: { row: Module; kind: "Module" | "Device" }) {
   return (
     <>
-      <IdentitySection row={row} />
+      <DescriptionSection row={row} />
 
       <FieldGroup title={kind}>
         <ParentField label="Station" uuid={row.station_uuid} />

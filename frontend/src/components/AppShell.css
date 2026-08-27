@@ -37,8 +37,8 @@
  * content narrower. Past this point the content has given up all it can spare
  * — squeezing it further would wrap the toolbar and crush the tables — so the
  * inspector stops pushing and floats above the content instead.
- * (Content minimum ~620px + the inspector's 316px.) */
-@container (max-width: 940px) {
+ * (Content minimum ~620px + the inspector's 340px.) */
+@container (max-width: 960px) {
   .inspector--open {
     position: absolute;
     top: 0;

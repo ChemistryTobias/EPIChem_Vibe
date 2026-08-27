@@ -2,12 +2,12 @@
 
 import type { Site } from "../../api/types";
 import { Field, FieldGroup } from "../Inspector";
-import { GeometrySection, IdentitySection, RecordSection } from "./sections";
+import { DescriptionSection, GeometrySection, RecordSection } from "./sections";
 
 export function SiteInspector({ row }: { row: Site }) {
   return (
     <>
-      <IdentitySection row={row} />
+      <DescriptionSection row={row} />
 
       <FieldGroup title="Site">
         <Field label="Organisation">{row.organisation}</Field>

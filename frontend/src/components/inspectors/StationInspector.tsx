@@ -2,12 +2,12 @@
 
 import type { Station } from "../../api/types";
 import { FieldGroup } from "../Inspector";
-import { GeometrySection, IdentitySection, ParentField, RecordSection } from "./sections";
+import { DescriptionSection, GeometrySection, ParentField, RecordSection } from "./sections";
 
 export function StationInspector({ row }: { row: Station }) {
   return (
     <>
-      <IdentitySection row={row} />
+      <DescriptionSection row={row} />
 
       <FieldGroup title="Station">
         <ParentField label="Lab" uuid={row.lab_uuid} />
