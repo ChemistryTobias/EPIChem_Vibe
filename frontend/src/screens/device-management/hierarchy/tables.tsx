@@ -24,9 +24,14 @@ import { DataTable } from "../../../components/DataTable";
 import type { Columns } from "../../../components/DataTable";
 import { QueryBoundary } from "../../../components/QueryBoundary";
 import { formatDate, matchesQuery, nameMap, orDash } from "../../format";
-import { useHierarchySearch } from "./HierarchyLayout";
+import { useHierarchySearch, useSelect } from "./HierarchyLayout";
 
-const nameCell = (name: string) => <span className="table__name">{name}</span>;
+/** The name is the control that opens the inspector on that row. */
+const nameCell = (name: string, onSelect: () => void) => (
+  <button type="button" className="table__name" onClick={onSelect}>
+    {name}
+  </button>
+);
 
 const updatedColumn = {
   id: "updated",
@@ -38,17 +43,18 @@ const updatedColumn = {
 export function SitesTable() {
   const sites = useQuery({ queryKey: ["sites"], queryFn: sitesApi.list });
   const search = useHierarchySearch();
+  const select = useSelect();
 
   const columns: Columns<Site> = useMemo(
     () => [
-      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name) },
+      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name, () => select({ kind: "Site", row: c.row.original })) },
       { accessorKey: "organisation", header: "Organisation", cell: (c) => orDash(c.row.original.organisation) },
       { accessorKey: "address", header: "Address", cell: (c) => orDash(c.row.original.address) },
       { accessorKey: "timezone", header: "Timezone", cell: (c) => orDash(c.row.original.timezone) },
       { id: "floors", header: "Floors", accessorFn: (row) => row.object_geometry.length },
       updatedColumn,
     ],
-    [],
+    [select],
   );
 
   return (
@@ -71,10 +77,11 @@ export function LabsTable() {
   const sites = useQuery({ queryKey: ["sites"], queryFn: sitesApi.list });
   const siteNames = useMemo(() => nameMap(sites.data), [sites.data]);
   const search = useHierarchySearch();
+  const select = useSelect();
 
   const columns: Columns<Lab> = useMemo(
     () => [
-      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name) },
+      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name, () => select({ kind: "Lab", row: c.row.original })) },
       {
         id: "site",
         header: "Site",
@@ -85,7 +92,7 @@ export function LabsTable() {
       { accessorKey: "description", header: "Description", cell: (c) => orDash(c.row.original.description) },
       updatedColumn,
     ],
-    [siteNames],
+    [siteNames, select],
   );
 
   return (
@@ -114,10 +121,11 @@ export function ZonesTable() {
     [sites.data, labs.data],
   );
   const search = useHierarchySearch();
+  const select = useSelect();
 
   const columns: Columns<Zone> = useMemo(
     () => [
-      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name) },
+      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name, () => select({ kind: "Zone", row: c.row.original })) },
       { accessorKey: "tag", header: "Tag", cell: (c) => orDash(c.row.original.tag) },
       {
         id: "parent",
@@ -129,7 +137,7 @@ export function ZonesTable() {
       { accessorKey: "description", header: "Description", cell: (c) => orDash(c.row.original.description) },
       updatedColumn,
     ],
-    [parentNames],
+    [parentNames, select],
   );
 
   return (
@@ -152,10 +160,11 @@ export function StationsTable() {
   const labs = useQuery({ queryKey: ["labs"], queryFn: labsApi.list });
   const labNames = useMemo(() => nameMap(labs.data), [labs.data]);
   const search = useHierarchySearch();
+  const select = useSelect();
 
   const columns: Columns<Station> = useMemo(
     () => [
-      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name) },
+      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name, () => select({ kind: "Station", row: c.row.original })) },
       {
         id: "lab",
         header: "Lab",
@@ -165,7 +174,7 @@ export function StationsTable() {
       { accessorKey: "description", header: "Description", cell: (c) => orDash(c.row.original.description) },
       updatedColumn,
     ],
-    [labNames],
+    [labNames, select],
   );
 
   return (
@@ -192,6 +201,7 @@ export function ModulesTable() {
   const stations = useQuery({ queryKey: ["stations"], queryFn: stationsApi.list });
   const stationNames = useMemo(() => nameMap(stations.data), [stations.data]);
   const search = useHierarchySearch();
+  const select = useSelect();
 
   const rows: StationChild[] = useMemo(
     () => [
@@ -203,7 +213,7 @@ export function ModulesTable() {
 
   const columns: Columns<StationChild> = useMemo(
     () => [
-      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name) },
+      { accessorKey: "name", header: "Name", cell: (c) => nameCell(c.row.original.name, () => select({ kind: c.row.original.kind, row: c.row.original })) },
       { accessorKey: "kind", header: "Kind" },
       {
         id: "station",
@@ -214,7 +224,7 @@ export function ModulesTable() {
       { accessorKey: "description", header: "Description", cell: (c) => orDash(c.row.original.description) },
       updatedColumn,
     ],
-    [stationNames],
+    [stationNames, select],
   );
 
   return (

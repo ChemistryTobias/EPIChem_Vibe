@@ -62,3 +62,10 @@
   margin-top: 2px;
   word-break: break-word;
 }
+
+/* A multi-valued field (a site's floors, say) reads as a list rather than a
+ * run-on line. */
+.inspector__list {
+  margin: 0;
+  padding-left: var(--space-4);
+}

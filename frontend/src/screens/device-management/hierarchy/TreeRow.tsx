@@ -13,9 +13,10 @@ interface TreeRowProps {
   depth: number;
   expanded: Set<string>;
   onToggle: (uuid: string) => void;
+  onSelect: (node: TreeNode) => void;
 }
 
-export function TreeRow({ node, depth, expanded, onToggle }: TreeRowProps) {
+export function TreeRow({ node, depth, expanded, onToggle, onSelect }: TreeRowProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expanded.has(node.uuid);
 
@@ -33,7 +34,9 @@ export function TreeRow({ node, depth, expanded, onToggle }: TreeRowProps) {
         </button>
 
         <span className="tree__kind label">{node.kind}</span>
-        <span className="tree__name">{node.name}</span>
+        <button className="tree__name" onClick={() => onSelect(node)}>
+          {node.name}
+        </button>
         {hasChildren && <span className="tree__count muted">{node.children.length}</span>}
       </div>
 
@@ -46,6 +49,7 @@ export function TreeRow({ node, depth, expanded, onToggle }: TreeRowProps) {
               depth={depth + 1}
               expanded={expanded}
               onToggle={onToggle}
+              onSelect={onSelect}
             />
           ))}
         </ul>

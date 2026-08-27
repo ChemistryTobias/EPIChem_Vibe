@@ -19,10 +19,15 @@ export type Kind = "Site" | "Lab" | "Zone" | "Station" | "Module" | "Device";
  */
 export const LEVELS: Kind[] = ["Site", "Lab", "Station", "Module", "Zone"];
 
+/** Any row the tree can hold — handed to the inspector as-is. */
+export type EntityRow = Site | Lab | Zone | Station | Module | Device;
+
 export interface TreeNode {
   uuid: string;
   kind: Kind;
   name: string;
+  /** The raw API row behind this node. */
+  row: EntityRow;
   children: TreeNode[];
 }
 
@@ -60,10 +65,11 @@ export function buildTree({ sites, labs, zones, stations, modules, devices }: Sn
   const zonesByParent = groupBy(zones, (z) => z.parent_uuid);
   const labsBySite = groupBy(labs, (l) => l.site_uuid);
 
-  const node = (kind: Kind, row: { uuid: string; name: string }, children: TreeNode[] = []): TreeNode => ({
+  const node = (kind: Kind, row: EntityRow, children: TreeNode[] = []): TreeNode => ({
     uuid: row.uuid,
     kind,
     name: row.name,
+    row,
     children,
   });
 

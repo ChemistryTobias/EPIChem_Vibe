@@ -140,9 +140,20 @@
   flex: 0 0 64px;
 }
 
+/* Opens the inspector on that node. */
 .tree__name {
+  border: 0;
   padding: 7px 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
   color: var(--color-mpg-green-dark);
+  cursor: pointer;
+}
+
+.tree__name:hover {
+  color: var(--color-mpg-green);
+  text-decoration: underline;
 }
 
 .tree__count {

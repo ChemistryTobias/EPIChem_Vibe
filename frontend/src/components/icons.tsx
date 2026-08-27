@@ -13,7 +13,8 @@ interface IconProps {
   className?: string;
 }
 
-/** Material Symbols `account_tree`, turned upright so it reads top-down. */
+/** Material Symbols `account_tree`, turned upright and mirrored so it reads
+ * top-down with its branches falling the same way the tree's rows indent. */
 export function TreeIcon({ size = 18, className }: IconProps) {
   return (
     <svg
@@ -24,7 +25,7 @@ export function TreeIcon({ size = 18, className }: IconProps) {
       fill="currentColor"
       aria-hidden="true"
       className={className}
-      style={{ transform: "rotate(90deg)" }}
+      style={{ transform: "rotate(90deg) scaleY(-1)" }}
     >
       <path d="M600-120v-120H440v-400h-80v120H80v-320h280v120h240v-120h280v320H600v-120h-80v320h80v-120h280v320H600ZM160-760v160-160Zm520 400v160-160Zm0-400v160-160Zm0 160h120v-160H680v160Zm0 400h120v-160H680v160ZM160-600h120v-160H160v160Z" />
     </svg>

@@ -12,7 +12,7 @@ import {
   zonesApi,
 } from "../../../api/entities";
 import { Alert } from "../../../components/Alert";
-import { useHierarchySearch } from "./HierarchyLayout";
+import { useHierarchySearch, useSelect } from "./HierarchyLayout";
 import { buildTree, collectUuids, filterTree } from "./hierarchyTree";
 import { TreeRow } from "./TreeRow";
 
@@ -29,6 +29,7 @@ export function HierarchyTree() {
   const failed = queries.find((q) => q.isError);
 
   const search = useHierarchySearch();
+  const select = useSelect();
 
   const tree = useMemo(
     () =>
@@ -71,7 +72,14 @@ export function HierarchyTree() {
   return (
     <ul className="tree">
       {shown.map((node) => (
-        <TreeRow key={node.uuid} node={node} depth={0} expanded={expanded} onToggle={toggle} />
+        <TreeRow
+          key={node.uuid}
+          node={node}
+          depth={0}
+          expanded={expanded}
+          onToggle={toggle}
+          onSelect={(n) => select({ kind: n.kind, row: n.row })}
+        />
       ))}
     </ul>
   );

@@ -5,17 +5,22 @@
  * The bar is the tree, one entry per level, and a search — all one height,
  * all always present.
  *
- * The query lives in a context because the views render through an
- * `<Outlet />`, which can't take props.
+ * The search query and the selected row live in contexts because the views
+ * render through an `<Outlet />`, which can't take props. The inspector is
+ * owned here rather than per-view, so it sits beside the content whichever
+ * view is open.
  */
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "../../../components/Button";
+import { Inspector } from "../../../components/Inspector";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
+import { InspectorFields } from "./InspectorFields";
 import { LEVELS } from "./hierarchyTree";
+import type { EntityRow, Kind } from "./hierarchyTree";
 
 import "./hierarchy.css";
 
@@ -35,9 +40,24 @@ const SearchContext = createContext("");
 /** The current search text, for whichever view is open. */
 export const useHierarchySearch = () => useContext(SearchContext);
 
+/** The row the inspector is showing, if any. */
+export interface Selection {
+  kind: Kind;
+  row: EntityRow;
+}
+
+const SelectContext = createContext<(selection: Selection | null) => void>(() => {});
+
+/** Open the inspector on a row — call from a name in a tree row or a table. */
+export const useSelect = () => useContext(SelectContext);
+
 export function HierarchyLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<Selection | null>(null);
+
+  // A row selected on one view isn't the row you're looking at on the next.
+  useEffect(() => setSelected(null), [pathname]);
 
   const onTree = pathname === TREE_PATH;
   const current = onTree
@@ -111,9 +131,21 @@ export function HierarchyLayout() {
           </nav>
 
           <SearchContext.Provider value={query}>
-            <Outlet />
+            <SelectContext.Provider value={setSelected}>
+              <Outlet />
+            </SelectContext.Provider>
           </SearchContext.Provider>
         </div>
+
+        <Inspector
+          open={selected !== null}
+          kind={selected ? `${selected.kind} inspector` : "Inspector"}
+          title={selected?.row.name}
+          subtitle={selected?.kind}
+          onClose={() => setSelected(null)}
+        >
+          {selected && <InspectorFields row={selected.row} />}
+        </Inspector>
       </div>
     </>
   );
