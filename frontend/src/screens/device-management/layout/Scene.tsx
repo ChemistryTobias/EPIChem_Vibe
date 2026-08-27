@@ -1,0 +1,408 @@
+/**
+ * The layout canvas: a real 3D scene, drawn as a technical illustration.
+ *
+ * One orthographic camera serves both views — the old editor's "isometric"
+ * projection was `sinθ = 27/46`, i.e. 35.9° elevation at 45° azimuth, which is
+ * true isometric to within a degree, and its "2D" projection is the same
+ * camera looking straight down. So the two views are camera angles here, not
+ * two renderers, and the depth buffer replaces the painter's algorithm the old
+ * canvas had to sort by hand.
+ *
+ * Nothing is lit. Every surface is a flat colour with a thin outline, the way
+ * the old canvas drew its three-tone tiles — which is also what keeps the
+ * palette exactly as it was: a box's top/left/right faces carry the old fill's
+ * three tones as three materials.
+ *
+ * Dragging raycasts the pointer onto the floor plane analytically rather than
+ * through the scene graph, so a drag can't be stolen by whatever box happens
+ * to be under the cursor.
+ */
+
+import { useLayoutEffect, useMemo } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
+import * as THREE from "three";
+
+import { clampToFloor, round3, slideTo, softSnap, type Rect, type Vec2 } from "./constraints";
+import type { LayoutBox, LevelModel } from "./levels";
+import {
+  EDGE,
+  FLOOR,
+  FLOOR_EDGE,
+  GRID,
+  LAB,
+  SELECT,
+  WALL_EDGE,
+  WALL_LEFT,
+  WALL_RIGHT,
+  ZONE,
+  type BoxFill,
+} from "./palette";
+
+export type Preset = "iso" | "top";
+
+/** True isometric: 45° azimuth, 35.264° elevation. */
+const ISO_DIR = new THREE.Vector3(1, 1, 1).normalize();
+const TOP_DIR = new THREE.Vector3(0, 1, 0);
+
+export interface SceneProps {
+  model: LevelModel;
+  /** Boxes with the draft applied — what's on screen, not what's saved. */
+  boxes: LayoutBox[];
+  preset: Preset;
+  editing: boolean;
+  selected: string | null;
+  onSelect: (uuid: string | null) => void;
+  onDrill: (uuid: string) => void;
+  onGeometry: (uuid: string, rect: Rect) => void;
+  onHover: (box: LayoutBox | null, clientX: number, clientY: number) => void;
+}
+
+export function LayoutCanvas(props: SceneProps) {
+  return (
+    <Canvas
+      orthographic
+      camera={{ position: [1, 1, 1], zoom: 40, near: 0.01, far: 10000 }}
+      onPointerMissed={() => props.onSelect(null)}
+      gl={{ antialias: true }}
+      style={{ background: "#FFFFFF" }}
+    >
+      <Contents {...props} />
+    </Canvas>
+  );
+}
+
+function Contents({
+  model,
+  boxes,
+  preset,
+  editing,
+  selected,
+  onSelect,
+  onDrill,
+  onGeometry,
+  onHover,
+}: SceneProps) {
+  const { camera, gl, size } = useThree();
+  const thin = Math.max(model.size.x, model.size.y) * 0.005;
+
+  // ---- camera -------------------------------------------------------------
+  useLayoutEffect(() => {
+    const cam = camera as THREE.OrthographicCamera;
+    const centre = new THREE.Vector3(model.size.x / 2, model.wall / 2, model.size.y / 2);
+    cam.up.set(0, 1, 0);
+    if (preset === "top") cam.up.set(0, 0, -1); // backend +y runs down the screen
+    cam.position.copy(centre).addScaledVector(preset === "iso" ? ISO_DIR : TOP_DIR, 500);
+    cam.lookAt(centre);
+    cam.updateMatrixWorld();
+
+    // Fit: put the room's corners in camera space and scale to the viewport.
+    const inv = cam.matrixWorldInverse;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const x of [0, model.size.x])
+      for (const y of [0, model.wall])
+        for (const z of [0, model.size.y]) {
+          const v = new THREE.Vector3(x, y, z).applyMatrix4(inv);
+          minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
+          minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
+        }
+    cam.zoom = 0.82 * Math.min(size.width / (maxX - minX), size.height / (maxY - minY));
+    // Re-centre on the drawing rather than on the room's midpoint.
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 1);
+    cam.position
+      .addScaledVector(right, (minX + maxX) / 2)
+      .addScaledVector(up, (minY + maxY) / 2);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+  }, [camera, size, model.size.x, model.size.y, model.wall, preset]);
+
+  // ---- pointer → floor ----------------------------------------------------
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
+  const floorPoint = useMemo(() => {
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const hit = new THREE.Vector3();
+    return (event: PointerEvent): Vec2 => {
+      const rect = gl.domElement.getBoundingClientRect();
+      ndc.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      ray.setFromCamera(ndc, camera);
+      ray.ray.intersectPlane(plane, hit);
+      return { x: hit.x, y: hit.z };
+    };
+  }, [camera, gl, plane]);
+
+  /** Start a move or a resize; both run off the same floor-plane maths. */
+  const drag = (box: LayoutBox, mode: "move" | "resize") => (event: PointerEvent) => {
+    const start = floorPoint(event);
+    const from = box.rect;
+    const others = boxes.filter((b) => b.uuid !== box.uuid).map((b) => b.rect);
+    const tolerance = model.grid * 0.35;
+
+    const move = (e: PointerEvent) => {
+      const now = floorPoint(e);
+      if (mode === "move") {
+        const to = {
+          x: softSnap(from.pos.x + (now.x - start.x), model.grid, tolerance),
+          y: softSnap(from.pos.y + (now.y - start.y), model.grid, tolerance),
+        };
+        onGeometry(box.uuid, slideTo(from, to, model.size, others));
+      } else {
+        const min = model.grid;
+        const size = {
+          x: Math.max(min, softSnap(from.size.x + (now.x - start.x), model.grid, tolerance)),
+          y: Math.max(min, softSnap(from.size.y + (now.y - start.y), model.grid, tolerance)),
+        };
+        const candidate = clampToFloor({ pos: from.pos, size }, model.size);
+        // A resize that would swallow a neighbour is simply not applied.
+        if (!others.some((o) => overlaps(candidate, o))) onGeometry(box.uuid, candidate);
+      }
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  return (
+    <>
+      <Room size={model.size} wall={model.wall} grid={model.grid} thin={thin} />
+
+      {model.zones.map((zone) => (
+        <FlatArea key={zone.uuid} rect={zone.rect} y={thin * 0.05} colour={ZONE} />
+      ))}
+
+      {boxes.map((box) =>
+        box.flat ? (
+          // A lab is a wash on the floor, not a solid — the stations inside it
+          // have to read through.
+          <FlatArea
+            key={box.uuid}
+            rect={box.rect}
+            y={thin * 0.1}
+            colour={LAB}
+            selected={box.uuid === selected}
+            onSelect={() => onSelect(box.uuid)}
+            onDrill={() => onDrill(box.uuid)}
+            onDrag={editing ? drag(box, "move") : undefined}
+            onResize={editing ? drag(box, "resize") : undefined}
+            grip={thin * 3}
+            onHover={(x, y) => onHover(box, x, y)}
+            onLeave={() => onHover(null, 0, 0)}
+          />
+        ) : (
+          <BoxMesh
+            key={box.uuid}
+            box={box}
+            selected={box.uuid === selected}
+            editing={editing}
+            thin={thin}
+            onSelect={() => onSelect(box.uuid)}
+            onDrill={() => onDrill(box.uuid)}
+            onDrag={drag(box, "move")}
+            onResize={drag(box, "resize")}
+            onHover={onHover}
+          />
+        ),
+      )}
+    </>
+  );
+}
+
+const overlaps = (a: Rect, b: Rect) =>
+  a.pos.x < b.pos.x + b.size.x &&
+  b.pos.x < a.pos.x + a.size.x &&
+  a.pos.y < b.pos.y + b.size.y &&
+  b.pos.y < a.pos.y + a.size.y;
+
+/** Outline of whatever geometry it's given — every surface here has one. */
+function Edges({ geometry, color }: { geometry: THREE.BufferGeometry; color: string }) {
+  const edges = useMemo(() => new THREE.EdgesGeometry(geometry), [geometry]);
+  return (
+    <lineSegments geometry={edges}>
+      <lineBasicMaterial color={color} />
+    </lineSegments>
+  );
+}
+
+/**
+ * The room the layout sits in: a floor slab and the two far walls, drawn as a
+ * cutaway so the space reads as a room rather than a plane.
+ */
+function Room({ size, wall, grid, thin }: { size: Vec2; wall: number; grid: number; thin: number }) {
+  const floor = useMemo(() => new THREE.BoxGeometry(size.x, thin, size.y), [size.x, size.y, thin]);
+  const left = useMemo(() => new THREE.BoxGeometry(thin, wall, size.y), [thin, wall, size.y]);
+  const right = useMemo(() => new THREE.BoxGeometry(size.x, wall, thin), [size.x, wall, thin]);
+
+  const lines = useMemo(() => {
+    const points: number[] = [];
+    for (let x = 0; x <= size.x + 1e-9; x = round3(x + grid)) points.push(x, 0, 0, x, 0, size.y);
+    for (let y = 0; y <= size.y + 1e-9; y = round3(y + grid)) points.push(0, 0, y, size.x, 0, y);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+    return geometry;
+  }, [size.x, size.y, grid]);
+
+  return (
+    <group>
+      <mesh geometry={floor} position={[size.x / 2, -thin / 2, size.y / 2]}>
+        <meshBasicMaterial color={FLOOR} />
+      </mesh>
+      <group position={[size.x / 2, -thin / 2, size.y / 2]}>
+        <Edges geometry={floor} color={FLOOR_EDGE} />
+      </group>
+
+      <lineSegments geometry={lines} position={[0, thin * 0.02, 0]}>
+        <lineBasicMaterial color={GRID} />
+      </lineSegments>
+
+      <mesh geometry={left} position={[-thin / 2, wall / 2, size.y / 2]}>
+        <meshBasicMaterial color={WALL_LEFT} />
+      </mesh>
+      <group position={[-thin / 2, wall / 2, size.y / 2]}>
+        <Edges geometry={left} color={WALL_EDGE} />
+      </group>
+
+      <mesh geometry={right} position={[size.x / 2, wall / 2, -thin / 2]}>
+        <meshBasicMaterial color={WALL_RIGHT} />
+      </mesh>
+      <group position={[size.x / 2, wall / 2, -thin / 2]}>
+        <Edges geometry={right} color={WALL_EDGE} />
+      </group>
+    </group>
+  );
+}
+
+/**
+ * A translucent area lying on the floor — a zone, or a lab seen from the site
+ * above it. `y` lifts it clear of the floor and of the layers below it; the
+ * offsets scale with the room so they work at 60 m and at 1 m.
+ */
+interface FlatAreaProps {
+  rect: Rect;
+  y: number;
+  colour: { fill: string; opacity: number; edge: string };
+  selected?: boolean;
+  onSelect?: () => void;
+  onDrill?: () => void;
+  onDrag?: (event: PointerEvent) => void;
+  onResize?: (event: PointerEvent) => void;
+  /** Size of the resize grip, when this area can be resized. */
+  grip?: number;
+  onHover?: (clientX: number, clientY: number) => void;
+  onLeave?: () => void;
+}
+
+function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResize, grip, onHover, onLeave }: FlatAreaProps) {
+  const { pos, size } = rect;
+  const geometry = useMemo(() => new THREE.PlaneGeometry(size.x, size.y), [size.x, size.y]);
+  return (
+    <group position={[pos.x + size.x / 2, y, pos.y + size.y / 2]}>
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        geometry={geometry}
+        onClick={onSelect && ((e) => { e.stopPropagation(); onSelect(); })}
+        onDoubleClick={onDrill && ((e) => { e.stopPropagation(); onDrill(); })}
+        onPointerDown={onDrag && ((e) => { e.stopPropagation(); onSelect?.(); onDrag(e.nativeEvent); })}
+        onPointerOver={onHover && ((e) => { e.stopPropagation(); onHover(e.nativeEvent.clientX, e.nativeEvent.clientY); })}
+        onPointerOut={onLeave}
+      >
+        <meshBasicMaterial color={colour.fill} transparent opacity={colour.opacity} side={THREE.DoubleSide} />
+      </mesh>
+      <group rotation={[-Math.PI / 2, 0, 0]}>
+        <Edges geometry={geometry} color={selected ? SELECT : colour.edge} />
+      </group>
+
+      {selected && onResize && grip && (
+        <mesh
+          position={[size.x / 2, 0, size.y / 2]}
+          onPointerDown={(e) => { e.stopPropagation(); onResize(e.nativeEvent); }}
+        >
+          <boxGeometry args={[grip, grip, grip]} />
+          <meshBasicMaterial color={SELECT} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+/**
+ * One box. The three visible faces carry the old palette's three tones:
+ * three.js +x reads as the screen-right face and +z as the screen-left one,
+ * which is the same handedness the old projection had.
+ */
+function faceMaterials(fill: BoxFill) {
+  const flat = (color: string) => new THREE.MeshBasicMaterial({ color });
+  return [flat(fill.right), flat(fill.right), flat(fill.top), flat(fill.top), flat(fill.left), flat(fill.left)];
+}
+
+interface BoxMeshProps {
+  box: LayoutBox;
+  selected: boolean;
+  editing: boolean;
+  thin: number;
+  onSelect: () => void;
+  onDrill: () => void;
+  onDrag: (event: PointerEvent) => void;
+  onResize: (event: PointerEvent) => void;
+  onHover: (box: LayoutBox | null, clientX: number, clientY: number) => void;
+}
+
+function BoxMesh({ box, selected, editing, thin, onSelect, onDrill, onDrag, onResize, onHover }: BoxMeshProps) {
+  const { pos, size } = box.rect;
+  // A box with no recorded height still needs to be a box you can grab.
+  const height = Math.max(box.height, Math.max(size.x, size.y) * 0.05);
+  const geometry = useMemo(
+    () => new THREE.BoxGeometry(size.x, height, size.y),
+    [size.x, size.y, height],
+  );
+  const materials = useMemo(() => faceMaterials(box.fill), [box.fill]);
+  const centre: [number, number, number] = [pos.x + size.x / 2, height / 2, pos.y + size.y / 2];
+
+  return (
+    <group position={centre}>
+      <mesh
+        geometry={geometry}
+        material={materials}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onDrill();
+        }}
+        onPointerDown={(e) => {
+          if (!editing) return;
+          e.stopPropagation();
+          onSelect();
+          onDrag(e.nativeEvent);
+        }}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          onHover(box, e.nativeEvent.clientX, e.nativeEvent.clientY);
+        }}
+        onPointerOut={() => onHover(null, 0, 0)}
+      />
+      <Edges geometry={geometry} color={selected ? SELECT : EDGE} />
+
+      {/* The resize grip, on the far corner of the selected box. */}
+      {selected && editing && (
+        <mesh
+          position={[size.x / 2, height / 2, size.y / 2]}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onResize(e.nativeEvent);
+          }}
+        >
+          <boxGeometry args={[thin * 3, thin * 3, thin * 3]} />
+          <meshBasicMaterial color={SELECT} />
+        </mesh>
+      )}
+    </group>
+  );
+}

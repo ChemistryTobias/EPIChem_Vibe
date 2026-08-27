@@ -1,0 +1,36 @@
+/* The canvas fills what's left under the level bar and scrolls nothing —
+ * the camera fits the room to the space instead. */
+.layout {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.layout__canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: var(--radius);
+  background: var(--color-white);
+}
+
+/* The two view presets, grouped at the far end like the hierarchy's search. */
+.layout__views {
+  gap: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Names live on hover rather than floating over every box — the boxes are the
+ * drawing, and a room full of labels stops reading as one. */
+.layout__tip {
+  position: fixed;
+  z-index: 10;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-grey-semilight);
+  background: var(--color-white);
+  color: var(--color-mpg-green-dark);
+  pointer-events: none;
+}

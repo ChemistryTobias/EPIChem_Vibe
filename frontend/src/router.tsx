@@ -26,7 +26,6 @@ import {
   StationsTable,
   ZonesTable,
 } from "./screens/device-management/hierarchy/tables";
-import { LayoutScreen } from "./screens/device-management/layout/LayoutScreen";
 import { DeviceMonitoringScreen } from "./screens/device-management/monitoring/DeviceMonitoringScreen";
 import { SamplesScreen } from "./screens/samples/SamplesScreen";
 
@@ -119,7 +118,12 @@ const levelRoutes = (
 const layoutRoute = createRoute({
   getParentRoute: () => deviceMgmtRoute,
   path: "layout",
-  component: LayoutScreen,
+  // three.js is a large dependency; nobody who never opens the layout pays
+  // for it.
+  component: lazyRouteComponent(
+    () => import("./screens/device-management/layout/LayoutScreen"),
+    "LayoutScreen",
+  ),
 });
 
 const monitoringRoute = createRoute({
