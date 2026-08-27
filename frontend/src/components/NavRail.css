@@ -107,10 +107,13 @@
 .nav-rail__subitem {
   display: block;
   width: 100%;
-  padding: 6px var(--space-5) 6px calc(var(--space-5) + var(--space-4));
+  /* The 3px left padding lost to the marker slot is taken off the indent, so
+     the labels line up whether or not one is active. */
+  padding: 6px var(--space-5) 6px calc(var(--space-5) + var(--space-4) - 3px);
   border: 0;
+  border-left: 3px solid transparent;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
   font-family: var(--font-family-default);
   font-weight: var(--font-weight-regular);
   font-size: var(--font-size-small);
@@ -120,11 +123,15 @@
   cursor: pointer;
 }
 
+/* Same 8% white overlay the top-level items use, so both rows of the nav
+   respond identically to the pointer. */
 .nav-rail__subitem:hover {
+  background: rgba(255, 255, 255, 0.08);
   color: var(--color-white);
 }
 
 .nav-rail__subitem--active {
+  border-left-color: var(--color-accent-green-light);
   color: var(--color-white);
   font-weight: var(--font-weight-bold);
 }
