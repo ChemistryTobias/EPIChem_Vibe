@@ -15,11 +15,15 @@
   padding: var(--space-5);
 }
 
-/* Every screen fills what's left below its header. */
+/* Every screen fills what's left below its header.
+ * A container, so the inspector can react to the space the screen has rather
+ * than to the size of the window. */
 .screen {
+  position: relative;
   flex: 1;
   display: flex;
   min-height: 0;
+  container-type: inline-size;
 }
 
 .screen__content {
@@ -27,6 +31,21 @@
   min-width: 0;
   overflow: auto;
   padding: var(--space-5);
+}
+
+/* Wide enough, and the open inspector takes its own column, pushing the
+ * content narrower. Past this point the content has given up all it can spare
+ * — squeezing it further would wrap the toolbar and crush the tables — so the
+ * inspector stops pushing and floats above the content instead.
+ * (Content minimum ~620px + the inspector's 316px.) */
+@container (max-width: 940px) {
+  .inspector--open {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 5;
+  }
 }
 
 /* A titled block of content within a screen — the Hierarchy page stacks one

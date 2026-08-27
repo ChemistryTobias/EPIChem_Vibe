@@ -16,11 +16,11 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
+import { EntityInspector } from "../../../components/inspectors";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
-import { InspectorFields } from "./InspectorFields";
 import { LEVELS } from "./hierarchyTree";
-import type { EntityRow, Kind } from "./hierarchyTree";
+import type { EntityKind, EntityRow } from "../../../api/types";
 
 import "./hierarchy.css";
 
@@ -42,7 +42,7 @@ export const useHierarchySearch = () => useContext(SearchContext);
 
 /** The row the inspector is showing, if any. */
 export interface Selection {
-  kind: Kind;
+  kind: EntityKind;
   row: EntityRow;
 }
 
@@ -144,7 +144,7 @@ export function HierarchyLayout() {
           subtitle={selected?.kind}
           onClose={() => setSelected(null)}
         >
-          {selected && <InspectorFields row={selected.row} />}
+          {selected && <EntityInspector kind={selected.kind} row={selected.row} />}
         </Inspector>
       </div>
     </>

@@ -56,3 +56,14 @@ export function Field({ label, children }: { label: string; children: ReactNode 
     </div>
   );
 }
+
+/** A titled block of fields — the inspector reads as a few short sections
+ * rather than one long list. */
+export function FieldGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="field-group">
+      <h3 className="field-group__title label">{title}</h3>
+      {children}
+    </section>
+  );
+}

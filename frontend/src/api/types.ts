@@ -74,3 +74,7 @@ export interface Revision {
   actor_uuid: string | null;
   created_at: string;
 }
+
+/** The device-management entities, as a kind name and as a row union. */
+export type EntityKind = "Site" | "Lab" | "Zone" | "Station" | "Module" | "Device";
+export type EntityRow = Site | Lab | Zone | Station | Module | Device;

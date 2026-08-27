@@ -8,9 +8,10 @@
  * level even though they're separate entities.
  */
 
-import type { Device, Lab, Module, Site, Station, Zone } from "../../../api/types";
+import type { Device, EntityKind, EntityRow, Lab, Module, Site, Station, Zone } from "../../../api/types";
 
-export type Kind = "Site" | "Lab" | "Zone" | "Station" | "Module" | "Device";
+/** Alias kept for readability inside the tree; the union lives in api/types. */
+export type Kind = EntityKind;
 
 /**
  * The levels the bar offers: the containment chain outermost first, then
@@ -18,9 +19,6 @@ export type Kind = "Site" | "Lab" | "Zone" | "Station" | "Module" | "Device";
  * "Module" covers devices too.
  */
 export const LEVELS: Kind[] = ["Site", "Lab", "Station", "Module", "Zone"];
-
-/** Any row the tree can hold — handed to the inspector as-is. */
-export type EntityRow = Site | Lab | Zone | Station | Module | Device;
 
 export interface TreeNode {
   uuid: string;
