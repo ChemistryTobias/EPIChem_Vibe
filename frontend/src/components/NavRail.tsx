@@ -12,7 +12,7 @@ import "./NavRail.css";
 const DEVICE_MGMT_SUBS = [
   { path: "/devices/hierarchy", label: "Hierarchy" },
   { path: "/devices/layout", label: "Layout" },
-  { path: "/devices/status", label: "Devices" },
+  { path: "/devices/monitoring", label: "Device Monitoring" },
 ];
 
 const LEAVES = [

@@ -1,0 +1,48 @@
+.collapsible + .collapsible {
+  margin-top: var(--space-2);
+}
+
+.collapsible__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: var(--radius);
+  background: var(--color-grey-light);
+  cursor: pointer;
+}
+
+.collapsible__header:hover {
+  border-color: var(--color-grey);
+}
+
+.collapsible--open .collapsible__header {
+  background: var(--color-mpg-green);
+  border-color: var(--color-mpg-green);
+  color: var(--color-white);
+}
+
+.collapsible__caret {
+  font-size: var(--font-size-small);
+}
+
+.collapsible__title {
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-normal);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+/* Pushed to the far end so the counts line up down the stack. */
+.collapsible__count {
+  margin-left: auto;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-small);
+}
+
+.collapsible__body {
+  padding-top: var(--space-3);
+}

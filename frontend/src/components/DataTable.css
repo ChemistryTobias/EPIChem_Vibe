@@ -66,6 +66,23 @@
   color: var(--color-mpg-green-dark);
 }
 
+/* A name that drills into that row's children. Colour on the text is the
+ * signal that it's clickable — same restraint as the compact buttons. */
+.table__drill {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--color-mpg-green-dark);
+  text-align: left;
+  cursor: pointer;
+}
+
+.table__drill:hover {
+  color: var(--color-mpg-green);
+  text-decoration: underline;
+}
+
 .table-empty {
   margin: 0;
   padding: var(--space-4);
