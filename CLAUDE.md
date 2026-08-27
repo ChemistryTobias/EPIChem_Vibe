@@ -38,7 +38,10 @@ gives you a working API and a console that errors against it.
 
 - **Backend**: `backend/.venv/bin/pytest`, `.venv/bin/ruff check app`. No
   Postgres needed for local dev — falls back to an in-memory sqlite DB
-  (`DATABASE_URL` env var to point at real Postgres).
+  (`DATABASE_URL` env var to point at real Postgres). Note the in-memory DB is
+  wiped on every restart, taking users and auth tokens with it, so the console
+  signs you out each time; for a session that survives restarts run
+  `docker compose up -d db` and set `DATABASE_URL` — see `.env.example`.
 - **`frontend/`**: `npm run dev` (proxies `/api` to `:8000`), `npm run
   typecheck`, `npm run build`. Read `frontend/README.md` before adding a
   dependency — no router/data-fetching-library/UI-kit/codegen is deliberate,
