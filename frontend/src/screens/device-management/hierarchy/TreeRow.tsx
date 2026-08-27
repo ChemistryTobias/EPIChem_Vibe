@@ -3,6 +3,9 @@
  *
  * Indentation is a computed inline padding rather than nested containers, so
  * every row shares one hover style and one hit target regardless of depth.
+ *
+ * The whole line expands and collapses; the name is the one thing inside it
+ * that does something else, so it stops the click from reaching the row.
  */
 
 import type { TreeNode } from "./hierarchyTree";
@@ -22,10 +25,19 @@ export function TreeRow({ node, depth, expanded, onToggle, onSelect }: TreeRowPr
 
   return (
     <li>
-      <div className="tree__row" style={{ paddingLeft: `${indentFor(depth)}px` }}>
+      <div
+        className="tree__row"
+        style={{ paddingLeft: `${indentFor(depth)}px` }}
+        onClick={() => hasChildren && onToggle(node.uuid)}
+      >
+        {/* Still a button, so the tree stays keyboard-operable — the row's own
+            click handler covers it, hence the stopPropagation. */}
         <button
           className="tree__twisty"
-          onClick={() => hasChildren && onToggle(node.uuid)}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (hasChildren) onToggle(node.uuid);
+          }}
           aria-label={hasChildren ? (isExpanded ? "Collapse" : "Expand") : undefined}
           aria-expanded={hasChildren ? isExpanded : undefined}
           disabled={!hasChildren}
@@ -34,7 +46,13 @@ export function TreeRow({ node, depth, expanded, onToggle, onSelect }: TreeRowPr
         </button>
 
         <span className="tree__kind label">{node.kind}</span>
-        <button className="tree__name" onClick={() => onSelect(node)}>
+        <button
+          className="tree__name"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect(node);
+          }}
+        >
           {node.name}
         </button>
         {hasChildren && <span className="tree__count muted">{node.children.length}</span>}

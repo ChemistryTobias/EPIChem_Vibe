@@ -40,6 +40,11 @@
   --space-4: 16px;
   --space-5: 24px;
 
+  /* One row height for every list in the app — tables and the hierarchy tree
+   * alike. Matches a default Button, so rows line up with the controls above
+   * them. */
+  --row-height: 34px;
+
   --nav-width: 236px;
   --nav-footer-height: 200px;
   --header-height: 72px;

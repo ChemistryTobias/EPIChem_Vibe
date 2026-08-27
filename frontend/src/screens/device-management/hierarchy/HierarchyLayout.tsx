@@ -19,6 +19,7 @@ import { Inspector } from "../../../components/Inspector";
 import { EntityInspector } from "../../../components/inspectors";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
+import { CreateDialog } from "./CreateDialog";
 import { LEVELS } from "./hierarchyTree";
 import type { EntityKind, EntityRow } from "../../../api/types";
 
@@ -55,6 +56,8 @@ export function HierarchyLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
+  /** The kind the create dialog is open on, if it's open at all. */
+  const [creating, setCreating] = useState<EntityKind | null>(null);
 
   // A row selected on one view isn't the row you're looking at on the next.
   useEffect(() => setSelected(null), [pathname]);
@@ -71,12 +74,12 @@ export function HierarchyLayout() {
         subtitle={onTree ? "Tree" : `${current}s`}
         actions={
           <>
-            {/* Disabled until the create flow exists — the backend accepts
-                these writes, but there are no forms to build the bodies. */}
-            <Button variant="primary" disabled title="Create forms aren't built yet">
+            <Button variant="primary" onClick={() => setCreating("Device")}>
               New device
             </Button>
-            <Button disabled title="Create forms aren't built yet">
+            {/* Add opens on whatever the current view lists, since that's
+                almost always what you came to add. */}
+            <Button onClick={() => setCreating(current === "Tree" ? "Site" : (current as EntityKind))}>
               Add
             </Button>
             <Button disabled title="Importing isn't possible yet">
@@ -147,6 +150,8 @@ export function HierarchyLayout() {
           {selected && <EntityInspector kind={selected.kind} row={selected.row} />}
         </Inspector>
       </div>
+
+      {creating && <CreateDialog kind={creating} onClose={() => setCreating(null)} />}
     </>
   );
 }

@@ -103,13 +103,18 @@
   padding: 0;
 }
 
+/* The whole line toggles the node, but it isn't dressed as a control: the
+ * hover tint is there to track the row across the width of the page, not to
+ * advertise a click. */
 .tree__row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-3);
+  height: var(--row-height);
   /* padding-left is set inline per depth — see TreeRow.tsx */
   padding-right: var(--space-3);
   border-left: 3px solid transparent;
+  cursor: default;
 }
 
 .tree__row:hover {
@@ -143,7 +148,7 @@
 /* Opens the inspector on that node. */
 .tree__name {
   border: 0;
-  padding: 7px 0;
+  padding: 0;
   background: transparent;
   font: inherit;
   text-align: left;
@@ -156,7 +161,10 @@
   text-decoration: underline;
 }
 
+/* Pushed to the far edge of the page: a column of counts down the right, read
+ * as its own thing rather than as part of the name. */
 .tree__count {
+  margin-left: auto;
   font-family: var(--font-family-mono);
   font-size: var(--font-size-small);
 }

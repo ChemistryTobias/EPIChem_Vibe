@@ -1,0 +1,76 @@
+.dialog {
+  width: min(420px, calc(100vw - 2 * var(--space-5)));
+  padding: 0;
+  border: 1px solid var(--color-grey);
+  border-radius: var(--radius);
+  background: var(--color-white);
+  color: inherit;
+  font-family: var(--font-family-default);
+  font-size: var(--font-size-normal);
+}
+
+.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-grey-semilight);
+  background: var(--color-grey-light);
+}
+
+.dialog__title {
+  margin: 0;
+  font-size: var(--font-size-big);
+}
+
+.dialog__close {
+  border: 0;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.dialog__field input,
+.dialog__field select {
+  height: var(--row-height);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-grey);
+  border-radius: var(--radius);
+  background: var(--color-white);
+  font-family: var(--font-family-default);
+  font-size: var(--font-size-normal);
+  color: inherit;
+}
+
+.dialog__field input:focus,
+.dialog__field select:focus {
+  outline: none;
+  border-color: var(--color-mpg-green);
+}
+
+/* Confirm on the right, the way the header's actions read left to right. */
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
