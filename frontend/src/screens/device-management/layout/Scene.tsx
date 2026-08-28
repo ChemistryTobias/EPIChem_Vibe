@@ -279,7 +279,9 @@ function Contents({
         boxes={boxes}
         zones={model.zones}
         nodes={labelNodes}
-        raised={editing ? selected : null}
+        // Top down shows no height, so there is no height handle and the
+        // name has nothing to clear.
+        raised={editing && preset === "iso" ? selected : null}
       />
 
       {boxes.map((box) =>
