@@ -112,6 +112,25 @@ export function LayoutScreen() {
   });
   const selectedBox = boxes.find((b) => b.uuid === selected) ?? null;
 
+  /**
+   * The floor is editable too (Edit floor), and it isn't a box on its own
+   * canvas — so a staged change to whatever *owns* this level resizes the
+   * drawing under it. The grid stays as it was: re-deriving it mid-keystroke
+   * would make the floor twitch between spacings.
+   */
+  const owner = context.station ?? context.lab ?? context.site;
+  const ownerGeometry = owner ? draft[owner.uuid]?.body.object_geometry : undefined;
+  const ownerFloor = (Array.isArray(ownerGeometry) ? ownerGeometry[0] : ownerGeometry) as
+    | GeometryDescriptor
+    | undefined;
+  const drawn =
+    model && ownerFloor
+      ? {
+          ...model,
+          size: { x: ownerFloor.box_dimension_xyz[0], y: ownerFloor.box_dimension_xyz[1] },
+        }
+      : model;
+
   function patch(target: InspectorTarget, field: string, value: unknown) {
     setDraft((d) => ({
       ...d,
@@ -227,7 +246,7 @@ export function LayoutScreen() {
           ) : (
             <div className="layout__canvas" data-inspects>
               <LayoutCanvas
-                model={model}
+                model={drawn!}
                 boxes={boxes}
                 preset={preset}
                 editing={editing}
@@ -265,7 +284,9 @@ export function LayoutScreen() {
               {/* Everything but the canvas floats over it: where you are on the
                   left, what you can do on the right, the view controls at the
                   bottom. The bar itself is click-through. */}
-              <div className="canvas-overlay">
+              {/* Open, the inspector covers the right of the canvas — so the
+                  controls anchored there step aside, when there's room. */}
+              <div className={inspect ? "canvas-overlay canvas-overlay--inspecting" : "canvas-overlay"}>
                 <div className="canvas-overlay__bar">
                   <LocationPath
                     sites={data.sites}
@@ -308,6 +329,17 @@ export function LayoutScreen() {
                       <Button size="sm" onClick={() => setAdding(true)}>
                         Add {model.childLabel}
                       </Button>
+                      {/* The site is the floor everything else stands on, and
+                          it isn't a box on its own canvas — this is the way in
+                          to editing it. One floor for now; no picker yet. */}
+                      {model.level === "site" && context.site && (
+                        <Button
+                          size="sm"
+                          onClick={() => setInspect({ kind: "Site", row: context.site! })}
+                        >
+                          Edit floor
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="danger"

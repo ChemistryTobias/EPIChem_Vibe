@@ -103,7 +103,9 @@ const triple = (xyz: [number, number, number]) => xyz.map(round).join(" × ");
  * mention when there's more than one to tell apart.
  *
  * In the editor each axis is a float you can type — which is the only way to
- * place something exactly, since a drag is always to the nearest pixel.
+ * place something exactly, since a drag is always to the nearest pixel. A list
+ * edits its *first* entry: there is no floor picker yet, and one floor is the
+ * only case that exists today.
  */
 export function GeometrySection({
   geometry,
@@ -111,28 +113,36 @@ export function GeometrySection({
   geometry: GeometryDescriptor | GeometryDescriptor[] | null;
 }) {
   const session = useEditSession();
-  const single = geometry !== null && !Array.isArray(geometry);
-  const edited = useFieldValue<GeometryDescriptor | undefined>({}, "object_geometry");
-  const current = single ? (edited ?? (geometry as GeometryDescriptor)) : null;
+  const edited = useFieldValue<GeometryDescriptor | GeometryDescriptor[] | undefined>(
+    {},
+    "object_geometry",
+  );
+  const value = edited ?? geometry;
+  const list = value === null || value === undefined ? [] : Array.isArray(value) ? value : [value];
+  if (list.length === 0) return null;
 
-  // A site's geometry is a list of floors; editing that needs a floor editor,
-  // which doesn't exist yet, so it stays read-only.
-  if (session?.editing && current) {
-    const write = (key: "box_position_xyz" | "box_dimension_xyz", axis: number, value: number) => {
-      const next = { ...current, [key]: [...current[key]] as [number, number, number] };
-      next[key][axis] = value;
-      session.set("object_geometry", next);
+  if (session?.editing) {
+    const first = list[0];
+    const write = (key: "box_position_xyz" | "box_dimension_xyz", axis: number, next: number) => {
+      const updated = { ...first, [key]: [...first[key]] as [number, number, number] };
+      updated[key][axis] = next;
+      session.set("object_geometry", Array.isArray(value) ? [updated, ...list.slice(1)] : updated);
     };
     return (
       <FieldGroup title="Geometry">
-        <Triple label="Position" values={current.box_position_xyz} onChange={(a, v) => write("box_position_xyz", a, v)} />
-        <Triple label="Dimensions" values={current.box_dimension_xyz} onChange={(a, v) => write("box_dimension_xyz", a, v)} />
+        <Triple
+          label="Position"
+          values={first.box_position_xyz}
+          onChange={(a, v) => write("box_position_xyz", a, v)}
+        />
+        <Triple
+          label="Dimensions"
+          values={first.box_dimension_xyz}
+          onChange={(a, v) => write("box_dimension_xyz", a, v)}
+        />
       </FieldGroup>
     );
   }
-
-  const list = geometry === null ? [] : Array.isArray(geometry) ? geometry : [current ?? geometry];
-  if (list.length === 0) return null;
 
   return (
     <FieldGroup title="Geometry">

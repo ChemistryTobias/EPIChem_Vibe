@@ -15,6 +15,9 @@
   min-height: 0;
   background: var(--color-white);
   cursor: grab;
+  /* A container, so the overlay reacts to the canvas's own width rather than
+   * the window's — the nav rail is already accounted for. */
+  container-type: inline-size;
 }
 
 /* The names over the canvas. The layer is click-through; the names aren't. */
@@ -70,6 +73,16 @@
 /* Above the names, so a control is never blocked by one. */
 .canvas-overlay {
   z-index: 3;
+}
+
+/* The drawing runs under the open inspector, but the controls shouldn't:
+ * anything anchored right moves in by the panel's width. Only above this
+ * point — below it, stepping aside would leave the buttons nowhere to go, so
+ * they stay put and the inspector covers them. */
+@container (min-width: 800px) {
+  .canvas-overlay--inspecting {
+    padding-right: calc(var(--inspector-width) + var(--space-3));
+  }
 }
 
 .canvas-overlay__bar {
