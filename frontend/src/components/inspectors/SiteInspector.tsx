@@ -20,8 +20,8 @@ export function SiteInspector({ row }: { row: Site }) {
         </Field>
       </FieldGroup>
 
-      {/* A site is its floors — one geometry per storey. */}
-      <GeometrySection geometry={row.floors.map(([, geometry]) => geometry)} />
+      {/* A site's geometry is one entry per floor. */}
+      <GeometrySection geometry={row.object_geometry} />
       <RecordSection row={row} />
     </>
   );

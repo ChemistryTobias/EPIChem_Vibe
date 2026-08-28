@@ -68,7 +68,7 @@ export function LocationPath({
         .filter((s) => s.lab_uuid === lab.uuid)
         .map((s) => ({ id: s.uuid, label: s.name, active: s.uuid === station?.uuid }))
     : [];
-  const floors = Math.max(site.floors.length, 1);
+  const floors = Math.max(site.object_geometry.length, 1);
   const floorOptions = Array.from({ length: floors }, (_, i) => ({
     id: String(i),
     label: `Floor ${i}`,

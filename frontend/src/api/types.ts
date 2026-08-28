@@ -19,9 +19,10 @@ export interface GeometryDescriptor {
   shape: "rectangle" | "sphere" | "cylinder";
   box_position_xyz: [number, number, number];
   box_dimension_xyz: [number, number, number];
-  /** Named points inside the object — a port, a mount, a pick position.
-   * Carried so the mirror stays honest; nothing renders it yet. */
-  internal_positions: Record<string, [number, number, number]>;
+  /** Named points inside the object — a port, a mount, a pick position. Each
+   * entry sets its own length. Mirrored so the types stay honest; nothing
+   * renders it yet. */
+  internal_positions: Record<string, number[]>;
 }
 
 export interface Coordinates {
@@ -29,23 +30,13 @@ export interface Coordinates {
   longitude: number;
 }
 
-/** One storey: its description and the box it occupies. */
-export type Floor = [string, GeometryDescriptor];
-
-/**
- * A site has no geometry of its own — it is its floors, one entry per storey,
- * generated from `floor_no` at creation and each 4 m above the one below.
- */
+/** Site is the only entity whose geometry is a LIST (one entry per floor). */
 export interface Site extends ObjectBase {
   organisation: string | null;
   address: string | null;
   coordinates: Coordinates | null;
   timezone: string | null;
-  floor_no: number;
-  floors: Floor[];
-  // `labs` and `zones` are deliberately not mirrored: the backend fills them
-  // on GET /sites/{id} but not on the list route, and the console builds its
-  // own tree from the flat lists anyway.
+  object_geometry: GeometryDescriptor[];
 }
 
 export interface Lab extends ObjectBase {

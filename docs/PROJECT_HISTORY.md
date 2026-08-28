@@ -133,15 +133,11 @@ still matters for the rewrite even though the code paths named below
   `app/` — no `migrate` step (no Alembic yet) and no `seed` step (nothing
   writes example data into a fresh deployment yet, see `scripts/README.md`
   for the local-dev-only stand-in).
-- **A site *is* its floors; it has no geometry of its own.** `Site` dropped
-  `object_geometry` (and the `ObjectGeometryList` mixin with it, which had no
-  second user) for `floors: list[tuple[str, GeometryDescriptor]]` plus an
-  integer `floor_no`. Creating a site generates `floor_no` storeys 4 m apart,
-  described "Floor 1", "Floor 2", ... — so the common case is one number
-  rather than a hand-written geometry list, and a floor carries a description
-  independent of the box it occupies. `GeometryDescriptor` also gained
-  `internal_positions` (named points inside an object — ports, mounts, pick
-  positions), stored and returned but not yet surfaced in the console.
+- **`GeometryDescriptor.internal_positions`** — named points inside an object
+  (ports, mounts, pick positions), as `dict[str, tuple[float, ...]]`. The
+  tuple is deliberately variadic: each entry declares its own length, so a
+  2-D point and a 6-D pose can coexist without a second field or a shape
+  discriminator. Stored and returned; not surfaced in the console yet.
 - **Docs are plain Markdown, no static site.** GitLab Pages + Zensical
   (`zensical.toml`, the `pages`/`docs:openapi` CI jobs) were tried, then
   dropped in favor of Markdown files viewable directly in GitLab, entered
