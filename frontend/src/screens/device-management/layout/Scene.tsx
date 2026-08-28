@@ -39,6 +39,9 @@ export type Preset = "iso" | "top";
  * same reasoning as the names, which are HTML and don't scale either. */
 const GRIP_PX = 9;
 
+/** How far a name steps up in edit mode, to clear the handle beneath it. */
+const LABEL_LIFT_PX = 22;
+
 /** True isometric: 45° azimuth, 35.264° elevation. */
 const ISO_DIR = new THREE.Vector3(1, 1, 1).normalize();
 const TOP_DIR = new THREE.Vector3(0, 1, 0);
@@ -157,6 +160,7 @@ function Contents({
 
   /** Drag the floor to pan. Boxes stop the event, so they never reach here. */
   const pan = (event: ThreeEvent<PointerEvent>) => {
+    event.nativeEvent.preventDefault();
     const cam = camera as THREE.OrthographicCamera;
     let last = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
     const move = (m: PointerEvent) => {
@@ -198,6 +202,7 @@ function Contents({
 
   /** Start a move or a resize; both run off the same floor-plane maths. */
   const drag = (box: LayoutBox, mode: "move" | "resize") => (event: PointerEvent) => {
+    event.preventDefault();
     const start = floorPoint(event);
     const from = box.rect;
     const others = boxes.filter((b) => b.uuid !== box.uuid).map((b) => b.rect);
@@ -239,6 +244,7 @@ function Contents({
    * against that.
    */
   const dragHeight = (box: LayoutBox) => (event: PointerEvent) => {
+    event.preventDefault();
     const cam = camera as THREE.OrthographicCamera;
     const at = new THREE.Vector3(
       box.rect.pos.x + box.rect.size.x / 2,
@@ -274,7 +280,7 @@ function Contents({
         <FlatArea key={zone.uuid} rect={zone.rect} y={thin * 0.05} colour={ZONE} />
       ))}
 
-      <LabelPositions boxes={boxes} zones={model.zones} nodes={labelNodes} />
+      <LabelPositions boxes={boxes} zones={model.zones} nodes={labelNodes} editing={editing} />
 
       {boxes.map((box) =>
         box.flat ? (
@@ -510,9 +516,9 @@ function BoxMesh({
           />
           {heightHandle && (
             <Grip
-              // Above the footprint handle rather than at the top's centre,
-              // which is where the name sits — one would cover the other.
-              position={[size.x / 2, height / 2, size.y / 2]}
+              // The middle of the roof. The name is lifted clear of it while
+              // editing (see LabelPositions), so the two don't fight.
+              position={[0, height / 2, 0]}
               onPointerDown={(e) => {
                 e.stopPropagation();
                 onHeight(e.nativeEvent);
@@ -537,12 +543,18 @@ function LabelPositions({
   boxes,
   zones,
   nodes,
+  editing,
 }: {
   boxes: LayoutBox[];
   zones: LayoutZone[];
   nodes: RefObject<Map<string, HTMLElement>>;
+  /** Editing puts a handle in the middle of each roof, so the names step up
+   * out of its way. */
+  editing: boolean;
 }) {
   const { camera, size } = useThree();
+
+  const lift = editing ? LABEL_LIFT_PX : 0;
 
   useFrame(() => {
     const v = new THREE.Vector3();
@@ -551,7 +563,7 @@ function LabelPositions({
       if (!el) return;
       v.set(x, y, z).project(camera);
       el.style.transform = `translate(-50%, -50%) translate(${(v.x * 0.5 + 0.5) * size.width}px, ${
-        (-v.y * 0.5 + 0.5) * size.height
+        (-v.y * 0.5 + 0.5) * size.height - lift
       }px)`;
     };
     for (const b of boxes)

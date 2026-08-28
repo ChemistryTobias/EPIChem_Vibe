@@ -15,6 +15,11 @@
   min-height: 0;
   background: var(--color-white);
   cursor: grab;
+  /* Dragging the floor or a box is a drag, not a text selection — without
+   * this the pointer picks up the names and the overlay's labels on the way
+   * past and leaves half the screen highlighted. */
+  user-select: none;
+  -webkit-user-select: none;
   /* A container, so the overlay reacts to the canvas's own width rather than
    * the window's — the nav rail is already accounted for. */
   container-type: inline-size;
