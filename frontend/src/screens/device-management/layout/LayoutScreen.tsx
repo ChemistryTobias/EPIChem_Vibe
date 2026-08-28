@@ -166,6 +166,20 @@ export function LayoutScreen() {
     setInspect(target);
   }
 
+  /** The height handle writes the one axis a floor drag can't reach. */
+  function setHeight(uuid: string, height: number) {
+    const box = boxes.find((b) => b.uuid === uuid);
+    if (!box) return;
+    const g = box.geometry;
+    patch(
+      { kind: box.kind, row: box.row },
+      "object_geometry",
+      { ...g, box_dimension_xyz: [g.box_dimension_xyz[0], g.box_dimension_xyz[1], height] },
+    );
+    setSelected(uuid);
+    setInspect({ kind: box.kind, row: box.row });
+  }
+
   const save = useMutation({
     mutationFn: async () => {
       for (const [uuid, entry] of Object.entries(draft)) {
@@ -265,6 +279,7 @@ export function LayoutScreen() {
                 onSelect={select}
                 onDrill={enter}
                 onGeometry={setRect}
+                onHeight={setHeight}
               />
 
               {/* The names, in the middle of what they name — rendered here

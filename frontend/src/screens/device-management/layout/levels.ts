@@ -93,13 +93,19 @@ function rectOf(g: GeometryDescriptor): { rect: Rect; height: number } {
   return { rect: { pos: { x, y }, size: { x: w, y: d } }, height: h };
 }
 
-/** A gridline every ~1/40th of the floor, rounded to something human. A
- * coarser grid made dragging feel unresponsive: the snap owned most of the
- * travel, so the box stopped following the pointer. */
-function gridFor(span: number): number {
-  const steps = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10];
-  return steps.find((s) => span / s <= 40) ?? 10;
-}
+/**
+ * The grid, in metres, per level. Fixed rather than derived from the floor's
+ * size: a grid that rescaled as you resized the floor moved every gridline
+ * under whatever you were placing, and a metre has to stay a metre for the
+ * spacing to mean anything.
+ *
+ * A settings screen can overwrite these later — one object, one place.
+ */
+export const GRID_SIZES: Record<Level, number> = {
+  site: 1,
+  lab: 0.5,
+  station: 0.05,
+};
 
 const box = (
   kind: EntityKind,
@@ -139,8 +145,8 @@ export function buildLevel(ctx: LevelContext, data: LayoutData): LevelModel | nu
   return null;
 }
 
-function frame(size: Vec2) {
-  return { size, grid: gridFor(Math.max(size.x, size.y)) };
+function frame(level: Level, size: Vec2) {
+  return { size, grid: GRID_SIZES[level] };
 }
 
 function siteLevel(site: Site, data: LayoutData, floor: number): LevelModel | null {
@@ -149,7 +155,7 @@ function siteLevel(site: Site, data: LayoutData, floor: number): LevelModel | nu
   const { rect } = rectOf(plan);
   return {
     level: "site",
-    ...frame(rect.size),
+    ...frame("site", rect.size),
     // Labs carry no floor number yet, so every lab draws on whichever floor
     // is showing — the single-floor case, which is all that exists today.
     boxes: data.labs
@@ -167,7 +173,7 @@ function labLevel(lab: Lab, data: LayoutData): LevelModel | null {
   const { rect } = rectOf(lab.object_geometry);
   return {
     level: "lab",
-    ...frame(rect.size),
+    ...frame("lab", rect.size),
     boxes: data.stations
       .filter((s) => s.lab_uuid === lab.uuid)
       .map((s) => box("Station", s, FILL_ACTIVE))
@@ -183,7 +189,7 @@ function stationLevel(station: Station, data: LayoutData): LevelModel | null {
   const { rect } = rectOf(station.object_geometry);
   return {
     level: "station",
-    ...frame(rect.size),
+    ...frame("station", rect.size),
     boxes: [
       ...data.modules
         .filter((m) => m.station_uuid === station.uuid)

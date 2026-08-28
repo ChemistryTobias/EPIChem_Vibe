@@ -18,7 +18,7 @@
  * to be under the cursor.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 
@@ -35,6 +35,10 @@ export interface ViewApi {
 
 export type Preset = "iso" | "top";
 
+/** Handles are this many pixels across, whatever the zoom or the level — the
+ * same reasoning as the names, which are HTML and don't scale either. */
+const GRIP_PX = 9;
+
 /** True isometric: 45° azimuth, 35.264° elevation. */
 const ISO_DIR = new THREE.Vector3(1, 1, 1).normalize();
 const TOP_DIR = new THREE.Vector3(0, 1, 0);
@@ -49,6 +53,8 @@ export interface SceneProps {
   onSelect: (uuid: string | null) => void;
   onDrill: (uuid: string) => void;
   onGeometry: (uuid: string, rect: Rect) => void;
+  /** Height is its own axis and its own handle, so it has its own channel. */
+  onHeight: (uuid: string, height: number) => void;
   /** Filled in with the zoom/reset controls once the canvas is up. */
   api: RefObject<ViewApi | null>;
   /** The name elements the screen rendered, keyed by uuid — the scene moves
@@ -79,6 +85,7 @@ function Contents({
   onSelect,
   onDrill,
   onGeometry,
+  onHeight,
   api,
   labelNodes,
 }: SceneProps) {
@@ -225,6 +232,40 @@ function Contents({
     window.addEventListener("pointerup", up);
   };
 
+  /**
+   * The height handle. A box's height runs along an axis the floor plane
+   * can't answer for, so instead of raycasting this measures how many pixels
+   * one metre of height covers at the current camera and converts the drag
+   * against that.
+   */
+  const dragHeight = (box: LayoutBox) => (event: PointerEvent) => {
+    const cam = camera as THREE.OrthographicCamera;
+    const at = new THREE.Vector3(
+      box.rect.pos.x + box.rect.size.x / 2,
+      0,
+      box.rect.pos.y + box.rect.size.y / 2,
+    );
+    const view = gl.domElement.getBoundingClientRect();
+    const ground = at.clone().project(cam);
+    const raised = at.clone().setY(1).project(cam);
+    const pxPerMetre = ((raised.y - ground.y) / 2) * view.height;
+    // Straight down the camera sees no height at all — nothing to drag against.
+    if (Math.abs(pxPerMetre) < 1) return;
+
+    const from = box.height;
+    const startY = event.clientY;
+    const move = (e: PointerEvent) => {
+      const raw = from + (startY - e.clientY) / pxPerMetre;
+      onHeight(box.uuid, Math.max(model.grid, softSnap(raw, model.grid, model.grid * 0.25)));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   return (
     <>
       <Room size={model.size} grid={model.grid} thin={thin} onPan={pan} />
@@ -249,7 +290,6 @@ function Contents({
             onDrill={() => onDrill(box.uuid)}
             onDrag={editing ? drag(box, "move") : undefined}
             onResize={editing ? drag(box, "resize") : undefined}
-            grip={thin * 3}
           />
         ) : (
           <BoxMesh
@@ -262,6 +302,8 @@ function Contents({
             onDrill={() => onDrill(box.uuid)}
             onDrag={drag(box, "move")}
             onResize={drag(box, "resize")}
+            onHeight={dragHeight(box)}
+            heightHandle={preset === "iso"}
           />
         ),
       )}
@@ -274,6 +316,30 @@ const overlaps = (a: Rect, b: Rect) =>
   b.pos.x < a.pos.x + a.size.x &&
   a.pos.y < b.pos.y + b.size.y &&
   b.pos.y < a.pos.y + a.size.y;
+
+/**
+ * A drag handle. Scaled against the camera's zoom every frame so it stays the
+ * same size on screen, and drawn over everything so a corner buried in a box
+ * is still grabbable.
+ */
+function Grip({
+  position,
+  onPointerDown,
+}: {
+  position: [number, number, number];
+  onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
+}) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame(({ camera }) => {
+    ref.current?.scale.setScalar(GRIP_PX / (camera as THREE.OrthographicCamera).zoom);
+  });
+  return (
+    <mesh ref={ref} position={position} renderOrder={10} onPointerDown={onPointerDown}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshBasicMaterial color={SELECT} depthTest={false} />
+    </mesh>
+  );
+}
 
 /** Outline of whatever geometry it's given — every surface here has one. */
 function Edges({ geometry, color }: { geometry: THREE.BufferGeometry; color: string }) {
@@ -331,11 +397,9 @@ interface FlatAreaProps {
   onDrill?: () => void;
   onDrag?: (event: PointerEvent) => void;
   onResize?: (event: PointerEvent) => void;
-  /** Size of the resize grip, when this area can be resized. */
-  grip?: number;
 }
 
-function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResize, grip }: FlatAreaProps) {
+function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResize }: FlatAreaProps) {
   const { pos, size } = rect;
   const geometry = useMemo(() => new THREE.PlaneGeometry(size.x, size.y), [size.x, size.y]);
   return (
@@ -353,14 +417,14 @@ function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResi
         <Edges geometry={geometry} color={selected ? SELECT : colour.edge} />
       </group>
 
-      {selected && onResize && grip && (
-        <mesh
+      {selected && onResize && (
+        <Grip
           position={[size.x / 2, 0, size.y / 2]}
-          onPointerDown={(e) => { e.stopPropagation(); onResize(e.nativeEvent); }}
-        >
-          <boxGeometry args={[grip, grip, grip]} />
-          <meshBasicMaterial color={SELECT} />
-        </mesh>
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onResize(e.nativeEvent);
+          }}
+        />
       )}
     </group>
   );
@@ -385,9 +449,22 @@ interface BoxMeshProps {
   onDrill: () => void;
   onDrag: (event: PointerEvent) => void;
   onResize: (event: PointerEvent) => void;
+  onHeight: (event: PointerEvent) => void;
+  /** Height can't be dragged in a view that doesn't show it. */
+  heightHandle: boolean;
 }
 
-function BoxMesh({ box, selected, editing, thin, onSelect, onDrill, onDrag, onResize }: BoxMeshProps) {
+function BoxMesh({
+  box,
+  selected,
+  editing,
+  onSelect,
+  onDrill,
+  onDrag,
+  onResize,
+  onHeight,
+  heightHandle,
+}: BoxMeshProps) {
   const { pos, size } = box.rect;
   // A box with no recorded height still needs to be a box you can grab.
   const height = Math.max(box.height, Math.max(size.x, size.y) * 0.05);
@@ -420,18 +497,29 @@ function BoxMesh({ box, selected, editing, thin, onSelect, onDrill, onDrag, onRe
       />
       <Edges geometry={geometry} color={selected ? SELECT : EDGE} />
 
-      {/* The resize grip, on the far corner of the selected box. */}
+      {/* Footprint on the floor, height on the roof — each handle sits on
+          the thing it changes. */}
       {selected && editing && (
-        <mesh
-          position={[size.x / 2, height / 2, size.y / 2]}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            onResize(e.nativeEvent);
-          }}
-        >
-          <boxGeometry args={[thin * 3, thin * 3, thin * 3]} />
-          <meshBasicMaterial color={SELECT} />
-        </mesh>
+        <>
+          <Grip
+            position={[size.x / 2, -height / 2, size.y / 2]}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              onResize(e.nativeEvent);
+            }}
+          />
+          {heightHandle && (
+            <Grip
+              // Above the footprint handle rather than at the top's centre,
+              // which is where the name sits — one would cover the other.
+              position={[size.x / 2, height / 2, size.y / 2]}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onHeight(e.nativeEvent);
+              }}
+            />
+          )}
+        </>
       )}
     </group>
   );
