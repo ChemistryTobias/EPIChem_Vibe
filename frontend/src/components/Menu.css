@@ -1,0 +1,40 @@
+.menu {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Sharp, white, thin grey rule — the same restraint as the layout's location
+ * path menu, sized to the button it hangs off. */
+.menu__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 100%;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: var(--radius);
+  background: var(--color-white);
+}
+
+.menu__item {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 5px var(--space-3);
+  background: none;
+  font-family: var(--font-family-default);
+  font-size: var(--font-size-small);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  text-align: left;
+  white-space: nowrap;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.menu__item:hover {
+  color: var(--color-mpg-green);
+}

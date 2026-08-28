@@ -18,12 +18,13 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
 import { EntityInspector } from "../../../components/inspectors";
+import { Menu } from "../../../components/Menu";
+import { ADDABLE, CreatePanel, useCreator } from "../../../components/inspectors/create";
 import { EditContext } from "../../../components/inspectors/edit";
 import { InspectorNavContext } from "../../../components/inspectors/nav";
 import { API_BY_KIND } from "../../../api/entities";
 import { ScreenHeader } from "../../../components/ScreenHeader";
 import { SearchIcon, TreeIcon } from "../../../components/icons";
-import { CreateDialog } from "./CreateDialog";
 import { LEVELS } from "./hierarchyTree";
 import type { EntityKind, EntityRow } from "../../../api/types";
 
@@ -60,8 +61,7 @@ export function HierarchyLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
-  /** The kind the create dialog is open on, if it's open at all. */
-  const [creating, setCreating] = useState<EntityKind | null>(null);
+  const creator = useCreator();
   /** The inspector's editor: whether it's open, and what it's changed. */
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
@@ -110,14 +110,15 @@ export function HierarchyLayout() {
         subtitle={onTree ? "Tree" : `${current}s`}
         actions={
           <>
-            <Button variant="primary" onClick={() => setCreating("Device")}>
+            <Button variant="primary" onClick={() => creator.open("Device")}>
               New device
             </Button>
-            {/* Add opens on whatever the current view lists, since that's
-                almost always what you came to add. */}
-            <Button onClick={() => setCreating(current === "Tree" ? "Site" : (current as EntityKind))}>
-              Add
-            </Button>
+            {/* Everything but a device, which has its own control beside it. */}
+            <Menu
+              label="Add"
+              items={ADDABLE.map((kind) => ({ id: kind, label: kind }))}
+              onPick={(kind) => creator.open(kind as EntityKind)}
+            />
             <Button disabled title="Importing isn't possible yet">
               Import
             </Button>
@@ -177,12 +178,16 @@ export function HierarchyLayout() {
         </div>
 
         <Inspector
-          open={selected !== null}
-          kind={selected?.kind ?? "Inspector"}
-          title={(draft.name as string | undefined) ?? selected?.row.name}
-          subtitle={selected?.row.uuid}
-          onClose={() => show(null)}
-          edit={{
+          open={creator.kind !== null || selected !== null}
+          kind={creator.kind ?? selected?.kind ?? "Inspector"}
+          title={
+            creator.kind
+              ? ((creator.draft.name as string | undefined) ?? "")
+              : ((draft.name as string | undefined) ?? selected?.row.name)
+          }
+          subtitle={creator.kind ? undefined : selected?.row.uuid}
+          onClose={() => (creator.kind ? creator.close() : show(null))}
+          edit={creator.kind ? creator.edit : {
             editing,
             dirty,
             saving: save.isPending,
@@ -192,6 +197,14 @@ export function HierarchyLayout() {
             onRename: (name) => setDraft((d) => ({ ...d, name })),
           }}
         >
+          {creator.kind ? (
+            <CreatePanel
+              kind={creator.kind}
+              draft={creator.draft}
+              set={creator.set}
+              error={creator.error}
+            />
+          ) : (
           <InspectorNavContext.Provider value={show}>
             <EditContext.Provider
               value={{
@@ -203,10 +216,9 @@ export function HierarchyLayout() {
               {selected && <EntityInspector kind={selected.kind} row={selected.row} />}
             </EditContext.Provider>
           </InspectorNavContext.Provider>
+          )}
         </Inspector>
       </div>
-
-      {creating && <CreateDialog kind={creating} onClose={() => setCreating(null)} />}
     </>
   );
 }

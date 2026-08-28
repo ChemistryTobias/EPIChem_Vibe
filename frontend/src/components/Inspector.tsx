@@ -20,6 +20,8 @@ import "./Inspector.css";
 /** What the screen has to provide for the panel to be editable at all. */
 export interface InspectorEdit {
   editing: boolean;
+  /** The editor is filling in a record that doesn't exist yet. */
+  creating?: boolean;
   /** Whether anything has been altered — Save is dead until it has. */
   dirty: boolean;
   saving?: boolean;
@@ -65,9 +67,12 @@ export function Inspector({ open, kind, title, subtitle, onClose, edit, children
         <>
           <header className="inspector__header">
             <div className="inspector__top">
-              <p className="label">{`${kind} ${editing ? "editor" : "inspector"}`}</p>
+              <p className="label">
+                {`${kind} ${editing ? (edit?.creating ? "creator" : "editor") : "inspector"}`}
+              </p>
               <div className="inspector__tools">
-                {edit && (
+                {/* Nothing to read yet while creating, so no way back to it. */}
+                {edit && !edit.creating && (
                   <button
                     className="inspector__tool"
                     onClick={edit.onToggle}
@@ -100,7 +105,7 @@ export function Inspector({ open, kind, title, subtitle, onClose, edit, children
             {editing && edit && (
               <div className="inspector__actions">
                 <Button size="sm" variant="primary" onClick={edit.onSave} disabled={!edit.dirty || edit.saving}>
-                  {edit.saving ? "Saving…" : "Save"}
+                  {edit.saving ? "Saving…" : edit.creating ? "Create" : "Save"}
                 </Button>
                 <Button size="sm" onClick={edit.onCancel}>
                   Cancel

@@ -35,16 +35,25 @@ import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
 import { EntityInspector } from "../../../components/inspectors";
+import { CreatePanel, useCreator } from "../../../components/inspectors/create";
 import { EditContext } from "../../../components/inspectors/edit";
 import { InspectorNavContext, type InspectorTarget } from "../../../components/inspectors/nav";
 import { ScreenHeader } from "../../../components/ScreenHeader";
-import { CreateDialog } from "../hierarchy/CreateDialog";
 import type { Rect } from "./constraints";
 import { buildLevel, drillInto, type LevelContext } from "./levels";
 import { LocationPath } from "./LocationPath";
 import { LayoutCanvas, type Preset, type ViewApi } from "./Scene";
 
 import "./layout.css";
+
+/** Which field on a new child names the thing it's being added to. */
+const PARENT_FIELD: Record<string, string> = {
+  Lab: "site_uuid",
+  Zone: "parent_uuid",
+  Station: "lab_uuid",
+  Module: "station_uuid",
+  Device: "station_uuid",
+};
 
 /** One record's pending changes: the body a Save will PATCH. */
 interface DraftEntry {
@@ -69,7 +78,7 @@ export function LayoutScreen() {
   /** What the panel is showing. Usually the selected box, but a reference
    * field can send it somewhere that isn't on this level at all. */
   const [inspect, setInspect] = useState<InspectorTarget | null>(null);
-  const [adding, setAdding] = useState(false);
+  const creator = useCreator();
   const [note, setNote] = useState<string | null>(null);
   const view = useRef<ViewApi | null>(null);
   const labelNodes = useRef(new Map<string, HTMLElement>());
@@ -326,7 +335,12 @@ export function LayoutScreen() {
 
                   {editing && (
                     <>
-                      <Button size="sm" onClick={() => setAdding(true)}>
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          creator.open(model.childKind, parentUuid ? { [PARENT_FIELD[model.childKind]]: parentUuid } : {})
+                        }
+                      >
                         Add {model.childLabel}
                       </Button>
                       {/* The site is the floor everything else stands on, and
@@ -387,15 +401,20 @@ export function LayoutScreen() {
         </div>
 
         <Inspector
-          open={inspect !== null}
-          kind={inspect?.kind ?? "Inspector"}
-          title={(draftBody.name as string | undefined) ?? inspect?.row.name}
-          subtitle={inspect?.row.uuid}
+          open={creator.kind !== null || inspect !== null}
+          kind={creator.kind ?? inspect?.kind ?? "Inspector"}
+          title={
+            creator.kind
+              ? ((creator.draft.name as string | undefined) ?? "")
+              : ((draftBody.name as string | undefined) ?? inspect?.row.name)
+          }
+          subtitle={creator.kind ? undefined : inspect?.row.uuid}
           onClose={() => {
+            if (creator.kind) return creator.close();
             setInspect(null);
             setSelected(null);
           }}
-          edit={{
+          edit={creator.kind ? creator.edit : {
             editing,
             dirty,
             saving: save.isPending,
@@ -405,6 +424,14 @@ export function LayoutScreen() {
             onRename: (name) => inspect && patch(inspect, "name", name),
           }}
         >
+          {creator.kind ? (
+            <CreatePanel
+              kind={creator.kind}
+              draft={creator.draft}
+              set={creator.set}
+              error={creator.error}
+            />
+          ) : (
           <InspectorNavContext.Provider value={setInspect}>
             <EditContext.Provider
               value={{
@@ -416,12 +443,9 @@ export function LayoutScreen() {
               {inspect && <EntityInspector kind={inspect.kind} row={inspect.row} />}
             </EditContext.Provider>
           </InspectorNavContext.Provider>
+          )}
         </Inspector>
       </div>
-
-      {adding && model && (
-        <CreateDialog kind={model.childKind} parentUuid={parentUuid} onClose={() => setAdding(false)} />
-      )}
     </>
   );
 }
