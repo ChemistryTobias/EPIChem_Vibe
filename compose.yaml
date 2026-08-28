@@ -13,11 +13,11 @@
 # `api` creates its own tables on boot (no migration tool yet — see
 # docs/PROJECT_HISTORY.md's "no Alembic yet" decision) and there is no seed
 # step: nothing writes example data into a fresh database yet. See the
-# Roadmap's CLI section for the planned approach (seed via real API calls).
+# Roadmap's CLI section for the planned approach (seed via real API calls),
+# and `scripts/generate_seed.py` for the local-dev stand-in.
 #
-# NOTE: frontend/ still targets the old backend's API shape — Roadmap
-# milestone 0.3 repoints it at backend/app/. Until that lands this stack
-# boots, but the console will not work against api's actual endpoints.
+# Because there are no migrations, a schema change means an existing db-data
+# volume is stale: `docker compose down -v` and start again.
 #
 # Production is a different file: compose.prod.yaml. This one bind-mounts
 # source, runs Vite and uvicorn --reload, and defaults to an open API. Do not

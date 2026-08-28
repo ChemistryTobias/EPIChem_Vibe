@@ -12,6 +12,13 @@ class GeometryDescriptor(BaseModel):
     )
     box_position_xyz: tuple[float, float, float]
     box_dimension_xyz: tuple[float, float, float]
+    internal_positions: dict[str, tuple[float, float, float]] = Field(
+        default_factory=dict,
+        description=(
+            "Named points inside this object, relative to its own origin -- a "
+            "port, a mount, a pick position. Not surfaced in the console yet."
+        ),
+    )
     # asset_2d: Optional[str] = None  # e.g. an svg/png FileDB reference
     # asset_3d: Optional[str] = None  # e.g. a usd/usdz FileDB reference
 
@@ -22,11 +29,3 @@ class ObjectGeometryDB:
 
 class ObjectGeometry(BaseModel):
     object_geometry: Optional[GeometryDescriptor] = None
-
-
-class ObjectGeometryListDB:
-    object_geometry: Mapped[list[GeometryDescriptor]] = mapped_column(JSON, default=list)
-
-
-class ObjectGeometryList(BaseModel):
-    object_geometry: list[GeometryDescriptor] = Field(default_factory=list)

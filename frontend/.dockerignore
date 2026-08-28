@@ -1,0 +1,9 @@
+# node_modules is deliberately excluded: the image installs its own via
+# `npm ci` in the deps stage. Copying the host's would both bloat the context
+# and risk shipping platform-specific binaries built for a different libc.
+node_modules/
+dist/
+.vite/
+Dockerfile
+.dockerignore
+npm-debug.log*

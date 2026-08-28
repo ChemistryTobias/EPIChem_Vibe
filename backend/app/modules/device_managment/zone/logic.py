@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.core.shared_schema.geometry.schema import GeometryDescriptor
 from app.modules.device_managment.lab.schema import LabDB
-from app.modules.device_managment.site.schema import SiteDB
-# ZoneDB not imported at module level: schema.py imports get_default_geometry from here, would be circular.
+# Neither SiteDB nor ZoneDB is imported at module level: site.schema imports this
+# module's Zone (for its zone list) and zone.schema imports get_default_geometry
+# from here, so both would close a cycle.
 
 default_geometry_site = GeometryDescriptor(
     detail="Zone Outline", shape="rectangle", box_position_xyz=(0, 0, 0), box_dimension_xyz=(10, 10, 3)
@@ -18,6 +19,8 @@ default_geometry_lab = GeometryDescriptor(
 
 def resolve_parent_type(session: Session, parent_uuid: UUID) -> str:
     """Derive parent_type from parent_uuid by checking which table it actually belongs to."""
+    from app.modules.device_managment.site.schema import SiteDB  # deferred: see above
+
     if session.get(SiteDB, parent_uuid) is not None:
         return SiteDB.__object_type__
     if session.get(LabDB, parent_uuid) is not None:

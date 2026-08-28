@@ -144,9 +144,9 @@ function frame(size: Vec2) {
 }
 
 function siteLevel(site: Site, data: LayoutData, floor: number): LevelModel | null {
-  const plan = site.object_geometry[floor] ?? site.object_geometry[0];
+  const plan = site.floors[floor] ?? site.floors[0];
   if (!plan) return null;
-  const { rect } = rectOf(plan);
+  const { rect } = rectOf(plan[1]);
   return {
     level: "site",
     ...frame(rect.size),

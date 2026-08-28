@@ -20,11 +20,11 @@ def get_default_geometry(data: dict) -> GeometryDescriptor:
 
     with SessionLocal() as session:
         site = session.get(SiteDB, site_uuid)
-        if site is None or not site.object_geometry:
+        if site is None or not site.floors:
             return default_geometry_descriptor
 
-        # site.object_geometry is a list of floors (JSON) -- there's no floor selection on
-        # Lab yet, so the first floor is used as the placement parent.
-        parent = GeometryDescriptor(**site.object_geometry[0])
+        # site.floors is a list of (description, geometry) pairs -- there's no floor
+        # selection on Lab yet, so the first floor is the placement parent.
+        parent = GeometryDescriptor(**site.floors[0][1])
         existing = [GeometryDescriptor(**lab.object_geometry) for lab in site.labs if lab.object_geometry]
         return find_free_slot_2d(parent, existing, default_geometry_descriptor) or default_geometry_descriptor

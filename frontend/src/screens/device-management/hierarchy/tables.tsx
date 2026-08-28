@@ -51,7 +51,7 @@ export function SitesTable() {
       { accessorKey: "organisation", header: "Organisation", cell: (c) => orDash(c.row.original.organisation) },
       { accessorKey: "address", header: "Address", cell: (c) => orDash(c.row.original.address) },
       { accessorKey: "timezone", header: "Timezone", cell: (c) => orDash(c.row.original.timezone) },
-      { id: "floors", header: "Floors", accessorFn: (row) => row.object_geometry.length },
+      { id: "floors", header: "Floors", accessorFn: (row) => row.floors.length },
       updatedColumn,
     ],
     [select],
