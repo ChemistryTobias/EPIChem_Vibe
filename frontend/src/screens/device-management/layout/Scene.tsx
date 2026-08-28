@@ -39,8 +39,8 @@ export type Preset = "iso" | "top";
  * same reasoning as the names, which are HTML and don't scale either. */
 const GRIP_PX = 9;
 
-/** How far a name steps up in edit mode, to clear the handle beneath it. */
-const LABEL_LIFT_PX = 22;
+/** How far the selected box's name steps up to clear its height handle. */
+const RAISED_PX = 22;
 
 /** True isometric: 45° azimuth, 35.264° elevation. */
 const ISO_DIR = new THREE.Vector3(1, 1, 1).normalize();
@@ -160,7 +160,6 @@ function Contents({
 
   /** Drag the floor to pan. Boxes stop the event, so they never reach here. */
   const pan = (event: ThreeEvent<PointerEvent>) => {
-    event.nativeEvent.preventDefault();
     const cam = camera as THREE.OrthographicCamera;
     let last = { x: event.nativeEvent.clientX, y: event.nativeEvent.clientY };
     const move = (m: PointerEvent) => {
@@ -175,9 +174,7 @@ function Contents({
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      gl.domElement.style.cursor = "";
     };
-    gl.domElement.style.cursor = "grabbing";
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
@@ -202,7 +199,6 @@ function Contents({
 
   /** Start a move or a resize; both run off the same floor-plane maths. */
   const drag = (box: LayoutBox, mode: "move" | "resize") => (event: PointerEvent) => {
-    event.preventDefault();
     const start = floorPoint(event);
     const from = box.rect;
     const others = boxes.filter((b) => b.uuid !== box.uuid).map((b) => b.rect);
@@ -244,7 +240,6 @@ function Contents({
    * against that.
    */
   const dragHeight = (box: LayoutBox) => (event: PointerEvent) => {
-    event.preventDefault();
     const cam = camera as THREE.OrthographicCamera;
     const at = new THREE.Vector3(
       box.rect.pos.x + box.rect.size.x / 2,
@@ -280,7 +275,12 @@ function Contents({
         <FlatArea key={zone.uuid} rect={zone.rect} y={thin * 0.05} colour={ZONE} />
       ))}
 
-      <LabelPositions boxes={boxes} zones={model.zones} nodes={labelNodes} editing={editing} />
+      <LabelPositions
+        boxes={boxes}
+        zones={model.zones}
+        nodes={labelNodes}
+        raised={editing ? selected : null}
+      />
 
       {boxes.map((box) =>
         box.flat ? (
@@ -330,17 +330,34 @@ const overlaps = (a: Rect, b: Rect) =>
  */
 function Grip({
   position,
+  cursor,
   onPointerDown,
 }: {
   position: [number, number, number];
+  /** The cursor while over it. Handles are the only thing on the canvas that
+   * changes the cursor, so a changed cursor means "you have hold of one". */
+  cursor: string;
   onPointerDown: (event: ThreeEvent<PointerEvent>) => void;
 }) {
   const ref = useRef<THREE.Mesh>(null);
+  const { gl } = useThree();
   useFrame(({ camera }) => {
     ref.current?.scale.setScalar(GRIP_PX / (camera as THREE.OrthographicCamera).zoom);
   });
   return (
-    <mesh ref={ref} position={position} renderOrder={10} onPointerDown={onPointerDown}>
+    <mesh
+      ref={ref}
+      position={position}
+      renderOrder={10}
+      onPointerDown={onPointerDown}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        gl.domElement.style.cursor = cursor;
+      }}
+      onPointerOut={() => {
+        gl.domElement.style.cursor = "";
+      }}
+    >
       <boxGeometry args={[1, 1, 1]} />
       <meshBasicMaterial color={SELECT} depthTest={false} />
     </mesh>
@@ -426,6 +443,7 @@ function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResi
       {selected && onResize && (
         <Grip
           position={[size.x / 2, 0, size.y / 2]}
+          cursor="nwse-resize"
           onPointerDown={(e) => {
             e.stopPropagation();
             onResize(e.nativeEvent);
@@ -509,6 +527,7 @@ function BoxMesh({
         <>
           <Grip
             position={[size.x / 2, -height / 2, size.y / 2]}
+            cursor="nwse-resize"
             onPointerDown={(e) => {
               e.stopPropagation();
               onResize(e.nativeEvent);
@@ -516,9 +535,8 @@ function BoxMesh({
           />
           {heightHandle && (
             <Grip
-              // The middle of the roof. The name is lifted clear of it while
-              // editing (see LabelPositions), so the two don't fight.
               position={[0, height / 2, 0]}
+              cursor="ns-resize"
               onPointerDown={(e) => {
                 e.stopPropagation();
                 onHeight(e.nativeEvent);
@@ -543,22 +561,20 @@ function LabelPositions({
   boxes,
   zones,
   nodes,
-  editing,
+  raised,
 }: {
   boxes: LayoutBox[];
   zones: LayoutZone[];
   nodes: RefObject<Map<string, HTMLElement>>;
-  /** Editing puts a handle in the middle of each roof, so the names step up
-   * out of its way. */
-  editing: boolean;
+  /** The box whose name steps up, if any: the one being edited, whose height
+   * handle sits in the middle of its roof — right where the name would be. */
+  raised: string | null;
 }) {
   const { camera, size } = useThree();
 
-  const lift = editing ? LABEL_LIFT_PX : 0;
-
   useFrame(() => {
     const v = new THREE.Vector3();
-    const place = (key: string, x: number, y: number, z: number) => {
+    const place = (key: string, x: number, y: number, z: number, lift = 0) => {
       const el = nodes.current?.get(key);
       if (!el) return;
       v.set(x, y, z).project(camera);
@@ -567,7 +583,13 @@ function LabelPositions({
       }px)`;
     };
     for (const b of boxes)
-      place(b.uuid, b.rect.pos.x + b.rect.size.x / 2, b.height, b.rect.pos.y + b.rect.size.y / 2);
+      place(
+        b.uuid,
+        b.rect.pos.x + b.rect.size.x / 2,
+        b.height,
+        b.rect.pos.y + b.rect.size.y / 2,
+        b.uuid === raised ? RAISED_PX : 0,
+      );
     for (const z of zones) place(z.uuid, z.rect.pos.x + z.rect.size.x / 2, 0, z.rect.pos.y + z.rect.size.y / 2);
   });
 
