@@ -142,10 +142,7 @@ export function CreatePanel({ kind, draft, set, error }: CreatePanelProps) {
 
   return (
     <>
-      {spec.required.length > 0 && spec.required.map(input)}
-      {spec.required.length === 0 && (
-        <p className="muted">A name is all a {kind.toLowerCase()} needs.</p>
-      )}
+      {spec.required.map(input)}
 
       <button
         className="create__toggle label"
