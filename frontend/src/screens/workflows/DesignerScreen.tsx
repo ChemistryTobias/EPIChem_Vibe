@@ -1,21 +1,20 @@
 /**
- * Workflow designer (Roadmap 2.1/2.2, plan §9 and §10.4): compose a station's
- * Bluesky plans into a procedure, see it validated live, and launch it.
+ * The workflow designer (Roadmap 2.1/2.2, plan §9 and §10.4), n8n-style:
+ * one procedure on a full-width canvas — Start, then a tile per step, an end
+ * "+" — and a side panel that is either the node picker (stations with their
+ * plans, flow-control steps) or the selected step's settings.
  *
- * - The palette and every parameter form are generated from the station
- *   pod's `plans_allowed`/`devices_allowed` (§9.2) — nothing per-plan lives
- *   in this codebase.
- * - A procedure is a linear sequence (§9.1's fast path): the canvas lays
- *   steps out left to right, and dragging a node sideways reorders it.
- * - Validation runs server-side against the live pod on every change and
- *   comes back keyed to step ids (§9.3); the canvas badges the nodes.
- * - The draft is local until Save, like the layout editor's: one save, one
- *   revision. Run saves first if needed, then dispatches.
+ * - Plans come from each station pod's `plans_allowed` (§9.2); steps can use
+ *   different stations, and Wait / Input / HTTP steps EPIChem runs itself.
+ * - Validation runs server-side on every change and badges the tiles (§9.3);
+ *   issues and the compiled queue items sit in a collapsible panel.
+ * - The draft is local until Save — one save, one revision. Run saves first
+ *   if needed. Pick a different procedure in Workflows → Procedures.
  */
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   Background,
   Controls,
@@ -24,30 +23,29 @@ import {
   ReactFlowProvider,
   applyNodeChanges,
   useReactFlow,
-  type Edge,
+  type Node,
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { stationsApi } from "../../api/entities";
-import type { Diagnostic, Procedure, ProcedureStep, Station } from "../../api/types";
+import type { Diagnostic, Procedure, ProcedureStep } from "../../api/types";
 import { executionApi, proceduresApi, runsApi } from "../../api/workflows";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
+import { Glyph, STEP_GLYPH, stationGlyph } from "../../components/glyphs";
 import { Inspector } from "../../components/Inspector";
-import { ScreenHeader } from "../../components/ScreenHeader";
 import { StatusPill } from "../../components/StatusPill";
-import { PLAN_MIME, PlanPalette } from "./PlanPalette";
-import { groupPlans, newStep, previewItems } from "./plans";
+import { rememberProcedure } from "../../router";
+import { edgeTypes, nodeTypes, type PlusEdgeType, type StepTileNode } from "./canvas";
+import { NodePicker } from "./NodePicker";
+import { describeStep, humanize, newControlStep, newId, newPlanStep, previewItems, referencesBefore } from "./plans";
 import { RunLauncher, type SampleDraft } from "./RunLauncher";
-import { StepForm } from "./StepForm";
-import { StepNode, type StepNodeType } from "./StepNode";
+import { StepSettings } from "./StepSettings";
 
 import "./workflows.css";
 
-const NODE_W = 220;
-const GAP = 60;
-const nodeTypes = { step: StepNode };
+const GAP = 180;
 
 interface Draft {
   name: string;
@@ -56,11 +54,21 @@ interface Draft {
   steps: ProcedureStep[];
 }
 
+type Panel = { mode: "pick"; at: number } | { mode: "step"; id: string } | { mode: "run" } | null;
+
 const toDraft = (p: Procedure): Draft => ({
   name: p.name,
   description: p.description,
   station_uuid: p.station_uuid,
-  steps: p.steps.map(({ id, plan, kwargs, label }) => ({ id, plan, kwargs, label: label ?? null })),
+  // Older steps name no station: they run on the procedure's.
+  steps: p.steps.map((s) => ({
+    id: s.id,
+    type: s.type ?? "plan",
+    plan: s.plan,
+    station_uuid: (s.type ?? "plan") === "plan" ? (s.station_uuid ?? p.station_uuid) : null,
+    kwargs: s.kwargs,
+    label: s.label ?? null,
+  })),
 });
 
 export function DesignerScreen() {
@@ -72,170 +80,164 @@ export function DesignerScreen() {
 }
 
 function Designer() {
-  const queryClient = useQueryClient();
+  const { procedureId } = useParams({ from: "/workflows/designer/$procedureId" });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const flow = useReactFlow();
 
-  const procedures = useQuery({ queryKey: ["procedures"], queryFn: proceduresApi.list });
+  const procedure = useQuery({ queryKey: ["procedure", procedureId], queryFn: () => proceduresApi.get(procedureId), retry: false });
   const stations = useQuery({ queryKey: ["stations"], queryFn: stationsApi.list });
-  const executable = (stations.data ?? []).filter((s) => s.queueserver_url);
+  const executable = useMemo(() => (stations.data ?? []).filter((s) => s.queueserver_url), [stations.data]);
+  const stationById = useMemo(() => new Map((stations.data ?? []).map((s) => [s.uuid, s])), [stations.data]);
 
-  const [currentId, setCurrentId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft>({ name: "", description: null, station_uuid: null, steps: [] });
-  const [selected, setSelected] = useState<string | null>(null);
-  const [launching, setLaunching] = useState(false);
-  const [tab, setTab] = useState<"diagnostics" | "items">("diagnostics");
-  const initialised = useRef(false);
+  const paletteQueries = useQueries({
+    queries: executable.map((s) => ({
+      queryKey: ["palette", s.uuid],
+      queryFn: () => executionApi.palette(s.uuid),
+      retry: false,
+      staleTime: 60_000,
+    })),
+  });
+  const palettes = useMemo(() => new Map(executable.map((s, i) => [s.uuid, paletteQueries[i]])), [executable, paletteQueries]);
 
-  const saved = procedures.data?.find((p) => p.uuid === currentId) ?? null;
-  const baseline: Draft = saved ? toDraft(saved) : { name: "", description: null, station_uuid: draft.station_uuid, steps: [] };
-  const dirty = JSON.stringify(draft) !== JSON.stringify(baseline) && (saved !== null || draft.steps.length > 0 || draft.name !== "");
-  const station: Station | undefined = stations.data?.find((s) => s.uuid === draft.station_uuid);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [issuesOpen, setIssuesOpen] = useState(false);
+  const [issuesTab, setIssuesTab] = useState<"issues" | "items">("issues");
+  const loadedFor = useRef<string | null>(null);
 
-  /** Open the first procedure, or a blank one on the first executable station. */
   useEffect(() => {
-    if (initialised.current || !procedures.data || !stations.data) return;
-    initialised.current = true;
-    const first = procedures.data[0];
-    if (first) open(first);
-    else setDraft((d) => ({ ...d, station_uuid: executable[0]?.uuid ?? null }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [procedures.data, stations.data]);
+    if (procedure.data && loadedFor.current !== procedure.data.uuid) {
+      loadedFor.current = procedure.data.uuid;
+      setDraft(toDraft(procedure.data));
+      setPanel(procedure.data.steps.length ? null : { mode: "pick", at: 0 });
+      rememberProcedure(procedure.data.uuid);
+    }
+  }, [procedure.data]);
+  useEffect(() => {
+    if (procedure.isError) rememberProcedure(null);
+  }, [procedure.isError]);
 
-  function open(p: Procedure | null) {
-    setCurrentId(p?.uuid ?? null);
-    setDraft(p ? toDraft(p) : { name: "", description: null, station_uuid: executable[0]?.uuid ?? null, steps: [] });
-    setSelected(null);
-    setLaunching(false);
-  }
+  const saved = procedure.data ?? null;
+  const dirty = draft !== null && saved !== null && JSON.stringify(draft) !== JSON.stringify(toDraft(saved));
+  const steps = draft?.steps ?? [];
 
-  function switchTo(id: string) {
-    if (dirty && !confirm("Discard the unsaved changes to this procedure?")) return;
-    open(id === "" ? null : (procedures.data?.find((p) => p.uuid === id) ?? null));
-  }
-
-  // ---- what the station offers, and what validation says ------------------
-  const palette = useQuery({
-    queryKey: ["palette", draft.station_uuid],
-    queryFn: () => executionApi.palette(draft.station_uuid!),
-    enabled: Boolean(station?.queueserver_url),
-    retry: false,
-  });
-  const register = useMutation({
-    mutationFn: () => executionApi.registerDevices(draft.station_uuid!),
-    onSuccess: () => queryClient.invalidateQueries(),
-  });
-
-  const pending = useDeferredValue(JSON.stringify({ s: draft.station_uuid, steps: draft.steps }));
+  // ---- validation -----------------------------------------------------------
+  const pending = useDeferredValue(JSON.stringify({ s: draft?.station_uuid ?? null, steps }));
   const validation = useQuery({
     queryKey: ["validate", pending],
     queryFn: () => {
-      const { s, steps } = JSON.parse(pending);
-      return proceduresApi.validate(s, steps);
+      const { s, steps: st } = JSON.parse(pending);
+      return proceduresApi.validate(s, st);
     },
-    enabled: draft.station_uuid !== null,
+    enabled: draft !== null,
     placeholderData: (previous) => previous,
     retry: false,
   });
-  // Memoised: a fresh `[]` per render would re-run the node layout effect below forever.
   const diagnostics: Diagnostic[] = useMemo(() => validation.data?.diagnostics ?? [], [validation.data]);
   const errors = diagnostics.filter((d) => d.severity === "error");
   const warnings = diagnostics.filter((d) => d.severity === "warning");
 
-  const groupLabel = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const g of groupPlans(palette.data?.plans ?? {})) for (const p of g.plans) map.set(p.name, g.label);
-    return map;
-  }, [palette.data]);
+  // ---- editing --------------------------------------------------------------
+  const setSteps = (next: ProcedureStep[]) => setDraft((d) => (d ? { ...d, steps: next } : d));
+  const selectedId = panel?.mode === "step" ? panel.id : null;
 
-  // ---- the canvas -----------------------------------------------------------
-  const layoutNodes = useCallback(
-    (): StepNodeType[] =>
-      draft.steps.map((step, index) => ({
+  function insert(step: ProcedureStep, at: number) {
+    const next = [...steps];
+    next.splice(at, 0, step);
+    setSteps(next);
+    setPanel({ mode: "step", id: step.id });
+  }
+  function move(id: string, by: number) {
+    const from = steps.findIndex((s) => s.id === id);
+    const to = from + by;
+    if (from < 0 || to < 0 || to >= steps.length) return;
+    const next = [...steps];
+    const [step] = next.splice(from, 1);
+    next.splice(to, 0, step);
+    setSteps(next);
+  }
+  function remove(id: string) {
+    setSteps(steps.filter((s) => s.id !== id));
+    setPanel(null);
+  }
+
+  // ---- canvas ---------------------------------------------------------------
+  const titleOf = useCallback(
+    (step: ProcedureStep) => step.label || ((step.type ?? "plan") === "plan" ? humanize(step.plan) : { wait: "Wait", input: "Input", http: "HTTP request" }[step.type as "wait"]),
+    [],
+  );
+  const layout = useCallback((): Node[] => {
+    const tiles: StepTileNode[] = steps.map((step, index) => {
+      const station = step.station_uuid ? stationById.get(step.station_uuid) : undefined;
+      const control = (step.type ?? "plan") !== "plan";
+      return {
         id: step.id,
         type: "step",
-        position: { x: index * (NODE_W + GAP), y: 0 },
-        selected: step.id === selected,
+        position: { x: (index + 1) * GAP, y: 0 },
+        selected: step.id === selectedId,
         data: {
-          step,
           index,
-          group: groupLabel.get(step.plan) ?? "",
-          unknown: Boolean(palette.data) && !palette.data!.plans[step.plan],
+          glyph: control ? STEP_GLYPH[step.type as keyof typeof STEP_GLYPH] : stationGlyph(station),
+          title: titleOf(step),
+          subtitle: describeStep(step, station?.name),
+          control,
           errors: diagnostics.filter((d) => d.step_id === step.id && d.severity === "error").length,
           warnings: diagnostics.filter((d) => d.step_id === step.id && d.severity === "warning").length,
         },
-      })),
-    [draft.steps, selected, groupLabel, palette.data, diagnostics],
-  );
-  const [nodes, setNodes] = useState<StepNodeType[]>([]);
-  useEffect(() => setNodes(layoutNodes()), [layoutNodes]);
+      };
+    });
+    return [
+      { id: "__start", type: "start", position: { x: 0, y: 22 }, draggable: false, selectable: false, data: {} },
+      ...tiles,
+      {
+        id: "__add",
+        type: "add",
+        position: { x: (steps.length + 1) * GAP, y: 22 },
+        draggable: false,
+        selectable: false,
+        data: { onAdd: () => setPanel({ mode: "pick", at: steps.length }), empty: steps.length === 0 },
+      },
+    ];
+  }, [steps, stationById, selectedId, diagnostics, titleOf]);
 
-  const edges: Edge[] = draft.steps.slice(1).map((step, i) => ({
-    id: `${draft.steps[i].id}->${step.id}`,
-    source: draft.steps[i].id,
-    target: step.id,
+  const [nodes, setNodes] = useState<Node[]>([]);
+  useEffect(() => setNodes(layout()), [layout]);
+
+  const ids = ["__start", ...steps.map((s) => s.id), "__add"];
+  const edges: PlusEdgeType[] = ids.slice(1).map((target, i) => ({
+    id: `${ids[i]}->${target}`,
+    source: ids[i],
+    target,
+    type: "plus",
     markerEnd: { type: MarkerType.ArrowClosed, color: "#006C66" },
+    data: target === "__add" ? {} : { onInsert: () => setPanel({ mode: "pick", at: i }) },
   }));
 
-  // Refit when the sequence grows or shrinks, not on every keystroke.
   useEffect(() => {
-    const t = setTimeout(() => flow.fitView({ padding: 0.25, maxZoom: 1.1, duration: 200 }), 30);
+    const t = setTimeout(() => flow.fitView({ padding: 0.12, maxZoom: 1, duration: 200 }), 40);
     return () => clearTimeout(t);
-  }, [draft.steps.length, currentId, flow, launching || selected !== null]);
+  }, [steps.length, procedureId, panel !== null, flow]);
 
-  const setSteps = (steps: ProcedureStep[]) => setDraft((d) => ({ ...d, steps }));
-
-  function insert(step: ProcedureStep, at?: number) {
-    const index = at ?? (selected ? draft.steps.findIndex((s) => s.id === selected) + 1 : draft.steps.length);
-    const steps = [...draft.steps];
-    steps.splice(index, 0, step);
-    setSteps(steps);
-    setSelected(step.id);
-    setLaunching(false);
-  }
-
-  function move(id: string, by: number) {
-    const from = draft.steps.findIndex((s) => s.id === id);
-    const to = from + by;
-    if (from < 0 || to < 0 || to >= draft.steps.length) return;
-    const steps = [...draft.steps];
-    const [step] = steps.splice(from, 1);
-    steps.splice(to, 0, step);
-    setSteps(steps);
-  }
-
-  function removeStep(id: string) {
-    setSteps(draft.steps.filter((s) => s.id !== id));
-    setSelected(null);
-  }
-
-  /** Dropped sideways: the new order is the nodes' left-to-right order. */
   function reorderFromCanvas() {
-    const order = [...nodes].sort((a, b) => a.position.x - b.position.x).map((n) => n.id);
-    const byId = new Map(draft.steps.map((s) => [s.id, s]));
-    const steps = order.map((id) => byId.get(id)!).filter(Boolean);
-    if (steps.map((s) => s.id).join() !== draft.steps.map((s) => s.id).join()) setSteps(steps);
-    else setNodes(layoutNodes()); // snap back into line
+    const order = nodes.filter((n) => n.type === "step").sort((a, b) => a.position.x - b.position.x).map((n) => n.id);
+    const byId = new Map(steps.map((s) => [s.id, s]));
+    if (order.join() !== steps.map((s) => s.id).join()) setSteps(order.map((id) => byId.get(id)!));
+    else setNodes(layout());
   }
 
-  function onDrop(event: React.DragEvent) {
-    const name = event.dataTransfer.getData(PLAN_MIME);
-    const plan = palette.data?.plans[name];
-    if (!plan) return;
-    event.preventDefault();
-    const at = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    const index = draft.steps.filter((_, i) => i * (NODE_W + GAP) + NODE_W / 2 < at.x).length;
-    insert(newStep(plan), index);
-  }
-
-  // ---- keyboard: Delete removes the selected step ---------------------------
+  // ---- keyboard -------------------------------------------------------------
   const keys = useRef<(e: KeyboardEvent) => void>(() => {});
   keys.current = (e: KeyboardEvent) => {
     if ((e.target as HTMLElement)?.closest("input, textarea, select")) return;
-    if (e.key === "Escape") setSelected(null);
-    if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+    if (e.key === "Escape") setPanel(null);
+    if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
       e.preventDefault();
-      removeStep(selected);
+      remove(selectedId);
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+      e.preventDefault();
+      if (dirty) save.mutate();
     }
   };
   useEffect(() => {
@@ -244,31 +246,23 @@ function Designer() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // ---- save / delete / run --------------------------------------------------
+  // ---- save / run -----------------------------------------------------------
   const save = useMutation({
-    mutationFn: async (): Promise<Procedure> => {
-      const body = { ...draft, name: draft.name.trim() };
-      return currentId ? proceduresApi.update(currentId, body) : proceduresApi.create(body);
+    mutationFn: () => {
+      const d = draft!;
+      const firstStation = d.steps.find((s) => (s.type ?? "plan") === "plan")?.station_uuid ?? d.station_uuid;
+      return proceduresApi.update(procedureId, { ...d, name: d.name.trim() || saved!.name, station_uuid: firstStation });
     },
-    onSuccess: async (procedure) => {
+    onSuccess: async (p) => {
+      queryClient.setQueryData(["procedure", procedureId], p);
+      setDraft(toDraft(p));
       await queryClient.invalidateQueries({ queryKey: ["procedures"] });
-      setCurrentId(procedure.uuid);
-      setDraft(toDraft(procedure));
     },
   });
-
-  const remove = useMutation({
-    mutationFn: () => proceduresApi.remove(currentId!),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["procedures"] });
-      open(null);
-    },
-  });
-
   const start = useMutation({
     mutationFn: (sample: SampleDraft) =>
       runsApi.create({
-        procedure_uuid: currentId!,
+        procedure_uuid: procedureId,
         sample: {
           name: sample.name || undefined,
           substance: sample.substance || undefined,
@@ -284,268 +278,194 @@ function Designer() {
   });
 
   async function prepareRun() {
-    if (dirty || !currentId) {
-      if (!draft.name.trim()) return alert("Give the procedure a name first.");
-      await save.mutateAsync();
-    }
-    setSelected(null);
-    setLaunching(true);
+    if (dirty) await save.mutateAsync();
+    setPanel({ mode: "run" });
   }
 
-  const canSave = draft.name.trim() !== "" && (dirty || !currentId) && !save.isPending;
-  const selectedStep = draft.steps.find((s) => s.id === selected) ?? null;
-  const blocked = !station?.queueserver_url
-    ? "The procedure's station isn't executable."
-    : errors.length > 0
-      ? `${errors.length} error${errors.length === 1 ? "" : "s"} to fix first — see the diagnostics under the canvas.`
-      : draft.steps.length === 0
-        ? "The procedure has no steps."
+  // ---- render ---------------------------------------------------------------
+  if (procedure.isError) {
+    return (
+      <div className="screen__content">
+        <Alert kind="error">This procedure doesn&apos;t exist (any more).</Alert>
+        <p>
+          <Button onClick={() => navigate({ to: "/workflows/procedures" })}>Back to procedures</Button>
+        </p>
+      </div>
+    );
+  }
+  if (!draft || !saved) return <div className="screen__content muted">Loading…</div>;
+
+  const selected = steps.find((s) => s.id === selectedId) ?? null;
+  const selectedIndex = selected ? steps.indexOf(selected) : -1;
+  const usedStations = [...new Set(steps.filter((s) => (s.type ?? "plan") === "plan").map((s) => s.station_uuid))]
+    .map((id) => (id ? stationById.get(id)?.name : undefined))
+    .filter(Boolean)
+    .join(", ");
+  const blocked =
+    steps.length === 0
+      ? "The procedure has no steps."
+      : errors.length > 0
+        ? `${errors.length} issue${errors.length === 1 ? "" : "s"} to fix first — see Issues on the canvas.`
         : null;
 
   return (
     <>
-      <ScreenHeader
-        title="Workflow designer"
-        subtitle={
-          saved
-            ? `${saved.name} · v${saved.version}${dirty ? " · unsaved changes" : ""}`
-            : draft.name
-              ? `${draft.name} · new`
-              : "A new procedure"
-        }
-        actions={
-          <>
-            <Button onClick={() => switchTo("")}>New</Button>
-            <Button onClick={() => save.mutate()} disabled={!canSave}>
-              {save.isPending ? "Saving…" : "Save"}
-            </Button>
-            <Button variant="primary" onClick={prepareRun} disabled={draft.steps.length === 0 || save.isPending}>
-              Run
-            </Button>
-          </>
-        }
-      />
+      <header className="editor-bar">
+        <button className="editor-bar__back" onClick={() => navigate({ to: "/workflows/procedures" })} title="All procedures">
+          <Glyph name="back" size={16} />
+        </button>
+        <div className="editor-bar__title">
+          <input
+            className="editor-bar__name"
+            value={draft.name}
+            maxLength={50}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            aria-label="Procedure name"
+          />
+          <span className="editor-bar__state muted">
+            v{saved.version} · {save.isPending ? "saving…" : dirty ? "unsaved changes" : "saved"}
+          </span>
+        </div>
+        <button className="editor-bar__issues" onClick={() => setIssuesOpen((v) => !v)} title="Issues and compiled queue items">
+          {steps.length === 0 ? null : validation.isFetching && !validation.data ? (
+            <span className="muted">validating…</span>
+          ) : errors.length ? (
+            <StatusPill status={`${errors.length} error${errors.length === 1 ? "" : "s"}`} tone="error" />
+          ) : warnings.length ? (
+            <StatusPill status={`${warnings.length} warning${warnings.length === 1 ? "" : "s"}`} tone="warning" />
+          ) : steps.length ? (
+            <StatusPill status="valid" tone="ok" />
+          ) : null}
+        </button>
+        <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
+          Save
+        </Button>
+        <Button variant="primary" onClick={prepareRun} disabled={steps.length === 0 || save.isPending}>
+          <Glyph name="play" size={12} /> Run
+        </Button>
+      </header>
 
       <div className="screen">
-        <div className={launching || selectedStep ? "designer designer--inspecting" : "designer"}>
-          <aside className="designer__palette" data-inspects>
-            <div className="designer__station">
-              <p className="label">Station</p>
-              <select
-                className="field__input"
-                value={draft.station_uuid ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, station_uuid: e.target.value || null }))}
-              >
-                <option value="">Choose…</option>
-                {(stations.data ?? []).map((s) => (
-                  <option key={s.uuid} value={s.uuid} disabled={!s.queueserver_url}>
-                    {s.name}
-                    {s.queueserver_url ? "" : " (no queueserver)"}
-                  </option>
-                ))}
-              </select>
-              {stations.data && executable.length === 0 && (
-                <p className="muted step-form__hint">
-                  No station is executable yet. Give one a queueserver URL in Device Management — e.g.{" "}
-                  <span className="mono">http://station-spinbot:60610</span>.
-                </p>
-              )}
-            </div>
-            <PlanPalette
-              palette={palette.data}
-              loading={palette.isFetching && !palette.data}
-              error={palette.error as Error | null}
-              onAdd={(plan) => insert(newStep(plan))}
-              onRegister={() => register.mutate()}
-              registering={register.isPending}
-            />
-          </aside>
+        <div className={panel ? "designer designer--inspecting" : "designer"}>
+          {save.isError && <Alert kind="error">{(save.error as Error).message}</Alert>}
+          <div className="designer__canvas" data-inspects>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              onNodesChange={(changes: NodeChange[]) => setNodes((n) => applyNodeChanges(changes, n))}
+              onNodeClick={(_, node) => node.type === "step" && setPanel({ mode: "step", id: node.id })}
+              onNodeDragStop={reorderFromCanvas}
+              onPaneClick={() => panel?.mode === "step" && setPanel(null)}
+              nodesConnectable={false}
+              deleteKeyCode={null}
+              minZoom={0.2}
+              maxZoom={1.5}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background color="#DCDCDC" gap={22} />
+              <Controls showInteractive={false} position="bottom-right" />
+            </ReactFlow>
 
-          <section className="designer__main">
-            <div className="designer__bar">
-              <label className="designer__field">
-                <span className="label">Procedure</span>
-                <select className="field__input" value={currentId ?? ""} onChange={(e) => switchTo(e.target.value)}>
-                  <option value="">— new procedure —</option>
-                  {(procedures.data ?? []).map((p) => (
-                    <option key={p.uuid} value={p.uuid}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="designer__field designer__field--grow">
-                <span className="label">Name</span>
-                <input
-                  className="field__input"
-                  value={draft.name}
-                  placeholder="Name this procedure"
-                  maxLength={50}
-                  onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                />
-              </label>
-              <div className="designer__validity">
-                {validation.isFetching && !validation.data ? (
-                  <span className="muted">validating…</span>
-                ) : draft.station_uuid === null ? null : errors.length > 0 ? (
-                  <StatusPill status={`${errors.length} error${errors.length === 1 ? "" : "s"}`} tone="error" />
-                ) : warnings.length > 0 ? (
-                  <StatusPill status={`${warnings.length} warning${warnings.length === 1 ? "" : "s"}`} tone="warning" />
-                ) : draft.steps.length > 0 ? (
-                  <StatusPill status="valid" tone="ok" />
-                ) : null}
-              </div>
-              {currentId && (
-                <Button
-                  size="sm"
-                  variant="danger"
-                  onClick={() => confirm(`Delete procedure "${saved?.name}"?`) && remove.mutate()}
-                  disabled={remove.isPending}
-                >
-                  Delete
-                </Button>
-              )}
-            </div>
-
-            {save.isError && <Alert kind="error">{(save.error as Error).message}</Alert>}
-            {remove.isError && <Alert kind="error">{(remove.error as Error).message}</Alert>}
-            {validation.isError && <Alert kind="error">Validation: {(validation.error as Error).message}</Alert>}
-
-            <div className="designer__canvas" data-inspects onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-              {draft.steps.length === 0 && (
-                <div className="designer__empty">
-                  <p className="label">An empty procedure</p>
-                  <p className="muted">
-                    Click a plan in the palette, or drag one here. Steps run left to right; drag a step sideways to
-                    reorder it.
-                  </p>
+            {issuesOpen && (
+              <div className="issues">
+                <div className="designer__tabs">
+                  <button className={issuesTab === "issues" ? "designer__tab designer__tab--active" : "designer__tab"} onClick={() => setIssuesTab("issues")}>
+                    Issues ({diagnostics.length})
+                  </button>
+                  <button className={issuesTab === "items" ? "designer__tab designer__tab--active" : "designer__tab"} onClick={() => setIssuesTab("items")}>
+                    Queue items
+                  </button>
+                  <button className="issues__close" onClick={() => setIssuesOpen(false)} aria-label="Close">
+                    ×
+                  </button>
                 </div>
-              )}
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                nodeTypes={nodeTypes}
-                onNodesChange={(changes: NodeChange<StepNodeType>[]) => setNodes((n) => applyNodeChanges(changes, n))}
-                onNodeClick={(_, node) => {
-                  setSelected(node.id);
-                  setLaunching(false);
-                }}
-                onNodeDragStop={reorderFromCanvas}
-                onPaneClick={() => setSelected(null)}
-                nodesConnectable={false}
-                deleteKeyCode={null}
-                minZoom={0.2}
-                maxZoom={1.5}
-                proOptions={{ hideAttribution: true }}
-              >
-                <Background color="#DCDCDC" gap={20} />
-                <Controls showInteractive={false} />
-              </ReactFlow>
-            </div>
-
-            <div className="designer__drawer" data-inspects>
-              <div className="designer__tabs">
-                <button
-                  className={tab === "diagnostics" ? "designer__tab designer__tab--active" : "designer__tab"}
-                  onClick={() => setTab("diagnostics")}
-                >
-                  Diagnostics ({diagnostics.length})
-                </button>
-                <button
-                  className={tab === "items" ? "designer__tab designer__tab--active" : "designer__tab"}
-                  onClick={() => setTab("items")}
-                >
-                  Queue items
-                </button>
-              </div>
-              <div className="designer__drawer-body">
-                {tab === "diagnostics" ? (
-                  diagnostics.length === 0 ? (
-                    <p className="muted">
-                      {draft.station_uuid === null
-                        ? "Choose a station to validate against."
-                        : draft.steps.length
-                          ? "Nothing to report — every step validates against the station's plans."
-                          : "Add a step to start."}
-                    </p>
+                <div className="issues__body">
+                  {issuesTab === "issues" ? (
+                    diagnostics.length === 0 ? (
+                      <p className="muted">{steps.length ? "Nothing to report — every step validates." : "Add a step to start."}</p>
+                    ) : (
+                      <ul className="diagnostics">
+                        {diagnostics.map((d, i) => {
+                          const index = steps.findIndex((s) => s.id === d.step_id);
+                          return (
+                            <li key={i}>
+                              <button className="diagnostics__item" onClick={() => d.step_id && setPanel({ mode: "step", id: d.step_id })}>
+                                <StatusPill status={d.severity} tone={d.severity === "error" ? "error" : "warning"} />
+                                <span className="mono diagnostics__where">
+                                  {index >= 0 ? `${index + 1} ${titleOf(steps[index])}` : "procedure"}
+                                  {d.parameter ? ` · ${d.parameter}` : ""}
+                                </span>
+                                <span>{d.message}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )
                   ) : (
-                    <ul className="diagnostics">
-                      {diagnostics.map((d, i) => {
-                        const index = draft.steps.findIndex((s) => s.id === d.step_id);
-                        return (
-                          <li key={i}>
-                            <button className="diagnostics__item" onClick={() => d.step_id && setSelected(d.step_id)}>
-                              <StatusPill status={d.severity} tone={d.severity === "error" ? "error" : "warning"} />
-                              <span className="mono diagnostics__where">
-                                {index >= 0 ? `${index + 1} ${draft.steps[index].plan}` : "procedure"}
-                                {d.parameter ? `.${d.parameter}` : ""}
-                              </span>
-                              <span>{d.message}</span>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )
-                ) : (
-                  <pre className="designer__items mono">
-                    {JSON.stringify(previewItems(draft.steps, currentId, saved?.version ?? 1), null, 2)}
-                  </pre>
-                )}
+                    <pre className="designer__items mono">{JSON.stringify(previewItems(steps.filter((s) => (s.type ?? "plan") === "plan"), procedureId, saved.version), null, 2)}</pre>
+                  )}
+                </div>
               </div>
-            </div>
-          </section>
+            )}
+          </div>
         </div>
 
         <Inspector
-          open={launching || selectedStep !== null}
-          kind={launching ? "Run" : "Step"}
-          title={launching ? "Launch a run" : (selectedStep?.label ?? selectedStep?.plan)}
-          subtitle={launching ? undefined : selectedStep ? `step ${draft.steps.indexOf(selectedStep) + 1} of ${draft.steps.length}` : undefined}
-          onClose={() => {
-            setLaunching(false);
-            setSelected(null);
-          }}
+          open={panel !== null}
+          kind={panel?.mode === "pick" ? "Add step" : panel?.mode === "run" ? "Run" : "Step"}
+          title={panel?.mode === "pick" ? `Step ${panel.at + 1}` : panel?.mode === "run" ? "Launch a run" : selected ? titleOf(selected) : ""}
+          subtitle={selected && panel?.mode === "step" ? `step ${selectedIndex + 1} of ${steps.length}` : undefined}
+          onClose={() => setPanel(null)}
         >
-          {launching && saved ? (
+          {panel?.mode === "pick" && (
+            <NodePicker
+              stations={stations.data ?? []}
+              palettes={palettes}
+              onPlan={(plan, station) => insert(newPlanStep(plan, station.uuid), panel.at)}
+              onControl={(type) => insert(newControlStep(type), panel.at)}
+            />
+          )}
+          {panel?.mode === "run" && (
             <RunLauncher
               procedure={saved}
-              station={station}
+              stations={usedStations}
               blocked={blocked}
               warnings={warnings.length}
               starting={start.isPending}
               error={start.error as Error | null}
               onStart={(sample) => start.mutate(sample)}
-              onCancel={() => setLaunching(false)}
+              onCancel={() => setPanel(null)}
             />
-          ) : selectedStep ? (
+          )}
+          {panel?.mode === "step" && selected && (
             <>
               <div className="step-form__actions">
-                <Button size="sm" onClick={() => move(selectedStep.id, -1)} disabled={draft.steps[0] === selectedStep}>
+                <Button size="sm" onClick={() => move(selected.id, -1)} disabled={selectedIndex === 0}>
                   ← Earlier
                 </Button>
-                <Button size="sm" onClick={() => move(selectedStep.id, 1)} disabled={draft.steps.at(-1) === selectedStep}>
+                <Button size="sm" onClick={() => move(selected.id, 1)} disabled={selectedIndex === steps.length - 1}>
                   Later →
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => insert({ ...selectedStep, id: newStep({ name: selectedStep.plan, parameters: [] }).id })}
-                >
+                <Button size="sm" onClick={() => insert({ ...selected, id: newId() }, selectedIndex + 1)}>
                   Duplicate
                 </Button>
-                <Button size="sm" variant="danger" onClick={() => removeStep(selectedStep.id)}>
+                <Button size="sm" variant="danger" onClick={() => remove(selected.id)}>
                   Remove
                 </Button>
               </div>
-              <StepForm
-                step={selectedStep}
-                plan={palette.data?.plans[selectedStep.plan]}
-                diagnostics={diagnostics.filter((d) => d.step_id === selectedStep.id)}
-                registered={palette.data?.registered ?? []}
-                onChange={(step) => setSteps(draft.steps.map((s) => (s.id === step.id ? step : s)))}
+              <StepSettings
+                step={selected}
+                stations={stations.data ?? []}
+                palette={selected.station_uuid ? palettes.get(selected.station_uuid)?.data : undefined}
+                diagnostics={diagnostics.filter((d) => d.step_id === selected.id)}
+                refs={referencesBefore(steps, selectedIndex)}
+                onChange={(step) => setSteps(steps.map((s) => (s.id === step.id ? step : s)))}
               />
             </>
-          ) : null}
+          )}
         </Inspector>
       </div>
     </>

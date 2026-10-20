@@ -15,9 +15,10 @@ experiments itself; it administers and dispatches to Bluesky/EPICS, which do.
   milestone record for everything already built. Read this for "why is it
   built this way."
 - **[API reference](API.md)** — the backend's endpoints, plainly listed.
-- **[Bluesky station pods](BLUESKY.md)** — how stations execute: ophyd
-  devices over instrument drivers, plan libraries, connecting a pod to
-  EPIChem's workflow manager.
+- **[Bluesky station pods](BLUESKY.md)** — the `epichem-pod` package:
+  a station in a few lines (`pip install`, `expose()` your drivers,
+  `serve`), auto-discovery, ophyd devices and plan libraries, connecting a
+  pod to EPIChem.
 
 ## Reference
 

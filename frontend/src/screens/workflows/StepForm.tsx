@@ -8,7 +8,9 @@
 
 import type { Diagnostic, PlanParameter, PlanRepr, ProcedureStep } from "../../api/types";
 import { Field, FieldGroup } from "../../components/Inspector";
-import { enumOptions, inputKind, isDeviceParameter, isRequired, parametersOf } from "./plans";
+import { enumOptions, inputKind, isDeviceParameter, isRequired, isTemplate, parametersOf } from "./plans";
+
+type Ref = { value: string; label: string };
 
 interface StepFormProps {
   step: ProcedureStep;
@@ -16,9 +18,16 @@ interface StepFormProps {
   diagnostics: Diagnostic[];
   registered: string[];
   onChange: (step: ProcedureStep) => void;
+  /** Hide the step label (a one-off run has nothing to label). */
+  bare?: boolean;
+  /** Parameters set by context — e.g. the device a card's action belongs to —
+   * shown, but not editable. */
+  fixed?: string[];
+  /** Earlier steps' outputs a parameter can take its value from. */
+  refs?: Ref[];
 }
 
-export function StepForm({ step, plan, diagnostics, registered, onChange }: StepFormProps) {
+export function StepForm({ step, plan, diagnostics, registered, onChange, bare = false, fixed = [], refs = [] }: StepFormProps) {
   const set = (name: string, value: unknown) => {
     const kwargs = { ...step.kwargs };
     if (value === null || value === undefined || value === "") delete kwargs[name];
@@ -42,6 +51,7 @@ export function StepForm({ step, plan, diagnostics, registered, onChange }: Step
         </p>
       ))}
 
+      {!bare && (
       <FieldGroup title="Step">
         <Field label="Label">
           <input
@@ -52,19 +62,27 @@ export function StepForm({ step, plan, diagnostics, registered, onChange }: Step
           />
         </Field>
       </FieldGroup>
+      )}
 
       {plan && parametersOf(plan).length > 0 && (
         <FieldGroup title="Parameters">
-          {parametersOf(plan).map((p) => (
+          {parametersOf(plan).map((p) =>
+            fixed.includes(p.name) ? (
+              <Field key={p.name} label={p.name}>
+                <span className="mono">{String(step.kwargs[p.name] ?? "")}</span>
+              </Field>
+            ) : (
             <ParameterInput
               key={p.name}
               parameter={p}
               value={step.kwargs[p.name]}
               registered={registered}
+              refs={refs}
               diagnostics={diagnostics.filter((d) => d.parameter === p.name)}
               onChange={(value) => set(p.name, value)}
             />
-          ))}
+            ),
+          )}
         </FieldGroup>
       )}
     </>
@@ -75,12 +93,14 @@ function ParameterInput({
   parameter: p,
   value,
   registered,
+  refs,
   diagnostics,
   onChange,
 }: {
   parameter: PlanParameter;
   value: unknown;
   registered: string[];
+  refs: Ref[];
   diagnostics: Diagnostic[];
   onChange: (value: unknown) => void;
 }) {
@@ -90,7 +110,17 @@ function ParameterInput({
   const range = [p.min !== undefined && `≥ ${p.min}`, p.max !== undefined && `≤ ${p.max}`].filter(Boolean).join(", ");
 
   let input;
-  if (kind === "enum") {
+  if (isTemplate(value)) {
+    // Filled in at run time from an earlier step.
+    input = (
+      <div className="ref-value">
+        <span className="mono">{refs.find((r) => r.value === value)?.label ?? String(value)}</span>
+        <button type="button" className="ref-value__clear" onClick={() => onChange(null)} title="Type a value instead">
+          ×
+        </button>
+      </div>
+    );
+  } else if (kind === "enum") {
     const device = isDeviceParameter(p);
     input = (
       <select className="field__input" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value || null)}>
@@ -142,7 +172,24 @@ function ParameterInput({
 
   return (
     <Field label={label}>
-      {input}
+      <div className="param-row">
+        {input}
+        {refs.length > 0 && kind !== "enum" && !isTemplate(value) && (
+          <select
+            className="param-row__ref"
+            value=""
+            title="Take the value from an earlier step"
+            onChange={(e) => e.target.value && onChange(e.target.value)}
+          >
+            <option value="">from step…</option>
+            {refs.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
       {(p.description || range) && (
         <p className="step-form__hint">
           {p.description}

@@ -26,7 +26,7 @@ from typing import Any
 
 import yaml
 
-from drivers.load import build_driver
+from epichem_pod.drivers.load import build_driver
 
 from .lab import DEVICE_TYPES
 

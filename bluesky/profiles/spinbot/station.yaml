@@ -14,28 +14,28 @@ station: spinbot
 devices:
   arm:
     type: arm
-    driver: drivers.sim:SimArm
+    driver: epichem_pod.drivers.sim:SimArm
     args: {ip: 192.168.10.20, speed_ratio: 50, acceleration_ratio: 50, robot_safe_height: 180, gripper_IO_pins: [22, 21]}
     connect: true
   pipette:
     type: pipette
-    driver: drivers.sim:SimPipette
+    driver: epichem_pod.drivers.sim:SimPipette
     args: {ip: 192.168.10.21, port: 2000}
     options:
       deck_geometry: {deck_geometry_index: 0, end_traverse_position: 0, beginning_of_tip_picking_position: 1200, position_of_tip_deposit: 1400}
   hotplate1:
     type: hotplate
-    driver: drivers.sim:SimHotplate
+    driver: epichem_pod.drivers.sim:SimHotplate
     args: {ip: 192.168.10.22, port: 4001, hotplate_number: 1, T_max: 300}
     options: {number: 1, tolerance_c: 2, timeout_s: 1800, poll_s: 5}
   hotplate2:
     type: hotplate
-    driver: drivers.sim:SimHotplate
+    driver: epichem_pod.drivers.sim:SimHotplate
     args: {ip: 192.168.10.22, port: 4002, hotplate_number: 2, T_max: 300}
     options: {number: 2, tolerance_c: 2, timeout_s: 1800, poll_s: 5}
   spincoater:
     type: spincoater
-    driver: drivers.sim:SimSpincoater
+    driver: epichem_pod.drivers.sim:SimSpincoater
 
 positions:
   safe_home_pos: [250, 0, 180, 0]

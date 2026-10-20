@@ -2,7 +2,7 @@
 
     devices:
       arm:
-        driver: drivers.sim:SimArm          # or e.g. mylab.dobot_driver:DobotM1
+        driver: epichem_pod.epichem_pod.drivers.sim:SimArm          # or e.g. mylab.dobot_driver:DobotM1
         args: {ip: 192.168.10.20, speed_ratio: 50}
         connect: true                        # call .connect() after construction
 

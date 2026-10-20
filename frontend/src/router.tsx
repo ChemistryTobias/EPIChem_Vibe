@@ -127,9 +127,12 @@ const layoutRoute = createRoute({
   ),
 });
 
+/** `?station=<uuid>` picks the station shown. */
 const monitoringRoute = createRoute({
   getParentRoute: () => deviceMgmtRoute,
   path: "monitoring",
+  validateSearch: (search: Record<string, unknown>): { station?: string } =>
+    typeof search.station === "string" ? { station: search.station } : {},
   component: DeviceMonitoringScreen,
 });
 
@@ -148,11 +151,50 @@ const workflowsRoute = createRoute({
   component: Outlet,
 });
 
+const LAST_PROCEDURE_KEY = "epichem.lastProcedure";
+
+/** The procedure the designer last had open, for the nav's Designer entry. */
+export function lastProcedure(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_PROCEDURE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function rememberProcedure(uuid: string | null): void {
+  try {
+    if (uuid) window.localStorage.setItem(LAST_PROCEDURE_KEY, uuid);
+    else window.localStorage.removeItem(LAST_PROCEDURE_KEY);
+  } catch {
+    // nothing useful to do
+  }
+}
+
 const workflowsIndexRoute = createRoute({
   getParentRoute: () => workflowsRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/workflows/designer" });
+    throw redirect({ to: "/workflows/procedures" });
+  },
+});
+
+/** The library: find, create, duplicate, open. */
+const proceduresRoute = createRoute({
+  getParentRoute: () => workflowsRoute,
+  path: "procedures",
+  component: lazyRouteComponent(() => import("./screens/workflows/ProceduresScreen"), "ProceduresScreen"),
+});
+
+/** Bare /workflows/designer opens the last procedure, or the library. */
+const designerIndexRoute = createRoute({
+  getParentRoute: () => workflowsRoute,
+  path: "designer",
+  beforeLoad: () => {
+    const last = lastProcedure();
+    throw last
+      ? redirect({ to: "/workflows/designer/$procedureId", params: { procedureId: last } })
+      : redirect({ to: "/workflows/procedures" });
   },
 });
 
@@ -160,7 +202,7 @@ const workflowsIndexRoute = createRoute({
 // the rest of the app put together. The other screens shouldn't pay for it.
 const designerRoute = createRoute({
   getParentRoute: () => workflowsRoute,
-  path: "designer",
+  path: "designer/$procedureId",
   component: lazyRouteComponent(() => import("./screens/workflows/DesignerScreen"), "DesignerScreen"),
 });
 
@@ -178,7 +220,7 @@ const legacyWorkflowRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workflow",
   beforeLoad: () => {
-    throw redirect({ to: "/workflows/designer" });
+    throw redirect({ to: "/workflows/procedures" });
   },
 });
 
@@ -191,7 +233,7 @@ const routeTree = rootRoute.addChildren([
     monitoringRoute,
   ]),
   samplesRoute,
-  workflowsRoute.addChildren([workflowsIndexRoute, designerRoute, runsRoute]),
+  workflowsRoute.addChildren([workflowsIndexRoute, proceduresRoute, designerIndexRoute, designerRoute, runsRoute]),
   legacyWorkflowRoute,
 ]);
 

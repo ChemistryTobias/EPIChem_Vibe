@@ -1,1 +1,2 @@
-profiles/*/existing_plans_and_devices.yaml
+**/.epichem-pod/
+*.egg-info/

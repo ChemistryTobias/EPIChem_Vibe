@@ -96,11 +96,28 @@ class SimArm(_Simulated):
         self._pose = [float(x), float(y), float(z), float(r)]
 
     def jump(self, x: float, y: float, z: float, r: float, is_queued: bool = True) -> None:
-        """Lift to the safe height, travel, lower -- the move for anything carried."""
+        """Lift to the safe height, travel, lower -- the move for anything carried.
+
+        Args:
+            x (float, [-400, 400]): X in mm.
+            y (float, [-400, 400]): Y in mm.
+            z (float, [0, 245]): Z in mm.
+            r (float, [-180, 180]): End-effector rotation in deg.
+            is_queued (bool): Queue on the controller (always true here).
+        """
         self._check()
         self._travel([x, y, z, r], lift=True)
 
     def move_linear(self, x: float, y: float, z: float, r: float, is_queued: bool = True) -> None:
+        """Move in a straight line.
+
+        Args:
+            x (float, [-400, 400]): X in mm.
+            y (float, [-400, 400]): Y in mm.
+            z (float, [0, 245]): Z in mm.
+            r (float, [-180, 180]): End-effector rotation in deg.
+            is_queued (bool): Queue on the controller (always true here).
+        """
         self._check()
         self._travel([x, y, z, r], lift=False)
 
@@ -108,7 +125,15 @@ class SimArm(_Simulated):
         self.move_linear(x, y, z, r)
 
     def jump_angle(self, j1: float, j2: float, j3: float, j4: float, is_queued: bool = True) -> None:
-        """Jump to joint angles (j3 = height in mm)."""
+        """Jump to joint angles.
+
+        Args:
+            j1 (float, [-180, 180]): Joint 1 in deg.
+            j2 (float, [-180, 180]): Joint 2 in deg.
+            j3 (float, [0, 245]): Joint 3 (height) in mm.
+            j4 (float, [-360, 360]): Joint 4 in deg.
+            is_queued (bool): Queue on the controller (always true here).
+        """
         self._check()
         a1, a12 = math.radians(j1), math.radians(j1 + j2)
         x = self.L1 * math.cos(a1) + self.L2 * math.cos(a12)
@@ -116,6 +141,13 @@ class SimArm(_Simulated):
         self._travel([x, y, j3, j4], lift=True)
 
     def gripper(self, is_open: bool, open_pin: int | None = None, close_pin: int | None = None) -> None:
+        """Open or close the gripper.
+
+        Args:
+            is_open (bool): True opens, false closes.
+            open_pin (int, [0, 23]): Digital output that opens it (default from setup).
+            close_pin (int, [0, 23]): Digital output that closes it (default from setup).
+        """
         self._check()
         _sleep(0.4)
         self._gripper_open = bool(is_open)
@@ -159,10 +191,12 @@ class SimPipette(_Simulated):
         return "disconnected (simulated)"
 
     def initialize_dosing_drive(self) -> None:
+        """Initialise the dosing drive (empties and drops any tip)."""
         _sleep(1.0)
         self._tip, self._held, self._initialized = False, 0, True
 
     def initialize_z_drive(self) -> None:
+        """Move the z-drive to its origin."""
         _sleep(0.5)
         self._z = 0
 
@@ -174,11 +208,23 @@ class SimPipette(_Simulated):
             raise PipetteError(51)
 
     def move_z_drive(self, position: int = 0, speed: int = 1) -> None:
+        """Move the z-drive.
+
+        Args:
+            position (int, [0, 2800]): Target height above the origin, 0.1 mm.
+            speed (int, [0, 1]): 0 slow, 1 normal.
+        """
         self._ready()
         _sleep(abs(position - self._z) / 1000)
         self._z = position
 
     def pick_up_tip(self, tip_type_index: int = 0, deck_geometry_index: int = 0) -> None:
+        """Pick up a tip at the current position.
+
+        Args:
+            tip_type_index (int, [0, 15]): Tip type table index.
+            deck_geometry_index (int, [0, 99]): Deck geometry table index.
+        """
         self._ready()
         if self._tip:
             raise PipetteError(76)
@@ -186,6 +232,11 @@ class SimPipette(_Simulated):
         self._tip = True
 
     def discard_tip(self, deck_geometry_index: int = 0) -> None:
+        """Discard the tip at the current position.
+
+        Args:
+            deck_geometry_index (int, [0, 99]): Deck geometry table index.
+        """
         self._ready()
         if not self._tip:
             raise PipetteError(75)
@@ -193,6 +244,11 @@ class SimPipette(_Simulated):
         self._tip, self._held = False, 0
 
     def aspirate(self, aspiration_volume: int = 0, **params) -> int:
+        """Aspirate at the current position.
+
+        Args:
+            aspiration_volume (int, [0, 3000]): Volume in 0.1 uL.
+        """
         self._ready()
         if not self._tip:
             raise PipetteError(75)
@@ -203,6 +259,11 @@ class SimPipette(_Simulated):
         return params.get("liquid_surface", 0)
 
     def dispense(self, dispensing_volume: int = 0, **params) -> int:
+        """Dispense at the current position.
+
+        Args:
+            dispensing_volume (int, [0, 3000]): Volume in 0.1 uL.
+        """
         self._ready()
         if not self._tip:
             raise PipetteError(75)
@@ -256,6 +317,11 @@ class SimHotplate(_Simulated):
         return float(self._setpoint)
 
     def set_temperature_setpoint(self, T_SET: int) -> str:
+        """Adjust the temperature setpoint.
+
+        Args:
+            T_SET (int, [0, 300]): Temperature setpoint [degC].
+        """
         assert 0 <= T_SET <= self.T_max, f"Temperature setpoint must be between 0 and {self.T_max} °C."
         with self._lock:
             self._advance()
@@ -263,27 +329,36 @@ class SimHotplate(_Simulated):
         return f"T_SET = {T_SET} °C"
 
     def start_heating(self) -> str:
+        """Start the heater."""
         with self._lock:
             self._advance()
             self._heating = True
         return "Heating ON"
 
     def stop_heating(self) -> str:
+        """Stop the heater."""
         with self._lock:
             self._advance()
             self._heating = False
         return "Heating OFF"
 
     def set_stirring_speed_setpoint(self, stirSpeed_SET: int) -> str:
+        """Adjust the stirring speed setpoint.
+
+        Args:
+            stirSpeed_SET (int, [0, 1500]): Stirring speed [rpm].
+        """
         assert 0 <= stirSpeed_SET <= 1500, "Stirring speed setpoint must be between 0 and 1500 rpm."
         self._rpm_set = stirSpeed_SET
         return f"RPM_SET = {stirSpeed_SET} rpm"
 
     def start_stirring(self) -> str:
+        """Start the stirrer motor."""
         self._stirring = True
         return "Stirrer motor START"
 
     def stop_stirring(self) -> str:
+        """Stop the stirrer motor."""
         self._stirring = False
         return "Stirrer motor STOP"
 
@@ -308,6 +383,12 @@ class SimSpincoater(_Simulated):
         self._lid_homed = True
 
     def set_spinning_parameter(self, speed: int = 1000, acceleration: int = 300) -> None:
+        """Set the spin profile.
+
+        Args:
+            speed (int, [1, 10000]): Target speed [rpm].
+            acceleration (int, [1, 10000]): Ramp [rpm/s].
+        """
         if not 0 < speed <= 10000:
             raise ValueError("Spin speed must be 1-10000 rpm.")
         if not 0 < acceleration <= 10000:
@@ -315,11 +396,13 @@ class SimSpincoater(_Simulated):
         self._target, self._acceleration = speed, acceleration
 
     def start_spinning(self) -> None:
+        """Ramp up to the set speed."""
         _sleep(self._target / self._acceleration)
         self._speed = float(self._target)
         self._lid_homed = False
 
     def stop_spinning(self) -> None:
+        """Ramp down to standstill."""
         _sleep(self._speed / self._acceleration)
         self._speed = 0.0
 

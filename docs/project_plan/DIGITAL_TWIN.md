@@ -45,7 +45,7 @@ good Python bindings for a backend service, and Z-up like our backend.
 - The axis conversion (backend Z-up ↔ three.js Y-up) happens in exactly one
   place, `rectOf()` in `levels.ts`.
 - Station pods already split *driver* from *ophyd device*
-  (`bluesky/epichem_devices/lab.py`), so a simulated instrument is a
+  (`bluesky/epichem_pod/devices/lab.py`), so a simulated instrument is a
   config change — which is how the twin will plug into execution (T4).
 
 ## Stages

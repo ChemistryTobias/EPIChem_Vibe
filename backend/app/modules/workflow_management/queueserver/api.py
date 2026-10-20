@@ -140,6 +140,15 @@ def get_queue(identifier: str, session: SessionDepends, user: CurrentUser) -> di
     }
 
 
+@router.get("/readings")
+def get_readings(identifier: str, session: SessionDepends, user: CurrentUser) -> dict[str, Any]:
+    """Live readings of every device in the station's pod (via its `read_devices`
+    function), each with its timestamp -- for Device Monitoring. Needs the
+    worker environment open."""
+    client = station_client(identifier, session, user)
+    return client.call_function("read_devices") or {}
+
+
 @router.post("/environment/open", status_code=204)
 def open_environment(identifier: str, session: SessionDepends, user: CurrentUser):
     """Start the station's worker (loads its devices and plans)."""

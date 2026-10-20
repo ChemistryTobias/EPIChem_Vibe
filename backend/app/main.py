@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.core.database import Database, engine
@@ -9,8 +11,17 @@ from app.modules.router import router as modules_router
 # Importing routers (see above) pulls in their table schemas as well
 Database.metadata.create_all(engine)
 
-# Creates the FastAPI aplication 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Runs advance in the background (Roadmap 2.2's dispatch layer).
+    from app.modules.workflow_management.runs import orchestrator
+
+    orchestrator.start()
+    yield
+
+
+# Creates the FastAPI aplication
+app = FastAPI(lifespan=lifespan)
 
 # Adds endpoints/routes and HTTP exception handlers
 install_exception_handlers(app)

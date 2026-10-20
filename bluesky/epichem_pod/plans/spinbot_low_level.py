@@ -1,12 +1,12 @@
 """Spinbot, low level: one plan per device action -- arm moves, gripper,
 pipette, hotplates, spin coater. For building new operations and for
-debugging; scientists mostly want `epichem_plans.spinbot`."""
+debugging; scientists mostly want `epichem_pod.plans.spinbot`."""
 
 import bluesky.plans as bp
 from bluesky_queueserver import parameter_annotation_decorator
 
-from epichem_devices.lab import do
-from epichem_devices.station import Station
+from epichem_pod.devices.lab import do
+from epichem_pod.devices.station import Station
 
 
 def build(station: Station) -> dict:

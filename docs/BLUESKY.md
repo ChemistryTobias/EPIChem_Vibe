@@ -15,29 +15,86 @@ EPIChem console ──► EPIChem API ──HTTP (ApiKey)──► bluesky-https
  (designer, runs)    (procedures,                    (one per station pod)                  │
                       runs, samples)                                                RunEngine + plans
                                                                                             │
-                                                                       ophyd Devices (epichem_devices)
+                                                                         ophyd Devices (epichem_pod)
                                                                                             │
                                                                      drivers (sim, or the real instrument)
 ```
 
-## What's in a pod
+## Quick start: a pod in three commands
 
-One image ([`bluesky/Dockerfile`](../bluesky/Dockerfile)) runs
-bluesky-queueserver (RE Manager + worker) and bluesky-httpserver. Which
-station it is comes from `STATION_PROFILE`, a directory under
-`bluesky/profiles/`:
+A pod is a pip package, [`epichem-pod`](../bluesky) — like IvoryOS, you point
+it at the Python objects you already drive your instruments with and it does
+the rest:
+
+```bash
+pip install "epichem-pod @ git+https://github.com/ChemistryTobias/EPIChem_Vibe#subdirectory=bluesky"
+epichem-pod init my-station            # my-station/station.py (+ Dockerfile, compose.yaml)
+epichem-pod serve my-station/station.py --epichem http://<epichem-host>:8000 --api-key <pod key>
+```
+
+`station.py` is plain Python: create your drivers, call `expose(globals())`:
+
+```python
+from epichem_pod import expose
+from mylab.ika import HotplateDriver
+
+hotplate = HotplateDriver("192.168.10.22", 4001, hotplate_number=1, T_max=300)
+expose(globals())
+```
+
+`expose()` turns every driver object into an **ophyd device** and every
+public method into a **Bluesky plan**:
+
+- methods named `get_*`, `read_*`, `request_*`, `is_*`, `has_*` that need no
+  arguments are the device's **readings** (live in Device Monitoring);
+- every other public method becomes a plan `<device>_<method>`
+  (`hotplate_set_temperature_setpoint`), in the library
+  *`<device>` · low level*. Its parameters, defaults, description and
+  `[min, max]` ranges come from the signature and the docstring (Google,
+  NumPy or Sphinx style: `T_SET (int, [0, 300]): Temperature setpoint
+  [degC].`);
+- `read_devices` (what the readings endpoint calls) and a `RunEngine` are
+  added if you didn't define them.
+
+Plans you write below `expose()` (composing the generated ones) are your
+station's high-level library. `epichem-pod discover station.py` prints what
+was found without starting anything.
+
+`serve` runs everything: Redis (starts `redis-server` if none is running),
+the queueserver's RE Manager over your script, bluesky-httpserver on
+`--port` (60610), opens the worker, and with `--epichem` **announces the pod
+every 30 s**. In the console, **Device Management → Hierarchy → New device**
+opens *Discover*: the pod is listed with its devices and plans; **Add as
+station** (in a lab) or **Link to station** creates/wires the station and
+registers its devices — a person confirms, nothing is adopted automatically
+(plan §6.2). A pod that can't reach EPIChem can be added by **Probe an
+address** instead. Announcements must carry the shared pod key
+(`EPICHEM_QSERVER_API_KEY`); `--public-url` sets the address EPIChem should
+use if it differs from what the pod guesses.
+
+`init` also writes a `Dockerfile` and `compose.yaml`, so the same station
+runs in a container (`docker compose up`); every `serve` option reads an
+environment variable (`EPICHEM_URL`, `EPICHEM_POD_URL`, `STATION_NAME`,
+`QSERVER_HTTP_SERVER_SINGLE_USER_API_KEY`, …).
+
+## What's in the package
 
 | Path | What it is |
 |---|---|
-| `drivers/` | Instrument drivers. `drivers/sim.py` has simulators with the method surface of real lab drivers (SCARA arm + gripper, pipetting module, hotplate, spin coater). `drivers/load.py` builds a driver from a config entry. |
-| `epichem_devices/lab.py` | Wraps any driver as an **ophyd Device**: each driver call becomes a `Movable` (`DriverAction`) whose Status reports how the call went. |
-| `epichem_devices/station.py` | Loads a station's `station.yaml`: devices, named teach points, settings. |
-| `epichem_devices/ramp.py` | Self-contained soft devices for the synthesis demo. |
-| `epichem_plans/` | Plan libraries. One module per library; the palette groups by module. |
-| `profiles/<station>/` | The queueserver startup profile: `00-devices.py`, `05-run-engine.py`, `10-plans.py`, `user_group_permissions.yaml`, and (spinbot) `station.yaml`. |
+| `epichem_pod/auto.py` | `expose()`: drivers → ophyd devices + plans, docstring parsing. |
+| `epichem_pod/cli.py` | `epichem-pod init / discover / serve`, the announce heartbeat. |
+| `epichem_pod/drivers/` | `sim.py`: simulators with the method surface of real lab drivers (SCARA arm + gripper, pipetting module, hotplate, spin coater). `load.py` builds a driver from a config entry. |
+| `epichem_pod/devices/lab.py` | Hand-written ophyd wrappers: each driver call becomes a `Movable` (`DriverAction`) whose Status reports how the call went; `do()` runs one and re-raises the driver's error. |
+| `epichem_pod/devices/station.py` | Loads a profile's `station.yaml`: devices, named teach points, settings. |
+| `epichem_pod/devices/ramp.py`, `readings.py` | Soft devices for the synthesis demo; the `read_devices` function. |
+| `epichem_pod/plans/` | The demo stations' plan libraries. One module per library; the palette groups by module. |
+| `epichem_pod/templates/` | What `init` writes. |
+| `profiles/<station>/` | Demo stations. `bench/station.py` is the `expose()` style; `spinbot/` and `synthesis/` are full queueserver profile directories (`00-devices.py`, `05-run-engine.py`, `10-plans.py`, `20-functions.py`, `station.yaml`) — `serve` accepts either. |
 
-Two profiles ship:
+Three demo stations ship:
 
+- **`bench`** — a hotplate and a pipette, simulated, exposed automatically,
+  plus one hand-written plan (`warm_up`). Start here.
 - **`spinbot`** — a spin-coating robot station: SCARA arm with gripper and
   pipette, two hotplates, a spin coater, vial and tip racks. Two plan
   libraries:
@@ -56,24 +113,29 @@ Two profiles ship:
   `stir`, `dispense`, `hold`, `measure_absorbance`, `temperature_series`,
   plus bluesky's stock `count`/`scan`.
 
-## Run it
+## Run the demo
 
 ```bash
-docker compose up          # api, web, db, redis, station-spinbot, station-synthesis
+docker compose up          # api, web, db, redis, station-spinbot, station-synthesis, station-bench
 ```
 
-Then in the console:
+The pods announce themselves to the API (`EPICHEM_URL=http://api:8000`).
+In the console:
 
-1. **Device Management → Hierarchy → a station → edit**: set *Queueserver
-   URL* to `http://station-spinbot:60610` (or `http://station-synthesis:60610`).
-   Running the API on the host instead of in compose? Use
-   `http://localhost:60610` / `http://localhost:60611`.
-2. The station inspector's **Execution** section shows the pod's state and
-   devices; **Register devices** creates a registry Device for each pod
-   device (linked by its `ophyd_name`).
-3. **Workflows → Designer**: pick the station; its plans are the palette.
-   Compose steps, fix what validation flags, **Save**, **Run**.
-4. **Workflows → Runs** follows the run; **Samples** has the sample it made.
+1. **Device Management → Hierarchy → New device**: the pods are listed;
+   add each as a station (or link it to an existing one). Or set a station's
+   *Queueserver URL* by hand (`http://station-spinbot:60610`; from the host,
+   `http://localhost:60610` / `60611` / `60612`).
+2. **Device Monitoring**: pick a station — its state, queue, live device
+   readings, its **station plans** and each device's **actions**; click one
+   to run it right there (a *manual run*, recorded under Runs). *Open
+   environment* / *Start queue* when the pod needs it.
+3. **Workflows → Procedures**: search, create, duplicate; open one in the
+   **Designer** — add plan steps from any station, plus *Wait*, *Input*
+   (asks the operator, values usable by later steps) and *HTTP request*
+   steps. **Save**, **Run**.
+4. **Workflows → Runs** follows the run (and is where Input steps are
+   answered); **Samples** has the sample it made.
 
 Simulated instruments run `EPICHEM_SIM_SPEED` times faster than real time
 (default 10).
@@ -81,13 +143,9 @@ Simulated instruments run `EPICHEM_SIM_SPEED` times faster than real time
 ### Without Docker
 
 ```bash
-cd bluesky
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
-redis-server --daemonize yes
-export PYTHONPATH=$PWD STATION_PROFILE=spinbot STARTUP_DIR=$PWD/profiles/spinbot
-EPICHEM_LISTING=1 .venv/bin/qserver-list-plans-devices --startup-dir $STARTUP_DIR --file-dir $STARTUP_DIR
-.venv/bin/start-re-manager --startup-dir $STARTUP_DIR --redis-addr localhost:6379 --redis-name-prefix qs_spinbot &
-QSERVER_HTTP_SERVER_SINGLE_USER_API_KEY=epichemdevkey .venv/bin/uvicorn --port 60610 bluesky_httpserver.server:app
+cd bluesky && python -m venv .venv && .venv/bin/pip install -e .
+.venv/bin/epichem-pod serve profiles/bench/station.py --api-key epichemdevkey --epichem http://localhost:8000
+.venv/bin/epichem-pod serve profiles/spinbot --port 60610 --zmq-port 60615 --api-key epichemdevkey   # another terminal
 ```
 
 The backend must send the same key: `EPICHEM_QSERVER_API_KEY=epichemdevkey`.
@@ -102,7 +160,7 @@ Add an entry under `devices:` in the profile's `station.yaml`:
 devices:
   hotplate3:
     type: hotplate                       # arm | pipette | hotplate | spincoater
-    driver: drivers.sim:SimHotplate      # module:Class
+    driver: epichem_pod.drivers.sim:SimHotplate      # module:Class
     args: {ip: 192.168.10.22, port: 4003, hotplate_number: 3, T_max: 300}
     options: {number: 3, tolerance_c: 2, timeout_s: 1800, poll_s: 5}
 ```
@@ -111,6 +169,10 @@ Restart the pod. `hotplate3` is now in `devices_allowed`, in every
 hotplate parameter's dropdown, and registrable in EPIChem.
 
 ### Connecting a real driver
+
+With `expose()` there's nothing to connect — the driver *is* the device.
+The rest of this section is for the hand-written wrappers the spinbot
+profile uses, where plans address a fixed method surface.
 
 A wrapper only calls methods; it never cares what's behind them. To drive a
 real instrument, point `driver:` at a class with the same methods and give
@@ -135,12 +197,12 @@ What each wrapper calls on its driver:
 | `spincoater` | `set_spinning_parameter(speed, acceleration)`, `start_spinning()`, `stop_spinning()`, `move_to_home_position()`, optional `get_speed()` |
 
 If a driver's names differ, write a ten-line adapter class rather than
-changing the wrapper. Put the driver package next to `drivers/` (or
-`pip install` it in the Dockerfile) so `module:Class` imports.
+changing the wrapper. `pip install` the driver package into the pod's environment (or the
+Dockerfile) so `module:Class` imports.
 
 Drivers raise on failure — and that message is what EPIChem shows on the
 failed run (`pipette_aspirate: PipetteError: 75 - No tip present`), because
-plans move devices through `epichem_devices.lab.do()`, which re-raises the
+plans move devices through `epichem_pod.devices.lab.do()`, which re-raises the
 driver's own exception instead of a bare Status. A driver call blocks its
 worker thread, not the RunEngine: pause/abort land between calls, never in
 the middle of a physical move — hardware interlocks are the safety layer
@@ -148,7 +210,7 @@ the middle of a physical move — hardware interlocks are the safety layer
 
 ### A new instrument type
 
-In `epichem_devices/lab.py`: subclass `DriverDevice`, add state `Signal`s
+In `epichem_pod/devices/lab.py`: subclass `DriverDevice`, add state `Signal`s
 (what readings record), one `action("...")` per driver call you want plans
 to use, the small methods that do unit conversion, and a `refresh()` that
 re-reads state. Register it in `DEVICE_TYPES`. Pattern:
@@ -204,8 +266,8 @@ def heat(heater, setpoint_c: float, wait: bool = True):
 
 ### Two levels, two libraries
 
-Put the single device actions in `epichem_plans/<station>_low_level.py` and
-the operations composed from them in `epichem_plans/<station>.py`. The
+Put the single device actions in `epichem_pod/plans/<station>_low_level.py` and
+the operations composed from them in `epichem_pod/plans/<station>.py`. The
 queueserver reports each plan's module, and the designer groups by it —
 *Spinbot* first, *Spinbot · low level* after. A high-level plan is just a
 generator calling the low-level steps (`yield from pickup_tip(1, 5)`), so the
@@ -260,8 +322,11 @@ directly. Long term these belong on the station's own record
 - **Edit → restart**: compose bind-mounts `bluesky/`'s code and profiles;
   `docker compose restart station-spinbot` picks up a change, and the
   designer's palette follows.
-- **A failed step stops the station's queue** (queueserver behaviour).
-  EPIChem marks the run failed, quarantines its sample, and removes the run's
-  remaining steps from the queue so they don't fire on the next start.
+- **Generated plans take positional or keyword arguments** — the queueserver
+  may send either; they're bound to the driver method's signature.
+- **A failed step stops the station's queue** (queueserver behaviour, which
+  also puts the failed item back at the front of the queue). EPIChem marks
+  the run failed, quarantines its sample, and removes the failed item and the
+  run's remaining steps from the queue so they don't fire on the next start.
 - **Permissions**: `user_group_permissions.yaml` decides what the HTTP
   server's user group may see and run — and so what the palette offers.

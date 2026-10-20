@@ -16,7 +16,7 @@ register it in `DEVICE_TYPES`, and use it from plans.
 
 import threading
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 import bluesky.plan_stubs as bps
 from bluesky.utils import FailedStatus
@@ -28,15 +28,17 @@ from ophyd.status import DeviceStatus, Status
 class DriverAction(Signal):
     """One driver call, exposed as a Movable. The value is the last arguments sent."""
 
-    def __init__(self, *args, call: str, **kwargs):
+    def __init__(self, *args, call: str, on_driver: bool = False, **kwargs):
         kwargs.setdefault("value", None)
         kwargs.setdefault("kind", "omitted")
         super().__init__(*args, **kwargs)
         self._call = call
+        self._on_driver = on_driver
 
     def set(self, value, **kwargs):
         device = self.parent
-        method = getattr(device, self._call)
+        # A wrapper's own method, or (auto-discovered devices) the driver's directly.
+        method = getattr(device.driver if self._on_driver else device, self._call)
         status = Status(obj=self)
 
         def work():
@@ -73,11 +75,12 @@ def do(target, value=None):
         raise RuntimeError(f"{target.name}: {type(cause).__name__}: {cause}") from failure
 
 
-def action(call: str) -> Cpt:
-    """A DriverAction component. `kind="omitted"` must be passed here -- a
+def action(call: str, *, on_driver: bool = False) -> Cpt:
+    """A DriverAction component: `call` names a method of the device (or, with
+    `on_driver`, of its driver). `kind="omitted"` must be passed here -- a
     Component hands its own default kind (normal) to the Signal, and an action
     in a device's readings would break every `trigger_and_read`."""
-    return Cpt(DriverAction, call=call, kind="omitted")
+    return Cpt(DriverAction, call=call, on_driver=on_driver, kind="omitted")
 
 
 class DriverDevice(Device):
@@ -88,6 +91,17 @@ class DriverDevice(Device):
         self.options = options or {}
         self.lock = threading.RLock()
         super().__init__(*args, **kwargs)
+
+    # Signal attribute -> unit, reported in describe() (and so in readings and documents).
+    UNITS: ClassVar[dict[str, str]] = {}
+
+    def describe(self):
+        description = super().describe()
+        for attr, unit in self.UNITS.items():
+            key = f"{self.name}_{attr}"
+            if key in description:
+                description[key]["units"] = unit
+        return description
 
     @property
     def time_scale(self) -> float:
@@ -111,6 +125,7 @@ class DriverDevice(Device):
 class RobotArm(DriverDevice):
     """A SCARA arm with a gripper. Cartesian in mm/deg, joints in deg (j3 in mm)."""
 
+    UNITS: ClassVar[dict[str, str]] = {"x": "mm", "y": "mm", "z": "mm", "r": "deg"}
     x = Cpt(Signal, value=0.0, kind="hinted")
     y = Cpt(Signal, value=0.0, kind="hinted")
     z = Cpt(Signal, value=0.0, kind="hinted")
@@ -152,6 +167,7 @@ class RobotArm(DriverDevice):
 class Pipette(DriverDevice):
     """A pipetting module. Plans speak uL; the module speaks 0.1 uL integers."""
 
+    UNITS: ClassVar[dict[str, str]] = {"last_volume_ul": "uL"}
     tip_present = Cpt(Signal, value=False, kind="normal")
     last_volume_ul = Cpt(Signal, value=0.0, kind="hinted")
 
@@ -196,6 +212,7 @@ class Hotplate(DriverDevice):
     """A heater-stirrer. Moving it sets the temperature and waits until it's
     within `tolerance_c` (option, default 2 degC), or fails after `timeout_s`."""
 
+    UNITS: ClassVar[dict[str, str]] = {"temperature": "degC", "setpoint": "degC", "stir_rpm": "rpm"}
     temperature = Cpt(Signal, value=0.0, kind="hinted")
     setpoint = Cpt(Signal, value=0.0, kind="config")
     stir_rpm = Cpt(Signal, value=0.0, kind="normal")
@@ -258,6 +275,7 @@ class Hotplate(DriverDevice):
 class SpinCoater(DriverDevice):
     """A spin coater: `spin` runs a whole profile -- ramp to speed, hold, stop."""
 
+    UNITS: ClassVar[dict[str, str]] = {"speed_rpm": "rpm"}
     speed_rpm = Cpt(Signal, value=0.0, kind="hinted")
     spin = action("_spin")
     home = action("_home")

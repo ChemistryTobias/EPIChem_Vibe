@@ -1,0 +1,100 @@
+.discover__intro {
+  margin: 0 0 var(--space-3);
+}
+
+.discover__hint {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-small);
+}
+
+.discover__code {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2);
+  background: var(--color-grey-light);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.discover__dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--color-grey);
+}
+
+.discover__dot--on {
+  background: var(--color-accent-green-light);
+}
+
+.discover__linked {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size-small);
+}
+
+.pod-card {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-grey-semilight);
+  border-left: 3px solid var(--color-mpg-green);
+}
+
+.pod-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pod-card__name {
+  flex: 1;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+.pod-card__dismiss {
+  border: 0;
+  background: none;
+  font-size: 16px;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.pod-card__url {
+  margin: 2px 0 var(--space-2);
+  font-size: 11px;
+}
+
+.pod-card__devices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.pod-card__device {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--color-grey-semilight);
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  color: var(--color-mpg-green-dark);
+}
+
+.pod-card__meta {
+  margin: var(--space-1) 0 var(--space-2);
+  font-size: 11px;
+}
+
+.pod-card__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.pod-card__form {
+  margin-top: var(--space-2);
+}

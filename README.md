@@ -12,20 +12,21 @@ and dispatches; Bluesky/EPICS execute.
 docker compose up
 ```
 
-That brings up Postgres, the API on `:8000`, the console on `:5173`, and two
-simulated **Bluesky station pods** (a spin-coating robot and a synthesis
-station, `:60610`/`:60611`). The database starts **empty** — see
+That brings up Postgres, the API on `:8000`, the console on `:5173`, and three
+simulated **Bluesky station pods** (a spin-coating robot, a synthesis
+station and a bench, `:60610`–`:60612`), which announce themselves to the API. The database starts **empty** — see
 `scripts/README.md` for a local seed script (it also wires stations to the
 pods), or just create things through the console.
 
 Open **<http://localhost:5173>**:
 
-- **Device Management** — the hierarchy, the 3D lab layout, device status.
-  Give a station a *Queueserver URL* (e.g. `http://station-spinbot:60610`)
-  to make it executable.
-- **Workflows** — compose a station's Bluesky plans into a procedure
-  (palette and forms come from the pod itself), validate, run, and follow
-  runs live.
+- **Device Management** — the hierarchy, the 3D lab layout, and Device
+  Monitoring (live readings; run a station's or a device's plans with one
+  click). **New device** lists the pods that announced themselves — add one
+  as a station in a click.
+- **Workflows** — a searchable procedure library; the designer chains plans
+  from any station with Wait / Input / HTTP steps (palette and forms come
+  from the pods themselves); run and follow runs live.
 - **Samples** — every run registers the sample it produces; lifecycle and
   history per sample.
 

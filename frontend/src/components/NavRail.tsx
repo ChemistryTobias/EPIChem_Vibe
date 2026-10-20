@@ -16,6 +16,7 @@ const DEVICE_MGMT_SUBS = [
 ];
 
 const WORKFLOW_SUBS = [
+  { path: "/workflows/procedures", label: "Procedures" },
   { path: "/workflows/designer", label: "Designer" },
   { path: "/workflows/runs", label: "Runs" },
 ];
@@ -82,7 +83,7 @@ export function NavRail({ user }: { user: string }) {
         <li>
           <button
             className={workflowsActive ? "nav-rail__item nav-rail__item--active" : "nav-rail__item"}
-            onClick={() => navigate({ to: "/workflows/designer" })}
+            onClick={() => navigate({ to: "/workflows/procedures" })}
           >
             Workflows
           </button>
@@ -92,7 +93,9 @@ export function NavRail({ user }: { user: string }) {
                 <li key={sub.path}>
                   <button
                     className={
-                      pathname === sub.path ? "nav-rail__subitem nav-rail__subitem--active" : "nav-rail__subitem"
+                      pathname === sub.path || pathname.startsWith(`${sub.path}/`)
+                        ? "nav-rail__subitem nav-rail__subitem--active"
+                        : "nav-rail__subitem"
                     }
                     onClick={() => navigate({ to: sub.path })}
                   >

@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 
-import type { Procedure, Station } from "../../api/types";
+import type { Procedure } from "../../api/types";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { Field, FieldGroup } from "../../components/Inspector";
@@ -21,7 +21,8 @@ export interface SampleDraft {
 
 interface RunLauncherProps {
   procedure: Procedure;
-  station: Station | undefined;
+  /** The stations its plan steps use, for display. */
+  stations: string;
   blocked: string | null;
   warnings: number;
   starting: boolean;
@@ -30,7 +31,7 @@ interface RunLauncherProps {
   onCancel: () => void;
 }
 
-export function RunLauncher({ procedure, station, blocked, warnings, starting, error, onStart, onCancel }: RunLauncherProps) {
+export function RunLauncher({ procedure, stations, blocked, warnings, starting, error, onStart, onCancel }: RunLauncherProps) {
   const [sample, setSample] = useState<SampleDraft>({
     name: "",
     substance: "",
@@ -53,7 +54,7 @@ export function RunLauncher({ procedure, station, blocked, warnings, starting, e
     <>
       <FieldGroup title="Run">
         <Field label="Procedure">{`${procedure.name} · v${procedure.version}`}</Field>
-        <Field label="Station">{station?.name}</Field>
+        <Field label="Stations">{stations}</Field>
         <Field label="Steps">{procedure.steps.length}</Field>
       </FieldGroup>
 
@@ -96,8 +97,8 @@ export function RunLauncher({ procedure, station, blocked, warnings, starting, e
         <Button onClick={onCancel}>Cancel</Button>
       </div>
       <p className="muted step-form__hint">
-        EPIChem validates, registers the sample, and hands the compiled steps to {station?.name ?? "the station"}&apos;s
-        queue — the station executes them.
+        EPIChem validates, registers the sample, and hands each block of plan steps to its station&apos;s queue —
+        the stations execute them; EPIChem carries out the wait, input and HTTP steps in between.
       </p>
     </>
   );

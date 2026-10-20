@@ -95,6 +95,17 @@ test:backend:
     reports:
       junit: junit-backend.xml
 
+test:pod:
+  extends: .python
+  stage: test
+  script:
+    - pip install --quiet ./bluesky pytest
+    - cd bluesky && pytest --junitxml=../junit-pod.xml
+  artifacts:
+    when: always
+    reports:
+      junit: junit-pod.xml
+
 test:frontend:
   extends: .node
   stage: test

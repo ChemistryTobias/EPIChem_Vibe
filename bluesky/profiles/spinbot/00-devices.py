@@ -7,7 +7,7 @@ EPIChem's palette offers.
 
 import os
 
-from epichem_devices.station import load_station
+from epichem_pod.devices.station import load_station
 
 station = load_station(
     os.environ.get("EPICHEM_STATION_CONFIG")

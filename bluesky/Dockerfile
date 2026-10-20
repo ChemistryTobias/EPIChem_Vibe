@@ -1,27 +1,25 @@
-# EPIChem reference station pod (Roadmap 1.3): bluesky-queueserver + its HTTP
-# server, an ophyd device namespace and annotated plans. Simulated devices by
-# default; a station's config names its driver classes -- see docs/BLUESKY.md.
+# EPIChem station pod (Roadmap 1.3): the epichem-pod package -- queueserver +
+# HTTP server over ophyd devices -- serving one station profile. The example
+# profiles run simulated drivers; see docs/BLUESKY.md to make your own
+# (`epichem-pod init` writes a Dockerfile for a single station.py).
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/pod
+    PYTHONUNBUFFERED=1
 
 WORKDIR /pod
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml README.md ./
+COPY epichem_pod ./epichem_pod
+RUN pip install --no-cache-dir .
 
-COPY drivers ./drivers
-COPY epichem_devices ./epichem_devices
-COPY epichem_plans ./epichem_plans
 COPY profiles ./profiles
-COPY entrypoint.sh .
 
-# Which station this container is; see profiles/.
-ENV STATION_PROFILE=spinbot
-
+# Which station this container is: a directory under profiles/ (or mount your
+# own and point STATION_PATH at it, a directory or a station.py).
+ENV STATION_PROFILE=spinbot \
+    EPICHEM_POD_PORT=60610
 EXPOSE 60610
-HEALTHCHECK --interval=5s --timeout=3s --start-period=20s --retries=10 \
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=10 \
   CMD python -c "import urllib.request,os; urllib.request.urlopen(urllib.request.Request('http://localhost:60610/api/status', headers={'Authorization': 'ApiKey ' + os.environ['QSERVER_HTTP_SERVER_SINGLE_USER_API_KEY']}))"
 
-ENTRYPOINT ["/pod/entrypoint.sh"]
+CMD ["sh", "-c", "exec epichem-pod serve \"${STATION_PATH:-/pod/profiles/$STATION_PROFILE}\" --name \"${STATION_NAME:-$STATION_PROFILE}\""]

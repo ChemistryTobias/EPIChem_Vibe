@@ -13,13 +13,14 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
 import { EntityInspector } from "../../../components/inspectors";
 import { Menu } from "../../../components/Menu";
 import { ADDABLE, CreatePanel, useCreator } from "../../../components/inspectors/create";
+import { DiscoverPanel } from "../../../components/inspectors/DiscoverPanel";
 import { EditContext } from "../../../components/inspectors/edit";
 import { InspectorNavContext } from "../../../components/inspectors/nav";
 import { API_BY_KIND } from "../../../api/entities";
@@ -60,6 +61,9 @@ export const useSelect = () => useContext(SelectContext);
 export function HierarchyLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [query, setQuery] = useState("");
+  /** New device opens on Discover: announced station pods first, by hand second. */
+  const [discovering, setDiscovering] = useState(false);
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<Selection | null>(null);
   const creator = useCreator();
   /** The inspector's editor: whether it's open, and what it's changed. */
@@ -110,18 +114,25 @@ export function HierarchyLayout() {
         subtitle={onTree ? "Tree" : `${current}s`}
         actions={
           <>
-            <Button variant="primary" onClick={() => creator.open("Device")}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                creator.close();
+                show(null);
+                setDiscovering(true);
+              }}
+            >
               New device
             </Button>
             {/* Everything but a device, which has its own control beside it. */}
             <Menu
               label="Add"
               items={ADDABLE.map((kind) => ({ id: kind, label: kind }))}
-              onPick={(kind) => creator.open(kind as EntityKind)}
+              onPick={(kind) => {
+                setDiscovering(false);
+                creator.open(kind as EntityKind);
+              }}
             />
-            <Button disabled title="Importing isn't possible yet">
-              Import
-            </Button>
           </>
         }
       />
@@ -178,16 +189,18 @@ export function HierarchyLayout() {
         </div>
 
         <Inspector
-          open={creator.kind !== null || selected !== null}
-          kind={creator.kind ?? selected?.kind ?? "Inspector"}
+          open={discovering || creator.kind !== null || selected !== null}
+          kind={discovering ? "New device" : (creator.kind ?? selected?.kind ?? "Inspector")}
           title={
-            creator.kind
+            discovering
+              ? "Discover"
+              : creator.kind
               ? ((creator.draft.name as string | undefined) ?? "")
               : ((draft.name as string | undefined) ?? selected?.row.name)
           }
-          subtitle={creator.kind ? undefined : selected?.row.uuid}
-          onClose={() => (creator.kind ? creator.close() : show(null))}
-          edit={creator.kind ? creator.edit : {
+          subtitle={discovering || creator.kind ? undefined : selected?.row.uuid}
+          onClose={() => (discovering ? setDiscovering(false) : creator.kind ? creator.close() : show(null))}
+          edit={discovering ? undefined : creator.kind ? creator.edit : {
             editing,
             dirty,
             saving: save.isPending,
@@ -197,7 +210,18 @@ export function HierarchyLayout() {
             onRename: (name) => setDraft((d) => ({ ...d, name })),
           }}
         >
-          {creator.kind ? (
+          {discovering ? (
+            <DiscoverPanel
+              onManual={() => {
+                setDiscovering(false);
+                creator.open("Device");
+              }}
+              onAdopted={(uuid) => {
+                setDiscovering(false);
+                navigate({ to: "/devices/monitoring", search: { station: uuid } });
+              }}
+            />
+          ) : creator.kind ? (
             <CreatePanel
               kind={creator.kind}
               draft={creator.draft}

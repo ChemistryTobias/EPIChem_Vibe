@@ -168,6 +168,32 @@ still matters for the rewrite even though the code paths named below
   from the station's queue + history; on a failed step EPIChem removes the
   run's leftover items from the station queue. A dispatch the station
   refuses records nothing (no run, no sample).
+- **Runs are driven by an in-API orchestrator** *(supersedes "Run state is
+  observed, not decided" above — observation stays, but no longer only on
+  read)*. A background thread ticks every couple of seconds: observes the
+  pods, then advances each run — dispatches the next contiguous
+  same-station block of plan steps, carries out `wait`/`input`/`http`
+  steps itself, resolves `{{steps.<id>.…}}` templates at dispatch time.
+  Needed once a procedure could span stations and pause for people; a
+  separate worker/queue (Celery, Redis) wasn't earned for one process.
+  `EPICHEM_ORCHESTRATOR=off` disables it (tests call `tick()`). Flow-control
+  steps never reach a pod — EPIChem still executes no lab action (plan §3);
+  an HTTP step is EPIChem calling out, host-allowlistable.
+- **A pod is a pip package that discovers drivers** (`epichem-pod`,
+  IvoryOS-style): `expose(globals())` turns plain driver objects into ophyd
+  devices (getters → readings) and their methods into plans (signature +
+  docstring → parameters), so a new station is a ten-line script. Extends,
+  doesn't replace, "A pod is driver → ophyd wrapper → plans": hand-written
+  wrappers and profile directories still work for stations that need a
+  curated plan surface (spinbot).
+- **Pods announce themselves; a person adopts them.** `serve --epichem`
+  posts a heartbeat with the shared pod key; New Device opens Discover,
+  where adopting creates/links the station and registers its devices.
+  Satisfies plan §6.2's human-confirmation rule without a scan of the
+  network. Replaced the console's Import button.
+- **Manual runs reuse Run** (`kind="manual"`, no procedure, no sample): a
+  plan launched from Device Monitoring is recorded and followed exactly like
+  a procedure step, rather than a second fire-and-forget path.
 - **Samples change state only through events** — the §7.3 event log pulled
   forward into the otherwise-minimal Milestone 3 (ADR 0005's flat row
   otherwise kept).
