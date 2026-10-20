@@ -62,3 +62,10 @@ def test_zones_keep_off_sibling_zones(client, layout):
     second = client.post("/api/v1/zones", json={"name": "Z2", "parent_uuid": lab}).json()
     assert first["object_geometry"]["box_position_xyz"] == [0, 0, 0]
     assert second["object_geometry"]["box_position_xyz"] == [2, 0, 0]
+
+
+def test_touching_is_not_overlapping_despite_float_error():
+    parent = box((0, 0, 0), (1, 1, 1))
+    taken = [box((round(i * 0.1, 6), 0, 0), (0.1, 0.1, 0.1)) for i in range(3)]
+    slot = find_free_slot_2d(parent, taken, box((0, 0, 0), (0.1, 0.1, 0.1)))
+    assert slot.box_position_xyz == (0.3, 0, 0)

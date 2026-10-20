@@ -31,17 +31,20 @@ def find_free_slot_2d(
     if nx <= 0 or ny <= 0 or nx > px or ny > py:
         return None
 
+    # Touching isn't overlapping, and 0.2 + 0.1 != 0.3 in floats -- compare
+    # with a tolerance far below the millimetre the backend stores.
+    eps = 1e-6
+
     def collides(x: float, y: float) -> bool:
         for box in existing:
             bx, by, _ = box.box_position_xyz
             bw, bd, _ = box.box_dimension_xyz
-            if x < bx + bw and x + nx > bx and y < by + bd and y + ny > by:
+            if x < bx + bw - eps and x + nx > bx + eps and y < by + bd - eps and y + ny > by + eps:
                 return True
         return False
 
     # Step by whole multiples (not by accumulating floats), and start every
     # row back at x = 0 -- otherwise only the first row is ever searched.
-    eps = 1e-9
     for row in range(int((py + eps) // ny)):
         y = round(row * ny, 6)
         for col in range(int((px + eps) // nx)):
