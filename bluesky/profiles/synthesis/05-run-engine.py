@@ -8,4 +8,4 @@ pointers to runs (their uids), never the data (plan §3).
 
 from bluesky import RunEngine
 
-RE = RunEngine({"station": "epichem-sim-station"})
+RE = RunEngine({"station": "epichem-synthesis"})

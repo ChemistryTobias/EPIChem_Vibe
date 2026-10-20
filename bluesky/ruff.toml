@@ -1,0 +1,4 @@
+# Same rule set as backend/, plus: drivers and wrappers deliberately catch any
+# exception -- a driver's failure must become a failed Status, never a dead thread.
+[lint]
+ignore = ["I001", "UP045", "BLE001", "B008"]

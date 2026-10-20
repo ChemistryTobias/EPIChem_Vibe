@@ -13,7 +13,7 @@ and regenerate `existing_plans_and_devices.yaml` (the entrypoint does it on star
 
 from ophyd.sim import det, motor  # noqa: F401 -- generic sims for the stock count/scan plans
 
-from epichem_sim import SimHeaterStirrer, SimSpectrometer, SimSyringePump
+from epichem_devices.ramp import SimHeaterStirrer, SimSpectrometer, SimSyringePump
 
 hotplate = SimHeaterStirrer(name="hotplate")
 pump = SimSyringePump(name="pump")

@@ -1,4 +1,4 @@
-"""Soft (simulated) lab instruments as real ophyd Devices.
+"""Self-contained soft instruments for the synthesis demo station, as real ophyd Devices.
 
 They implement the same bluesky protocols a hardware-backed ophyd device would
 (`Movable`: set() returns a Status; `Readable`: read()/describe(); `Triggerable`

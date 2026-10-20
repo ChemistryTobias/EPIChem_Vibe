@@ -1,3 +1,3 @@
 __pycache__/
 *.pyc
-startup/existing_plans_and_devices.yaml
+profiles/*/existing_plans_and_devices.yaml

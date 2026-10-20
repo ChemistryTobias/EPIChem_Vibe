@@ -1,0 +1,81 @@
+# Spinbot -- a spin-coating robot station: a SCARA arm with gripper and a
+# pipetting module, two hotplates, a spin coater, vial and tip racks.
+#
+# Every device below runs on a SIMULATED driver. To drive the real instrument,
+# change `driver:` to its class (an importable `module:Class` with the same
+# methods -- see docs/BLUESKY.md, "Connecting a real driver") and its `args:`
+# to the real connection settings. Plans, devices and EPIChem don't change.
+#
+# Positions are example coordinates sized to the simulator's workspace --
+# replace them with your taught points.
+
+station: spinbot
+
+devices:
+  arm:
+    type: arm
+    driver: drivers.sim:SimArm
+    args: {ip: 192.168.10.20, speed_ratio: 50, acceleration_ratio: 50, robot_safe_height: 180, gripper_IO_pins: [22, 21]}
+    connect: true
+  pipette:
+    type: pipette
+    driver: drivers.sim:SimPipette
+    args: {ip: 192.168.10.21, port: 2000}
+    options:
+      deck_geometry: {deck_geometry_index: 0, end_traverse_position: 0, beginning_of_tip_picking_position: 1200, position_of_tip_deposit: 1400}
+  hotplate1:
+    type: hotplate
+    driver: drivers.sim:SimHotplate
+    args: {ip: 192.168.10.22, port: 4001, hotplate_number: 1, T_max: 300}
+    options: {number: 1, tolerance_c: 2, timeout_s: 1800, poll_s: 5}
+  hotplate2:
+    type: hotplate
+    driver: drivers.sim:SimHotplate
+    args: {ip: 192.168.10.22, port: 4002, hotplate_number: 2, T_max: 300}
+    options: {number: 2, tolerance_c: 2, timeout_s: 1800, poll_s: 5}
+  spincoater:
+    type: spincoater
+    driver: drivers.sim:SimSpincoater
+
+positions:
+  safe_home_pos: [250, 0, 180, 0]
+  start_rack:
+    carrier_pickup: [150, 250, 40, 0]
+  processing_rack:
+    grid: {first: [100, 280, 62, 0], step: [20, 0, 0, 0], count: 8}
+    carrier_pickup: [170, 280, 30, 0]
+  finished_rack:
+    carrier_pickup: [-150, 250, 40, 0]
+  hotplate:
+    grid: {first: [300, -150, 55, 0], step: [0, 18, 0, 0], count: 8}
+  spincoater:
+    position: [320, 80, 70, 0]
+  spincoater_pipettePos:
+    space: joint
+    dispense_location: [10, 45, 90, 0]
+  liquid_handler_pipettePos:
+    space: joint
+    grid: {first: [-20, 60, 100, 0], step: [3, 0, 0, 0], count: 22}
+  pipette_disposal:
+    space: joint
+    position: [-60, 80, 120, 0]
+  pipette_rack_1:
+    space: joint
+    grid: {first: [40, 30, 110, 0], row_step: [1.5, 0, 0, 0], col_step: [0, 1.5, 0, 0], rows: 8, cols: 12}
+  pipette_rack_2:
+    space: joint
+    grid: {first: [55, 30, 110, 0], row_step: [1.5, 0, 0, 0], col_step: [0, 1.5, 0, 0], rows: 8, cols: 12}
+
+settings:
+  carriers:
+    slots_per_carrier: 8
+  pipette:
+    tip_type_index: 4
+    deck_geometry_index: 0
+    # Which container geometry each vial slot uses.
+    vial_geometry:
+      1: [1, 2, 3, 4, 19, 20, 21, 22]   # 1 mL vials
+      2: [5, 6, 7, 8, 15, 16, 17, 18]   # 5 mL vials
+      3: [9, 10, 11, 12, 13, 14]        # 10 mL vials
+    aspiration: {liquid_class_index: 0, qpm_enabled: 0, lld_enabled: 1, lld_search_position: 1200, liquid_surface: 0, mix_volume: 0, mix_flow_rate: 0, mix_cycles: 0}
+    dispensing: {container_geometry_index: 4, liquid_class_index: 0, qpm_enabled: 0, lld_enabled: 0, lld_search_position: 0, liquid_surface: 900, search_bottom_mode: 0, mix_volume: 0, mix_flow_rate: 0, mix_cycles: 0}

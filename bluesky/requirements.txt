@@ -6,3 +6,4 @@ bluesky-httpserver==0.0.14
 ophyd==1.11.2
 # Imported by bluesky-httpserver (via queueserver's conversions) but not declared by it.
 pandas>=2.2
+pyyaml>=6
