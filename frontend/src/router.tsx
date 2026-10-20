@@ -4,7 +4,8 @@
  *
  * Device Management is a real nested route: `/devices/hierarchy`,
  * `/devices/layout`, `/devices/monitoring` all render inside one parent that
- * remembers which subpage you were last on.
+ * remembers which subpage you were last on. Workflows has two subpages,
+ * `/workflows/designer` and `/workflows/runs`.
  */
 
 import {
@@ -132,18 +133,53 @@ const monitoringRoute = createRoute({
   component: DeviceMonitoringScreen,
 });
 
+/** `?sample=SMP-…` opens that sample in the inspector — linkable from runs. */
 const samplesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/samples",
+  validateSearch: (search: Record<string, unknown>): { sample?: string } =>
+    typeof search.sample === "string" ? { sample: search.sample } : {},
   component: SamplesScreen,
+});
+
+const workflowsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workflows",
+  component: Outlet,
+});
+
+const workflowsIndexRoute = createRoute({
+  getParentRoute: () => workflowsRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/workflows/designer" });
+  },
 });
 
 // Lazy: this screen pulls in the diagramming library, which is bigger than
 // the rest of the app put together. The other screens shouldn't pay for it.
-const workflowRoute = createRoute({
+const designerRoute = createRoute({
+  getParentRoute: () => workflowsRoute,
+  path: "designer",
+  component: lazyRouteComponent(() => import("./screens/workflows/DesignerScreen"), "DesignerScreen"),
+});
+
+/** `?run=RUN-…` opens that run in the inspector — where Run lands you. */
+const runsRoute = createRoute({
+  getParentRoute: () => workflowsRoute,
+  path: "runs",
+  validateSearch: (search: Record<string, unknown>): { run?: string } =>
+    typeof search.run === "string" ? { run: search.run } : {},
+  component: lazyRouteComponent(() => import("./screens/workflows/RunsScreen"), "RunsScreen"),
+});
+
+/** The old single-page address, kept so bookmarks still land somewhere. */
+const legacyWorkflowRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workflow",
-  component: lazyRouteComponent(() => import("./screens/workflow/WorkflowScreen"), "WorkflowScreen"),
+  beforeLoad: () => {
+    throw redirect({ to: "/workflows/designer" });
+  },
 });
 
 const routeTree = rootRoute.addChildren([
@@ -155,7 +191,8 @@ const routeTree = rootRoute.addChildren([
     monitoringRoute,
   ]),
   samplesRoute,
-  workflowRoute,
+  workflowsRoute.addChildren([workflowsIndexRoute, designerRoute, runsRoute]),
+  legacyWorkflowRoute,
 ]);
 
 export const router = createRouter({

@@ -11,8 +11,41 @@ export function orDash(value: string | number | null | undefined): ReactNode {
   );
 }
 
+/**
+ * The backend stamps times as naive UTC ("2026-10-20T08:36:17"), which a bare
+ * `new Date()` would read as local time. Treat anything without an offset as
+ * UTC.
+ */
+export function parseUtc(iso: string): Date {
+  return new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : `${iso}Z`);
+}
+
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString();
+  return parseUtc(iso).toLocaleDateString();
+}
+
+export function formatDateTime(iso: string | null | undefined): string {
+  return iso ? parseUtc(iso).toLocaleString() : "—";
+}
+
+export function formatTime(iso: string | null | undefined): string {
+  return iso ? parseUtc(iso).toLocaleTimeString() : "—";
+}
+
+/** 75 -> "1 min 15 s"; for run and step durations. */
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return "—";
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ${s % 60} s`;
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+
+/** Seconds between two stamps, the second defaulting to now. */
+export function secondsBetween(from: string | null, to: string | null): number | null {
+  if (!from) return null;
+  return ((to ? parseUtc(to) : new Date()).getTime() - parseUtc(from).getTime()) / 1000;
 }
 
 /** uuid -> name, for resolving a parent reference to something readable. */

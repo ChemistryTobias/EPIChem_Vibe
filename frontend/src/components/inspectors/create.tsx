@@ -55,7 +55,10 @@ const SPECS: Record<EntityKind, KindSpec> = {
   },
   Station: {
     required: [{ field: "lab_uuid", label: "Lab", from: ["Lab"] }],
-    optional: [{ field: "zone_uuid", label: "Zone", from: ["Zone"] }],
+    optional: [
+      { field: "zone_uuid", label: "Zone", from: ["Zone"] },
+      { field: "queueserver_url", label: "Queueserver URL" },
+    ],
   },
   Module: {
     required: [{ field: "station_uuid", label: "Station", from: ["Station"] }],
@@ -63,7 +66,7 @@ const SPECS: Record<EntityKind, KindSpec> = {
   },
   Device: {
     required: [{ field: "station_uuid", label: "Station", from: ["Station"] }],
-    optional: [],
+    optional: [{ field: "ophyd_name", label: "Ophyd name" }],
   },
 };
 

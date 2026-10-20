@@ -15,16 +15,19 @@ const DEVICE_MGMT_SUBS = [
   { path: "/devices/monitoring", label: "Device Monitoring" },
 ];
 
-const LEAVES = [
-  { path: "/samples", label: "Samples" },
-  { path: "/workflow", label: "Workflow Designer" },
+const WORKFLOW_SUBS = [
+  { path: "/workflows/designer", label: "Designer" },
+  { path: "/workflows/runs", label: "Runs" },
 ];
+
+const LEAVES = [{ path: "/samples", label: "Samples" }];
 
 export function NavRail({ user }: { user: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const deviceMgmtActive = pathname.startsWith("/devices");
+  const workflowsActive = pathname.startsWith("/workflows");
 
   // Remember the current subpage so re-entering the section returns to it —
   // including when it was reached by URL rather than by clicking the nav.
@@ -72,6 +75,31 @@ export function NavRail({ user }: { user: string }) {
                   </li>
                 );
               })}
+            </ul>
+          )}
+        </li>
+
+        <li>
+          <button
+            className={workflowsActive ? "nav-rail__item nav-rail__item--active" : "nav-rail__item"}
+            onClick={() => navigate({ to: "/workflows/designer" })}
+          >
+            Workflows
+          </button>
+          {workflowsActive && (
+            <ul className="nav-rail__subnav">
+              {WORKFLOW_SUBS.map((sub) => (
+                <li key={sub.path}>
+                  <button
+                    className={
+                      pathname === sub.path ? "nav-rail__subitem nav-rail__subitem--active" : "nav-rail__subitem"
+                    }
+                    onClick={() => navigate({ to: sub.path })}
+                  >
+                    {sub.label}
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
         </li>
