@@ -46,6 +46,17 @@ class ProcedureStep(BaseModel):
     kwargs: dict[str, Any] = Field(default_factory=dict)
     label: Optional[str] = Field(default=None, max_length=100)
     position: Optional[tuple[float, float]] = Field(default=None, description="Canvas position; layout only.")
+    # The designer's canvas can hold steps that aren't wired into the chain
+    # yet. They're kept (with `after`, the step they hang from, so a loose
+    # fragment stays wired to itself) but never validated as part of the run,
+    # compiled or executed -- the run is the connected steps, in list order.
+    detached: bool = Field(default=False, description="Not connected on the canvas: kept, never run.")
+    after: Optional[str] = Field(default=None, max_length=64, description="Detached steps: the step it follows in its loose fragment.")
+
+
+def connected(steps: list["ProcedureStep"]) -> list["ProcedureStep"]:
+    """The steps a run executes: the connected ones, in order."""
+    return [s for s in steps if not s.detached]
 
 
 class ProcedureDB(ObjectDB, Database):

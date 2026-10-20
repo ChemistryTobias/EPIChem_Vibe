@@ -342,3 +342,26 @@ def test_samples_by_hand_and_the_lifecycle_rules(client, layout):
     assert client.get(f"/api/v1/samples/{sample['uuid']}").json()["state"] == "staged"
     revisions = client.get(f"/api/v1/revisions/sample/{sample['uuid']}").json()
     assert [r["action"] for r in revisions] == ["created", "updated", "updated"]
+
+
+def test_detached_steps_are_kept_but_never_run(client, station):
+    procedure = make_procedure(
+        client,
+        station,
+        [
+            {"id": "n1", "plan": "heat", "kwargs": {"heater": "hotplate", "setpoint_c": 80}},
+            {"id": "loose", "plan": "no_such_plan", "kwargs": {}, "detached": True},
+            {"id": "n2", "plan": "hold", "kwargs": {"duration_s": "{{steps.loose.run_uids.0}}"}},
+        ],
+    )
+    result = client.post("/api/v1/procedures/validate", json={"station_uuid": station["uuid"], "steps": procedure["steps"]}).json()
+    by_step = {(d["step_id"], d["severity"]) for d in result["diagnostics"]}
+    assert ("loose", "warning") in by_step  # not connected
+    assert ("n2", "error") in by_step  # can't reference a step that never runs
+    assert not any(d["step_id"] == "loose" and d["severity"] == "error" for d in result["diagnostics"])
+
+    steps = [s for s in procedure["steps"] if s["id"] != "n2"]
+    client.patch(f"/api/v1/procedures/{procedure['uuid']}", json={"steps": steps}).raise_for_status()
+    assert [i["name"] for i in client.get(f"/api/v1/procedures/{procedure['uuid']}/compile").json()["items"]] == ["heat"]
+    run = client.post("/api/v1/runs", json={"procedure_uuid": procedure["uuid"]}).json()
+    assert [i["step_id"] for i in run["items"]] == ["n1"]

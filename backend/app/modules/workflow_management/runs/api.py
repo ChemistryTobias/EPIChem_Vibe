@@ -21,7 +21,7 @@ from app.modules.sample_tracking.samples.api import record_sample
 from app.modules.sample_tracking.samples.logic import next_code, register, transition
 from app.modules.sample_tracking.samples.schema import SampleDB
 from app.modules.workflow_management.procedures.api import get_procedure, validate_procedure_steps
-from app.modules.workflow_management.procedures.schema import ProcedureStep
+from app.modules.workflow_management.procedures.schema import ProcedureStep, connected
 
 from . import orchestrator
 from .schema import TERMINAL_STATES, CreateRun, InputAnswer, ManualRun, Run, RunDB
@@ -161,7 +161,7 @@ def get_run(identifier: str, session: SessionDepends, user: CurrentUser):
 def create_run(body: CreateRun, session: SessionDepends, user: CurrentUser):
     """Validate, register the run's sample, and start it."""
     procedure = get_procedure(str(body.procedure_uuid), session, user)
-    steps = [ProcedureStep.model_validate(s) for s in procedure.steps]
+    steps = connected([ProcedureStep.model_validate(s) for s in procedure.steps])
     _validated(session, steps, procedure.station_uuid)
     items = _items_for(steps, procedure.station_uuid)
     first_station = next((i["station_uuid"] for i in items if i["station_uuid"]), None)
