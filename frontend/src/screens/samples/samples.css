@@ -1,0 +1,110 @@
+.samples__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.samples__search {
+  width: 300px;
+}
+
+.samples__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  padding: 4px 10px;
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: var(--radius);
+  background: var(--color-white);
+  font-family: var(--font-family-default);
+  font-weight: var(--font-weight-bold);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--color-mpg-green);
+  border-color: var(--color-mpg-green);
+}
+
+.chip--active {
+  background: var(--color-mpg-green);
+  border-color: var(--color-mpg-green);
+  color: var(--color-white);
+}
+
+.chip--active:hover {
+  color: var(--color-white);
+}
+
+.chip__count {
+  margin-left: 4px;
+  font-weight: var(--font-weight-regular);
+}
+
+.lifecycle__moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.samples__params {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre;
+}
+
+.timeline {
+  margin: 0;
+  padding: 0 0 0 var(--space-3);
+  list-style: none;
+  border-left: 2px solid var(--color-grey-semilight);
+}
+
+.timeline__item {
+  position: relative;
+  padding: 0 0 var(--space-3) var(--space-2);
+}
+
+.timeline__item::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-3) - 6px);
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--color-white);
+  background: var(--color-mpg-green);
+}
+
+.timeline__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.timeline__at {
+  font-size: var(--font-size-small);
+}
+
+.timeline__line,
+.timeline__reason {
+  margin: 2px 0 0;
+  font-size: var(--font-size-small);
+}
+
+.timeline__reason {
+  color: var(--color-grey-dark);
+  font-style: italic;
+}
