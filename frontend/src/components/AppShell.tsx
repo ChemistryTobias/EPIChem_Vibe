@@ -11,8 +11,9 @@
 
 import { Outlet } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useSyncExternalStore } from "react";
 
-import { ApiError, getToken } from "../api/client";
+import { ApiError, getToken, subscribeToken } from "../api/client";
 import { me } from "../api/auth";
 import { Alert } from "./Alert";
 import { Button } from "./Button";
@@ -24,10 +25,10 @@ import "./AppShell.css";
 const isUnauthorized = (error: unknown) => error instanceof ApiError && error.status === 401;
 
 export function AppShell() {
-  const token = getToken();
+  const token = useSyncExternalStore(subscribeToken, getToken);
 
   const session = useQuery({
-    queryKey: ["me"],
+    queryKey: ["me", token],
     queryFn: me,
     enabled: token !== null,
     // A 401 is final; a network blip is worth one more go.

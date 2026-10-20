@@ -18,6 +18,17 @@ export function getToken(): string | null {
   }
 }
 
+// Who to tell when the token changes. The shell renders the login form or
+// the app from the token, so it must re-render the moment login stores one —
+// reading localStorage during render alone left it showing the form (still
+// "Signing in…") until a reload.
+const tokenListeners = new Set<() => void>();
+
+export function subscribeToken(listener: () => void): () => void {
+  tokenListeners.add(listener);
+  return () => tokenListeners.delete(listener);
+}
+
 export function setToken(token: string | null): void {
   try {
     if (token) window.localStorage.setItem(TOKEN_KEY, token);
@@ -25,6 +36,7 @@ export function setToken(token: string | null): void {
   } catch {
     // private-mode browsers can throw; the request will 401 and say so
   }
+  tokenListeners.forEach((listener) => listener());
 }
 
 export class ApiError extends Error {
