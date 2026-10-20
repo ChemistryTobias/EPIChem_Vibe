@@ -51,7 +51,7 @@ import { StepSettings } from "./StepSettings";
 
 import "./workflows.css";
 
-const GAP = 180;
+const GAP = 230;
 const ROW = 190;
 
 interface Draft {
@@ -109,7 +109,15 @@ function Designer() {
       staleTime: 60_000,
     })),
   });
-  const palettes = useMemo(() => new Map(executable.map((s, i) => [s.uuid, paletteQueries[i]])), [executable, paletteQueries]);
+  // useQueries hands back a new array every render; key the map on what the
+  // queries actually hold, or everything derived from it (the canvas nodes)
+  // would rebuild — and re-set — on every render.
+  const paletteState = paletteQueries.map((q) => `${q.status}:${q.dataUpdatedAt}`).join();
+  const palettes = useMemo(
+    () => new Map(executable.map((s, i) => [s.uuid, paletteQueries[i]])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [executable, paletteState],
+  );
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [panel, setPanel] = useState<Panel>(null);

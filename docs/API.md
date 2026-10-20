@@ -89,13 +89,16 @@ GET  /procedures/{id}/compile      the queue items a run would dispatch
 POST /procedures/{id}/duplicate    -> "<name> (copy)"
 ```
 
-A step is `{id, type, plan, station_uuid, kwargs, label}`; `type` is
+A step is `{id, type, plan, station_uuid, kwargs, label, position, detached, after}`; `type` is
 `plan` (a pod plan; `station_uuid` null → the procedure's default station),
 `wait` (`kwargs.duration_s`), `input` (`kwargs.prompt`, `kwargs.fields:
 [{name, label, type: text|number|boolean, required}]`) or `http`
 (`kwargs.method, url, body, expect_status`). Any kwarg can be a template
 `{{steps.<earlier id>.<path>}}`, resolved when the step is dispatched (a
-whole-value reference keeps its type).
+whole-value reference keeps its type). A `detached` step is on the
+designer's canvas but not connected (`after`: the step it hangs from in its
+loose fragment): kept, warned about, never validated as part of the run,
+compiled or executed — a run is the connected steps, in list order.
 
 **runs** — one execution of a procedure, or a manual run of one plan.
 EPIChem's orchestrator (a background thread in the API) advances runs:

@@ -517,7 +517,7 @@ function bodyOf(shape: LayoutBox["shape"], w: number, h: number, d: number, fill
   return { geometry, material, edgeAngle: 1 };
 }
 
-const HINT_FILL = new THREE.MeshBasicMaterial({ color: FILL_ACTIVE.top, transparent: true, opacity: 0.16, depthWrite: false });
+const HINT_FILL = new THREE.MeshBasicMaterial({ color: FILL_ACTIVE.top, transparent: true, opacity: 0.09, depthWrite: false });
 const ignore = () => null;
 
 /** A faint, untouchable outline of something inside a box (see `Hint`). */
@@ -528,7 +528,7 @@ function HintBox({ hint, origin, thin }: { hint: Hint; origin: Vec2; thin: numbe
   return (
     <group position={[origin.x + pos.x + size.x / 2, height / 2 + thin * 0.2, origin.y + pos.y + size.y / 2]}>
       <mesh geometry={geometry} material={HINT_FILL} raycast={ignore} />
-      <Edges geometry={geometry} angle={1} color={FILL_ACTIVE.top} opacity={0.35} />
+      <Edges geometry={geometry} angle={1} color={FILL_ACTIVE.top} opacity={0.2} />
     </group>
   );
 }

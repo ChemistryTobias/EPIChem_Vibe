@@ -395,11 +395,11 @@
 }
 
 .edge-plus--cut {
-  opacity: 0;
+  display: none !important;
 }
 
 .edge-tools:hover .edge-plus--cut {
-  opacity: 0.8;
+  display: flex !important;
 }
 
 .edge-plus--cut:hover {
@@ -446,10 +446,10 @@
   border: 1px solid var(--color-grey);
   border-radius: var(--radius);
   background: var(--color-white);
-  color: var(--color-grey-dark);
+  border-color: var(--color-grey-semilight);
+  color: var(--color-grey);
   cursor: pointer;
   pointer-events: all;
-  opacity: 0.55;
 }
 
 .edge-plus:hover {
