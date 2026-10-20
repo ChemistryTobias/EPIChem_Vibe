@@ -85,6 +85,16 @@ lint:frontend:
     - npm run typecheck
 
 # -------------------------------------------------------------------- test
+test:backend:
+  extends: .python
+  stage: test
+  script:
+    - cd backend && pytest --junitxml=../junit-backend.xml
+  artifacts:
+    when: always
+    reports:
+      junit: junit-backend.xml
+
 test:frontend:
   extends: .node
   stage: test

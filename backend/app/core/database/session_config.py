@@ -1,24 +1,50 @@
+import atexit
 import os
+import shutil
+import tempfile
 
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite://")  # in-memory when unset
+
+def _throwaway_sqlite_url() -> str:
+    """A sqlite file in a fresh temp dir, deleted on exit.
+
+    Used when DATABASE_URL is unset. This used to be in-memory sqlite pinned to
+    one connection (StaticPool) -- but FastAPI runs sync routes on a thread
+    pool, so parallel requests shared that one connection and trampled each
+    other's transactions: the auth lookup of one request intermittently came
+    back empty, the API answered 401, and the console signed itself out. A
+    file gives every thread its own connection and sqlite's own locking,
+    while keeping the "wiped on every restart" behaviour.
+    """
+    directory = tempfile.mkdtemp(prefix="epichem-")
+    atexit.register(shutil.rmtree, directory, ignore_errors=True)
+    return f"sqlite:///{os.path.join(directory, 'epichem.db')}"
+
+
+DATABASE_URL = os.environ.get("DATABASE_URL") or _throwaway_sqlite_url()
 is_sqlite = DATABASE_URL.startswith("sqlite")
 # check_same_thread is a sqlite-only connect arg; psycopg rejects it.
-connect_args = {"check_same_thread": False} if is_sqlite else {}
-# In-memory sqlite is one throwaway DB per connection by default; StaticPool
-# pins the engine to a single connection so all requests see the same data.
-is_memory = DATABASE_URL in ("sqlite://", "sqlite:///:memory:")
-extra_kwargs = {"poolclass": StaticPool} if is_memory else {}
+connect_args = {"check_same_thread": False, "timeout": 15} if is_sqlite else {}
 
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
     echo=os.environ.get("SQL_ECHO", "false").lower() == "true",
-    **extra_kwargs,
 )
+
+if is_sqlite:
+
+    @event.listens_for(engine, "connect")
+    def _sqlite_pragmas(dbapi_connection, _record):
+        """WAL lets readers run alongside a writer; foreign keys are off by default in sqlite."""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
 SessionLocal = sessionmaker(bind=engine)
 
 

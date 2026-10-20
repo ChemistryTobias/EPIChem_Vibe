@@ -7,6 +7,13 @@ def find_free_slot_2d(
     parent: GeometryDescriptor, existing: list[GeometryDescriptor], new: GeometryDescriptor
 ) -> Optional[GeometryDescriptor]:
     """Find a free (x, y) for `new` inside `parent`'s footprint.
+
+    Positions are **parent-local**: a child's `box_position_xyz` is measured
+    from its parent's own corner, not in the parent's parent's frame -- the
+    same convention `internal_positions` uses and the layout canvas draws
+    with (each level is its own floor starting at 0, 0). So the parent's
+    position plays no part here, only its extent; using it put every child
+    of a lab that wasn't at the site origin off that lab's floor.
     
     ```
     WHILE new box still in parent box
@@ -18,32 +25,32 @@ def find_free_slot_2d(
     RETURN none 
     ```
     """
-    x0, y0, z0 = parent.box_position_xyz
     px, py, _ = parent.box_dimension_xyz
     nx, ny, _ = new.box_dimension_xyz
-    
-    if nx > px or ny > py:
+
+    if nx <= 0 or ny <= 0 or nx > px or ny > py:
         return None
 
-    x, y = x0, y0
+    # Touching isn't overlapping, and 0.2 + 0.1 != 0.3 in floats -- compare
+    # with a tolerance far below the millimetre the backend stores.
+    eps = 1e-6
 
-    while (y + ny <= y0 + py):
-        
-        while (x + nx <= x0 + px):
-            collision = False
-            for box in existing:
-                bx, by, _ = box.box_position_xyz
-                bdimx, bdimy, _ = box.box_dimension_xyz
-                if x < bx + bdimx and x + nx > bx and y < by + bdimy and y + ny > by:
-                    collision = True
-                    break
-            
-            if not collision:
-                return new.model_copy(update={"box_position_xyz": (x, y, z0)})
-                
-            x = x + nx
-        
-        y = y + ny
+    def collides(x: float, y: float) -> bool:
+        for box in existing:
+            bx, by, _ = box.box_position_xyz
+            bw, bd, _ = box.box_dimension_xyz
+            if x < bx + bw - eps and x + nx > bx + eps and y < by + bd - eps and y + ny > by + eps:
+                return True
+        return False
+
+    # Step by whole multiples (not by accumulating floats), and start every
+    # row back at x = 0 -- otherwise only the first row is ever searched.
+    for row in range(int((py + eps) // ny)):
+        y = round(row * ny, 6)
+        for col in range(int((px + eps) // nx)):
+            x = round(col * nx, 6)
+            if not collides(x, y):
+                return new.model_copy(update={"box_position_xyz": (x, y, 0.0)})
 
     return None
 

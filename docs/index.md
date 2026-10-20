@@ -15,9 +15,14 @@ experiments itself; it administers and dispatches to Bluesky/EPICS, which do.
   milestone record for everything already built. Read this for "why is it
   built this way."
 - **[API reference](API.md)** — the backend's endpoints, plainly listed.
+- **[Bluesky station pods](BLUESKY.md)** — how stations execute: ophyd
+  devices over instrument drivers, plan libraries, connecting a pod to
+  EPIChem's workflow manager.
 
 ## Reference
 
+- **[Digital twin plan](project_plan/DIGITAL_TWIN.md)** — from layout
+  boxes to real shapes, live state and MuJoCo kinematics/dry runs.
 - **[Design reference](project_plan/DESIGN.md)** — MPG brand colors,
   type, component rules, and the current frontend's actual token values.
   Any UI rewrite should match this, not reinvent it.

@@ -59,7 +59,13 @@ which is what the rest of 0.x and Milestone 1 close.
   enough that this is considered closed, not a placeholder.
 
 ### 0.3 A frontend that matches the new backend
-**Status: not started**, deliberately sequenced after Milestone 1's device
+**Status: done (October 2026).** `frontend/` is the rewrite and talks to
+`backend/app/` (flat bodies, `PATCH`, bearer auth); the old one is kept as
+`frontend_old/` for reference only. Device Management (hierarchy, 3D layout,
+monitoring), Workflows (designer, runs) and Samples are all real screens.
+What follows is the original plan for it, kept for the reasoning:
+
+Originally deliberately sequenced after Milestone 1's device
 fields land (see the audit's suggested ordering — rewriting the API layer
 before Device/CapabilityClass exist would mean doing it twice). Rewritten
 from scratch, not evolved from the old-backend frontend: same modular
@@ -80,7 +86,14 @@ instead of being retrofitted later.
 1.1's; 1.1 was containment and geometry, not device-ness.
 
 ### 1.2 A solid lab-layout frontend
-**Status: not started against the new backend.** The old frontend's
+**Status: done — on Three.js.** The layout is one orthographic Three.js scene
+(`frontend/src/screens/device-management/layout/`): site → lab → station,
+staged editing (drag, resize, height, arrow-key nudge), zones as editable
+areas on their own collision layer, box/cylinder/sphere bodies, top-down and
+isometric views. Default placement is parent-local and collision-free.
+Next: the digital-twin path in
+[`DIGITAL_TWIN.md`](DIGITAL_TWIN.md) (real shapes → live state → MuJoCo
+kinematics and dry runs). Original note: The old frontend's
 isometric editor (`@joint/core`, staged-draft editing, drill-down breadcrumb
 — ADRs 0009–0016) is a proven UX; the fastest path is porting its geometry
 layer (`isometric.ts`, `levels.ts`) onto the new backend's flat-body/PATCH
@@ -90,7 +103,16 @@ is not a blocker for 1.2 — 1.2 can ship on the existing JointJS approach and
 move to Three.js later without changing `levels.ts`'s contract.
 
 ### 1.3 Devices and stations as deployable, updatable pods
-**Status: not started — this is new scope, not in the original plan.**
+**Status: in progress.** Built: the reference pod image (`bluesky/`,
+[`docs/BLUESKY.md`](../BLUESKY.md)) — queueserver + HTTP server, one
+profile per station (`spinbot`, `synthesis`), drivers wrapped as ophyd
+devices from a `station.yaml`, two-level plan libraries; `Station.queueserver_url`
+as the execution binding; `Device.ophyd_name` as the first descriptor field,
+with register-devices-from-pod. Not built: the git-versioned deploy/redeploy
+mechanism, `epichem-runner`, CapabilityClass and the remaining Device fields
+below.
+
+*Original scope — new, not in the original plan:*
 
 Each Station's control stack — its IOC set, its ophyd `Device` tree, and its
 own bluesky-queueserver (§4's L1–L3, unchanged) — is packaged and deployed
@@ -186,6 +208,12 @@ mechanism exists in the meantime.
 ## Milestone 2 — Workflow design
 
 ### 2.1 Composing devices' Bluesky plans into a procedure
+**Status: first cut done.** `procedures` (`backend/app/modules/workflow_management/`):
+an ordered list of plan calls for one station, version-bumped on step edits,
+compiled to queue items with `meta.epichem` provenance. A run freezes the
+items it dispatched (reconstructible forever, PROJECT_HISTORY). Control
+flow (§9.4) still deliberately absent.
+
 Each device (via its pod, per 1.3) exposes Bluesky plans as linear,
 parameterized action calls. 2.1 is putting a sequence of these together into
 a whole experimental procedure. Start with §9.1's fast path — a plain
@@ -194,6 +222,16 @@ branch/loop/codegen tier until a real procedure actually needs it; building
 that before anything requires it is premature.
 
 ### 2.2 A node-based frontend for building procedures
+**Status: first cut done.** Workflows → Designer: palette and parameter forms
+generated from the station pod's `plans_allowed`/`devices_allowed`, grouped
+by plan library; live server-side validation (tier 1 + the linear graph
+checks, plus "device not registered" warnings) badged on the nodes; queue-item
+preview; launch. Workflows → Runs: station pod status, live run state synced
+from queue + history, stop/abort. Tiers 2 and 4 (capability contract,
+safety) wait for 1.3's CapabilityClass/safety fields. The scheduler is the
+minimal dispatch layer described below — per-station queues are the
+queueserver's own; reservation/priority (§11) not yet.
+
 React Flow (MIT — already decided, ADR 0003 Q1), not JointJS. The palette
 and every parameter form are **generated** from `plans_allowed`/
 `devices_allowed` introspection against the current lab's actual pods
@@ -216,7 +254,15 @@ isolation.
 
 ## Milestone 3 — Sample tracking
 
-**Status: not started, deliberately minimal to start.** The concrete goal:
+**Status: minimal version done.** `samples` (`backend/app/modules/sample_tracking/`):
+every run registers a sample linked to it and its step parameters; samples
+can be registered by hand; state and location change only through
+`SampleEvent`s along §7.3's lifecycle (the event log is the one §7.3 piece
+pulled forward — cheap, and it's what makes the record trustworthy). Samples
+screen: filters, lifecycle actions, timeline, run links. Still flat — no
+composition, containers or lineage.
+
+*Original framing:* deliberately minimal to start. The concrete goal:
 every workflow run automatically creates a `Sample` linked to that run and
 its parameters — flat fields, ADR-0005-style, no composition list, no
 containers, no lineage graph yet, matching where the old backend's minimal

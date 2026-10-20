@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+profiles/*/existing_plans_and_devices.yaml

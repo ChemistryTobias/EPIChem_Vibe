@@ -7,7 +7,11 @@ Standalone local-dev helpers, run manually — not part of `docker compose up`.
 Seeds a fresh dev database via the real API (not a direct DB write — same
 auth path a human would use): creates an admin user (`admin`/`12345678` —
 `CreateUser` enforces an 8-char minimum, so plain `admin` doesn't validate),
-logs in, then creates one site, two labs (one holding a station).
+logs in, then creates one site, two labs (one holding a station), and two
+stations wired to the bundled Bluesky pods (`Spinbot`, `Synthesis`): for each
+it tries the compose service URL, then the localhost port, keeps the first
+one *the API* can reach, and registers the pod's devices. If neither pod is
+up yet, the station keeps the compose URL — start the pods and it works.
 
 ```bash
 API_BASE_URL=http://localhost:8000 backend/.venv/bin/python scripts/generate_seed.py

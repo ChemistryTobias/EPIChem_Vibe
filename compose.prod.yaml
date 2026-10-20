@@ -68,6 +68,9 @@ services:
     environment:
       DATABASE_URL: >-
         postgresql+psycopg://${POSTGRES_USER:-epichem}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-epichem}
+      # Sent to every station pod's bluesky-httpserver (docs/BLUESKY.md).
+      # Pods run on their own hosts in production, not in this file.
+      EPICHEM_QSERVER_API_KEY: ${EPICHEM_QSERVER_API_KEY:-}
     # No published port: nginx on the web service is the only way in.
     expose:
       - "8000"

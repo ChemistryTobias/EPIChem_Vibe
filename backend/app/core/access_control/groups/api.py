@@ -18,7 +18,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 # --- GET ---------------------------------------------------------------------
-@router.get("")
+@router.get("", response_model=list[Group])
 def get_all_groups(session: SessionDepends, user: CurrentUser, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
     """List all groups."""
     return paginate(session.query(GroupDB), response, limit, offset)

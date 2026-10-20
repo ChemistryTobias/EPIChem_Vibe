@@ -12,16 +12,25 @@ and dispatches; Bluesky/EPICS execute.
 docker compose up
 ```
 
-That brings up Postgres, the API on `:8000`, the console on `:5173`. The
-database starts **empty** — see `scripts/README.md` for a local seed script,
-or just create things through the console.
+That brings up Postgres, the API on `:8000`, the console on `:5173`, and two
+simulated **Bluesky station pods** (a spin-coating robot and a synthesis
+station, `:60610`/`:60611`). The database starts **empty** — see
+`scripts/README.md` for a local seed script (it also wires stations to the
+pods), or just create things through the console.
 
-Open **<http://localhost:5173>**.
+Open **<http://localhost:5173>**:
 
-> The console still targets the old backend's API shape — Roadmap milestone
-> 0.3 repoints it at the current backend. The API itself
-> (`docker compose up api`, or just `curl localhost:8000/api/v1/health`)
-> works today; the console doesn't yet.
+- **Device Management** — the hierarchy, the 3D lab layout, device status.
+  Give a station a *Queueserver URL* (e.g. `http://station-spinbot:60610`)
+  to make it executable.
+- **Workflows** — compose a station's Bluesky plans into a procedure
+  (palette and forms come from the pod itself), validate, run, and follow
+  runs live.
+- **Samples** — every run registers the sample it produces; lifecycle and
+  history per sample.
+
+How the pods work and how to add ophyd devices and plans:
+[`docs/BLUESKY.md`](docs/BLUESKY.md).
 
 ```bash
 docker compose logs -f api     # follow one service

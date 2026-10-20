@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { labsApi, sitesApi, stationsApi, zonesApi } from "../../api/entities";
 import type { EntityKind, GeometryDescriptor, ObjectBase } from "../../api/types";
+import { formatDateTime } from "../../screens/format";
 import { Field, FieldGroup } from "../Inspector";
 import { useEditSession, useFieldValue } from "./edit";
 import { useInspectorNav, type InspectorTarget } from "./nav";
@@ -195,8 +196,8 @@ function Triple({
 export function RecordSection({ row }: { row: ObjectBase }) {
   return (
     <FieldGroup title="Record">
-      <Field label="Created">{new Date(row.created_at).toLocaleString()}</Field>
-      <Field label="Updated">{new Date(row.updated_at).toLocaleString()}</Field>
+      <Field label="Created">{formatDateTime(row.created_at)}</Field>
+      <Field label="Updated">{formatDateTime(row.updated_at)}</Field>
     </FieldGroup>
   );
 }

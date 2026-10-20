@@ -2,7 +2,7 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
@@ -27,11 +27,19 @@ class StationDB(ObjectDB, ObjectGeometryDB, Database):
     devices: Mapped[list["DeviceDB"]] = relationship(foreign_keys="DeviceDB.station_uuid", back_populates="station")
     zone_uuid: Mapped[Optional[UUID]] = mapped_column(ForeignKey("zones.uuid"), index=True, default=None)
     zone: Mapped[Optional["ZoneDB"]] = relationship(back_populates="stations")
+    # Execution binding (plan §5.1 / Roadmap 1.3): the station pod's
+    # bluesky-httpserver. Workflows dispatch here; unset means "not executable".
+    queueserver_url: Mapped[Optional[str]] = mapped_column(String(200), default=None)
 
 
 class StationBase(BaseModel):
     lab_uuid: UUID
     zone_uuid: Optional[UUID] = None
+    queueserver_url: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description="Base URL of this station's bluesky-httpserver, e.g. http://station-sim:60610.",
+    )
 
 
 class Station(Object, StationBase, ObjectGeometry):

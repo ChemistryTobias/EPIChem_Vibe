@@ -48,6 +48,51 @@ PATCH  /<entity>/{id-or-name}       partial update
 DELETE /<entity>/{id-or-name}       delete
 ```
 
+Stations also carry `queueserver_url` (their pod's bluesky-httpserver);
+devices carry `ophyd_name` (their name in that pod).
+
+**station execution** — what a station's pod offers and is doing
+(`docs/BLUESKY.md`):
+
+```
+GET  /stations/{id}/execution                    configured/reachable + RE Manager state
+GET  /stations/{id}/execution/palette            plans_allowed, devices_allowed, registered
+GET  /stations/{id}/execution/queue              pending, running, recent history
+POST /stations/{id}/execution/environment/open
+POST /stations/{id}/execution/queue/start
+POST /stations/{id}/execution/devices/register   a registry Device per unregistered pod device
+```
+
+**procedures** — ordered plan steps for one station (same five routes as
+above, by UUID or name), plus:
+
+```
+POST /procedures/validate          {station_uuid, steps} -> {valid, diagnostics[]}  (saved or not)
+GET  /procedures/{id}/compile      the queue items a run would dispatch
+```
+
+**runs** — one dispatch of a procedure; state synced from the station on read:
+
+```
+GET  /runs                         newest first, ?station_uuid=&procedure_uuid=
+GET  /runs/{id-or-code}
+POST /runs                         {procedure_uuid, sample?: {...}, autostart?} -> validate, register sample, dispatch
+POST /runs/{id}/stop               remove pending steps; the running one finishes
+POST /runs/{id}/abort              stop now
+```
+
+**samples** — state and location change only through events:
+
+```
+GET    /samples                    ?state=&run_uuid=&q=
+GET    /samples/{id-or-code}       with its event history
+POST   /samples                    register by hand
+PATCH  /samples/{id}               descriptive fields only
+DELETE /samples/{id}
+GET    /samples/{id}/events
+POST   /samples/{id}/events        {to_state, reason?, station_uuid?}  (plan §7.3 lifecycle)
+```
+
 **files** — polymorphic attachment (owner_object_type + owner_object_uuid,
 any entity above):
 
@@ -83,6 +128,6 @@ GET /health   -> {"status": "ok"}
 
 ## What's not here yet
 
-`CapabilityClass`, `Sample`, and most of `Device`'s descriptor fields
-(ophyd/transport/network/envelope/safety) don't exist yet — see
+`CapabilityClass` and most of `Device`'s descriptor fields
+(transport/network/envelope/safety) don't exist yet — see
 `project_plan/EPIChem_Roadmap.md` Milestone 1.3.

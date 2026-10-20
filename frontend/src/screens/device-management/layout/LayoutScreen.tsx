@@ -18,7 +18,7 @@
  * draft, and a save writes the draft and refetches.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -34,12 +34,13 @@ import type { EntityKind, GeometryDescriptor } from "../../../api/types";
 import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
 import { Inspector } from "../../../components/Inspector";
+import { Menu } from "../../../components/Menu";
 import { EntityInspector } from "../../../components/inspectors";
 import { CreatePanel, useCreator } from "../../../components/inspectors/create";
 import { EditContext } from "../../../components/inspectors/edit";
 import { InspectorNavContext, type InspectorTarget } from "../../../components/inspectors/nav";
 import { ScreenHeader } from "../../../components/ScreenHeader";
-import type { Rect } from "./constraints";
+import { slideTo, type Rect } from "./constraints";
 import { buildLevel, drillInto, type LevelContext } from "./levels";
 import { LocationPath } from "./LocationPath";
 import { LayoutCanvas, type Preset, type ViewApi } from "./Scene";
@@ -78,7 +79,13 @@ export function LayoutScreen() {
   /** What the panel is showing. Usually the selected box, but a reference
    * field can send it somewhere that isn't on this level at all. */
   const [inspect, setInspect] = useState<InspectorTarget | null>(null);
-  const creator = useCreator();
+  // A new box opens selected, so it can be dragged straight into place.
+  const creator = useCreator({
+    onCreated: (kind, row) => {
+      setSelected(row.uuid);
+      setInspect({ kind, row });
+    },
+  });
   const [note, setNote] = useState<string | null>(null);
   const view = useRef<ViewApi | null>(null);
   const labelNodes = useRef(new Map<string, HTMLElement>());
@@ -194,14 +201,39 @@ export function LayoutScreen() {
     },
   });
 
+  /**
+   * Removing is a real DELETE, not a staged edit — it can't wait for Save,
+   * because Cancel couldn't bring the record (or its revisions' subject) back.
+   * So it asks first, and drops whatever the draft held for it.
+   */
   const remove = useMutation({
     mutationFn: (target: InspectorTarget) => API_BY_KIND[target.kind].remove(target.row.uuid),
-    onSuccess: async () => {
+    onSuccess: async (_result, target) => {
       setSelected(null);
       setInspect(null);
+      setDraft(({ [target.row.uuid]: _dropped, ...rest }) => rest);
       await queryClient.invalidateQueries();
     },
   });
+
+  function confirmRemove(box: { kind: EntityKind; row: InspectorTarget["row"]; name: string }) {
+    if (!confirm(`Delete ${box.kind.toLowerCase()} "${box.name}"? This can't be undone from here.`)) return;
+    remove.mutate({ kind: box.kind, row: box.row });
+  }
+
+  /** Arrow keys nudge the selection by a grid cell (shift: ten), through the
+   * same constraints a drag obeys. */
+  function nudge(dx: number, dy: number) {
+    if (!selectedBox || !model) return;
+    const others = boxes
+      .filter((b) => b.uuid !== selectedBox.uuid && b.layer === selectedBox.layer)
+      .map((b) => b.rect);
+    const { pos } = selectedBox.rect;
+    setRect(
+      selectedBox.uuid,
+      slideTo(selectedBox.rect, { x: pos.x + dx * model.grid, y: pos.y + dy * model.grid }, model.size, others),
+    );
+  }
 
   /** Leaving the editor with unsaved work asks first. */
   function leaveEditing() {
@@ -232,6 +264,42 @@ export function LayoutScreen() {
     const box = uuid === null ? null : boxes.find((b) => b.uuid === uuid);
     setInspect(box ? { kind: box.kind, row: box.row } : null);
   }
+
+  // Keyboard: Esc lets go, Delete removes, arrows nudge — the last two only in
+  // the editor, and never while typing into a field.
+  const keys = useRef<(event: KeyboardEvent) => void>(() => {});
+  keys.current = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("input, textarea, select, [contenteditable]")) return;
+    if (event.key === "Escape") {
+      if (creator.kind) creator.close();
+      else select(null);
+      return;
+    }
+    if (!editing || !selectedBox) return;
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      confirmRemove(selectedBox);
+      return;
+    }
+    const step = event.shiftKey ? 10 : 1;
+    const arrows: Record<string, [number, number]> = {
+      ArrowLeft: [-step, 0],
+      ArrowRight: [step, 0],
+      ArrowUp: [0, -step],
+      ArrowDown: [0, step],
+    };
+    const delta = arrows[event.key];
+    if (delta) {
+      event.preventDefault();
+      nudge(...delta);
+    }
+  };
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => keys.current(event);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   /** What an Add on this level hangs the new row off. */
   const parentUuid = context.station?.uuid ?? context.lab?.uuid ?? context.site?.uuid;
@@ -286,10 +354,9 @@ export function LayoutScreen() {
                   and positioned by the scene. A box's name enters it, which is
                   how the old editor drilled down; a zone's is just a caption. */}
               <div className="layout__labels">
-                {[
-                  ...boxes.map((b) => ({ key: b.uuid, name: b.name, enter: true })),
-                  ...model.zones.map((z) => ({ key: z.uuid, name: z.name, enter: false })),
-                ].map((item) => (
+                {boxes
+                  .map((b) => ({ key: b.uuid, name: b.name, enter: b.enterable }))
+                  .map((item) => (
                   <button
                     key={item.key}
                     ref={(el) => {
@@ -350,14 +417,15 @@ export function LayoutScreen() {
 
                   {editing && (
                     <>
-                      <Button
+                      <Menu
+                        label="Add"
                         size="sm"
-                        onClick={() =>
-                          creator.open(model.childKind, parentUuid ? { [PARENT_FIELD[model.childKind]]: parentUuid } : {})
-                        }
-                      >
-                        Add {model.childLabel}
-                      </Button>
+                        items={model.addable.map((kind) => ({ id: kind, label: kind }))}
+                        onPick={(id) => {
+                          const kind = id as EntityKind;
+                          creator.open(kind, parentUuid ? { [PARENT_FIELD[kind]]: parentUuid } : {});
+                        }}
+                      />
                       {/* The site is the floor everything else stands on, and
                           it isn't a box on its own canvas — this is the way in
                           to editing it. One floor for now; no picker yet. */}
@@ -373,9 +441,8 @@ export function LayoutScreen() {
                         size="sm"
                         variant="danger"
                         disabled={selectedBox === null || remove.isPending}
-                        onClick={() =>
-                          selectedBox && remove.mutate({ kind: selectedBox.kind, row: selectedBox.row })
-                        }
+                        title="Delete the selected box (Del)"
+                        onClick={() => selectedBox && confirmRemove(selectedBox)}
                       >
                         Remove
                       </Button>

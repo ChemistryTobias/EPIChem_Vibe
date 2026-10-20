@@ -17,12 +17,19 @@ export interface BoxFill {
 export const FILL_ACTIVE: BoxFill = { top: "#006C66", left: "#005553", right: "#00413F" };
 export const FILL_GREY: BoxFill = { top: "#A7A7A8", left: "#8E8E8F", right: "#767677" };
 
+/** A translucent area on the floor: its fill, how see-through, its outline. */
+export interface Wash {
+  fill: string;
+  opacity: number;
+  edge: string;
+}
+
 /** Labs draw flat and translucent, like zones, so the floor grid and the
  * station footprints on top read straight through them. */
-export const LAB = { fill: "#00B1EA", opacity: 0.14, edge: "#0090BE" };
+export const LAB: Wash = { fill: "#00B1EA", opacity: 0.14, edge: "#0090BE" };
 
 /** Zones: the olive wash of the old ZoneArea shape. */
-export const ZONE = { fill: "#C6D325", opacity: 0.16, edge: "#8C9519" };
+export const ZONE: Wash = { fill: "#C6D325", opacity: 0.16, edge: "#8C9519" };
 
 export const FLOOR = "#EEEEEE";
 export const FLOOR_EDGE = "#A7A7A8";
