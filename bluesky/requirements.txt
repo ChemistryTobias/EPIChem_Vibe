@@ -1,0 +1,8 @@
+# Pinned: the queueserver's plan-representation format is what EPIChem's
+# palette parses, so an upgrade is a deliberate, tested change.
+bluesky==1.15.1
+bluesky-queueserver==0.0.25
+bluesky-httpserver==0.0.14
+ophyd==1.11.2
+# Imported by bluesky-httpserver (via queueserver's conversions) but not declared by it.
+pandas>=2.2
