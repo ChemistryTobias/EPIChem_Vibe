@@ -43,6 +43,11 @@
   white-space: nowrap;
 }
 
+.layout__label-glyph {
+  margin-right: 4px;
+  vertical-align: -3px;
+}
+
 /* A name you can enter reads as a target; one you can't is just a caption. */
 .layout__label--enter {
   pointer-events: auto;

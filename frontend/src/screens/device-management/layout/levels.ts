@@ -81,8 +81,23 @@ export interface LayoutBox {
   geometry: GeometryDescriptor;
 }
 
+/**
+ * A see-through hint of what's inside a box — at site level, each lab's
+ * stations, so the site reads as the labs' rough layout. Not selectable, not
+ * editable; placed relative to its parent box (geometry is parent-local), so
+ * it travels with a lab being dragged.
+ */
+export interface Hint {
+  key: string;
+  parent: string;
+  rect: Rect;
+  height: number;
+}
+
 export interface LevelModel {
   level: Level;
+  /** Faint contents of the boxes on this floor. */
+  hints: Hint[];
   /** Floor extent in metres. */
   size: Vec2;
   grid: number;
@@ -182,6 +197,13 @@ function siteLevel(site: Site, data: LayoutData, floor: number): LevelModel | nu
         .map((l) => box("Lab", l, FILL_ACTIVE, { wash: LAB, enterable: true }))
         .filter(present),
     ],
+    hints: data.labs
+      .filter((l) => l.site_uuid === site.uuid)
+      .flatMap((l) =>
+        data.stations
+          .filter((st) => st.lab_uuid === l.uuid && st.object_geometry !== null)
+          .map((st) => ({ key: st.uuid, parent: l.uuid, ...rectOf(st.object_geometry!) })),
+      ),
     childLabel: "lab",
     addable: ["Lab", "Zone"],
   };
@@ -200,6 +222,7 @@ function labLevel(lab: Lab, data: LayoutData): LevelModel | null {
         .map((s) => box("Station", s, FILL_ACTIVE, { enterable: true }))
         .filter(present),
     ],
+    hints: [],
     childLabel: "station",
     addable: ["Station", "Zone"],
   };
@@ -219,6 +242,7 @@ function stationLevel(station: Station, data: LayoutData): LevelModel | null {
         .filter((d) => d.station_uuid === station.uuid)
         .map((d) => box("Device", d, FILL_ACTIVE)),
     ].filter(present),
+    hints: [],
     childLabel: "device",
     addable: ["Device", "Module"],
   };
