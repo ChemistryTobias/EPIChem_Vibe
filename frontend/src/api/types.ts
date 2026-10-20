@@ -51,6 +51,8 @@ export interface Station extends ObjectBase {
   zone_uuid: string | null;
   /** The station pod's bluesky-httpserver; null means not executable. */
   queueserver_url: string | null;
+  /** Key into the console's icon set (STATION_ICONS); null = the default. */
+  icon: string | null;
   object_geometry: GeometryDescriptor | null;
 }
 
@@ -152,9 +154,24 @@ export interface StationQueue {
   history: QueueItem[];
 }
 
+/** A plan call on a station, or a flow-control step EPIChem carries out itself. */
+export type StepType = "plan" | "wait" | "input" | "http";
+
+export interface InputField {
+  name: string;
+  label?: string;
+  type?: "text" | "number" | "boolean";
+  required?: boolean;
+}
+
 export interface ProcedureStep {
   id: string;
+  type?: StepType;
   plan: string;
+  /** Plan steps: where it runs; null = the procedure's station. */
+  station_uuid?: string | null;
+  /** Plan arguments, or a control step's settings: wait {duration_s},
+   * input {prompt, fields}, http {method, url, body, expect_status}. */
   kwargs: Record<string, unknown>;
   label?: string | null;
   position?: [number, number] | null;
@@ -178,12 +195,17 @@ export interface ValidationResult {
   diagnostics: Diagnostic[];
 }
 
-export type RunState = "queued" | "running" | "completed" | "failed" | "stopped" | "unknown";
+export type RunState = "queued" | "running" | "waiting" | "completed" | "failed" | "stopped" | "unknown";
 
 export interface RunItem {
   step_id: string;
+  type: StepType;
   plan: string;
+  label: string | null;
+  station_uuid: string | null;
   kwargs: Record<string, unknown>;
+  /** The arguments actually sent, references filled in. */
+  kwargs_sent: Record<string, unknown> | null;
   item_uid: string | null;
   /** pending | running | removed | missing, or the queueserver's exit status. */
   status: string;
@@ -191,15 +213,19 @@ export interface RunItem {
   message: string | null;
   time_start: number | null;
   time_stop: number | null;
+  /** What the step produced: an input's values, an HTTP response, run uids. */
+  output: Record<string, unknown> | null;
 }
 
 export interface Run {
   uuid: string;
   code: string;
-  procedure_uuid: string;
+  /** "procedure", or "manual" — one plan run from Device Monitoring. */
+  kind: "procedure" | "manual";
+  procedure_uuid: string | null;
   procedure_name: string;
-  procedure_version: number;
-  station_uuid: string;
+  procedure_version: number | null;
+  station_uuid: string | null;
   state: RunState;
   items: RunItem[];
   error: string | null;
@@ -257,4 +283,30 @@ export interface SampleEvent {
 
 export interface SampleDetail extends Sample {
   events: SampleEvent[];
+}
+
+// ---------------------------------------------------------------- execution
+
+export interface DeviceReading {
+  value: number | string | boolean | null;
+  timestamp: number;
+  units: string;
+}
+
+/** `GET /stations/{id}/execution/readings`: device name -> its live readings. */
+export type Readings = Record<string, { class: string; readings: Record<string, DeviceReading>; error: string | null }>;
+
+export interface DiscoveredPod {
+  uuid: string;
+  url: string;
+  station: string;
+  description: string | null;
+  devices: Record<string, { classname?: string | null; module?: string | null }>;
+  plans: string[];
+  source: "announce" | "probe";
+  first_seen: string;
+  last_seen: string;
+  online: boolean;
+  /** The station already using this pod, if any. */
+  station_uuid: string | null;
 }

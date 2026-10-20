@@ -13,6 +13,7 @@ const TONES: Record<string, Tone> = {
   queued: "neutral",
   pending: "neutral",
   running: "active",
+  waiting: "warning",
   completed: "ok",
   failed: "error",
   aborted: "error",

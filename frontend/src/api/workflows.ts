@@ -6,12 +6,15 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
 import type {
   Device,
+  DiscoveredPod,
   ExecutionStatus,
+  Readings,
   Palette,
   Procedure,
   ProcedureStep,
   Run,
   StationQueue,
+  Station,
   ValidationResult,
 } from "./types";
 
@@ -24,6 +27,18 @@ export const executionApi = {
   openEnvironment: (station: string) => apiPost<void>(`/stations/${enc(station)}/execution/environment/open`, undefined),
   startQueue: (station: string) => apiPost<void>(`/stations/${enc(station)}/execution/queue/start`, undefined),
   registerDevices: (station: string) => apiPost<Device[]>(`/stations/${enc(station)}/execution/devices/register`, undefined),
+  readings: (station: string) => apiGet<Readings>(`/stations/${enc(station)}/execution/readings`),
+  /** Run one plan now (behind anything already queued); recorded as a manual run. */
+  run: (station: string, plan: string, kwargs: Record<string, unknown>) =>
+    apiPost<Run>(`/stations/${enc(station)}/execution/run`, { plan, kwargs }),
+};
+
+export const discoveryApi = {
+  pods: () => apiGet<DiscoveredPod[]>("/discovery/pods"),
+  probe: (url: string) => apiPost<DiscoveredPod>("/discovery/probe", { url }),
+  adopt: (pod: string, body: { station_uuid?: string; lab_uuid?: string; name?: string }) =>
+    apiPost<Station>(`/discovery/pods/${enc(pod)}/adopt`, body),
+  dismiss: (pod: string) => apiDelete(`/discovery/pods/${enc(pod)}`),
 };
 
 export interface ProcedureBody {
@@ -35,6 +50,7 @@ export interface ProcedureBody {
 
 export const proceduresApi = {
   list: () => apiGet<Procedure[]>("/procedures?limit=500"),
+  duplicate: (id: string) => apiPost<Procedure>(`/procedures/${enc(id)}/duplicate`, undefined),
   get: (id: string) => apiGet<Procedure>(`/procedures/${enc(id)}`),
   create: (body: ProcedureBody) => apiPost<Procedure>("/procedures", body),
   update: (id: string, body: ProcedureBody) => apiPatch<Procedure>(`/procedures/${enc(id)}`, body),
@@ -53,7 +69,6 @@ export interface NewRun {
     amount_unit?: string;
     description?: string;
   };
-  autostart?: boolean;
 }
 
 export const runsApi = {
@@ -62,6 +77,8 @@ export const runsApi = {
   create: (body: NewRun) => apiPost<Run>("/runs", body),
   stop: (id: string) => apiPost<Run>(`/runs/${enc(id)}/stop`, undefined),
   abort: (id: string) => apiPost<Run>(`/runs/${enc(id)}/abort`, undefined),
+  answer: (id: string, step_id: string, values: Record<string, unknown>) =>
+    apiPost<Run>(`/runs/${enc(id)}/input`, { step_id, values }),
 };
 
 export const TERMINAL_RUN_STATES = ["completed", "failed", "stopped"];
