@@ -215,6 +215,19 @@ const runsRoute = createRoute({
   component: lazyRouteComponent(() => import("./screens/workflows/RunsScreen"), "RunsScreen"),
 });
 
+/** General settings (the nav's cog) and your own account (the nav's person). */
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  component: lazyRouteComponent(() => import("./screens/settings/SettingsScreen"), "SettingsScreen"),
+});
+
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account",
+  component: lazyRouteComponent(() => import("./screens/settings/AccountScreen"), "AccountScreen"),
+});
+
 /** The old single-page address, kept so bookmarks still land somewhere. */
 const legacyWorkflowRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -234,6 +247,8 @@ const routeTree = rootRoute.addChildren([
   ]),
   samplesRoute,
   workflowsRoute.addChildren([workflowsIndexRoute, proceduresRoute, designerIndexRoute, designerRoute, runsRoute]),
+  settingsRoute,
+  accountRoute,
   legacyWorkflowRoute,
 ]);
 

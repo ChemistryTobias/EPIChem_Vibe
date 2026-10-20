@@ -7,7 +7,6 @@
  */
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { login } from "../api/auth";
 import { Alert } from "./Alert";
@@ -16,7 +15,6 @@ import { Button } from "./Button";
 import "./LoginScreen.css";
 
 export function LoginScreen() {
-  const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +25,7 @@ export function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
-      await login(name, password);
-      await queryClient.invalidateQueries({ queryKey: ["me"] });
+      await login(name, password); // stores the token; the shell re-renders on it
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setBusy(false);

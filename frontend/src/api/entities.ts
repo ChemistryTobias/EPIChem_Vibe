@@ -7,7 +7,7 @@
  */
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "./client";
-import type { Device, Lab, Module, Site, Station, Zone } from "./types";
+import type { Device, Group, Lab, Module, Site, Station, User, Zone } from "./types";
 
 function crud<T>(plural: string) {
   const one = (id: string) => `/${plural}/${encodeURIComponent(id)}`;
@@ -38,3 +38,12 @@ export const API_BY_KIND = {
   Module: modulesApi,
   Device: devicesApi,
 } as const;
+
+/** Identity (`app/core/access_control/`): the same five routes, plus group members. */
+export const usersApi = crud<User>("users");
+export const groupsApi = {
+  ...crud<Group>("groups"),
+  members: (id: string) => apiGet<string[]>(`/groups/${encodeURIComponent(id)}/members`),
+  addMember: (id: string, user: string) => apiPost<void>(`/groups/${encodeURIComponent(id)}/members/${user}`, undefined),
+  removeMember: (id: string, user: string) => apiDelete(`/groups/${encodeURIComponent(id)}/members/${user}`),
+};

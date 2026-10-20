@@ -32,29 +32,80 @@
 }
 
 
+/* You and the settings cog, one row at the foot. */
 .nav-rail__footer {
-  height: var(--nav-footer-height);
-  border-top: 1px solid var(--color-mpg-green);
-
   display: flex;
-  flex-direction: column;
-  align-items: flex-start; 
-  justify-content: flex-end;
-  padding: var(--space-5) var(--space-5) var(--space-5);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-mpg-green);
+}
 
+.nav-rail__me,
+.nav-rail__cog {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+}
+
+.nav-rail__me {
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-2);
+  padding: var(--space-1);
   font-family: var(--font-family-default);
-  font-weight: var(--font-weight-light);
   font-size: var(--font-size-small);
-  margin: 0;
   text-align: left;
-  opacity: 0.7;
 }
 
-.nav-rail__footer-section-header {
-  text-transform: uppercase;
-  font-weight: var(--font-weight-bold);
+.nav-rail__avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--color-mpg-green);
+  color: var(--color-white);
 }
 
+.nav-rail__me-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-rail__cog {
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+.nav-rail__me:hover,
+.nav-rail__cog:hover {
+  color: var(--color-white);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nav-rail__me:hover .nav-rail__avatar,
+.nav-rail__me--active .nav-rail__avatar {
+  background: var(--color-accent-green-light);
+  color: var(--color-mpg-green-dark);
+}
+
+.nav-rail__me--active,
+.nav-rail__cog--active {
+  color: var(--color-white);
+}
+
+.nav-rail__cog--active {
+  background: var(--color-mpg-green);
+}
 
 .nav-rail__item {
   display: block;
@@ -130,14 +181,4 @@
 .nav-rail__subitem--active {
   color: var(--color-white);
   font-weight: var(--font-weight-bold);
-}
-
-.nav-rail__signout {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  font: inherit;
-  color: var(--color-accent-green-light);
-  text-decoration: underline;
-  cursor: pointer;
 }

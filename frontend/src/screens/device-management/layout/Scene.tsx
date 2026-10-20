@@ -23,8 +23,8 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three";
 
 import { clampToFloor, round3, slideTo, softSnap, type Rect, type Vec2 } from "./constraints";
-import type { LayoutBox, LevelModel } from "./levels";
-import { EDGE, FLOOR, FLOOR_EDGE, GRID, LAB, SELECT, type BoxFill, type Wash } from "./palette";
+import type { Hint, LayoutBox, LevelModel } from "./levels";
+import { EDGE, FILL_ACTIVE, FLOOR, FLOOR_EDGE, GRID, LAB, SELECT, type BoxFill, type Wash } from "./palette";
 
 /** What the overlay's zoom controls drive. */
 export interface ViewApi {
@@ -281,6 +281,11 @@ function Contents({
         raised={editing && preset === "iso" ? selected : null}
       />
 
+      {model.hints.map((hint) => {
+        const parent = boxes.find((b) => b.uuid === hint.parent);
+        return parent ? <HintBox key={hint.key} hint={hint} origin={parent.rect.pos} thin={thin} /> : null;
+      })}
+
       {boxes.map((box) =>
         box.flat ? (
           // A lab or a zone is a wash on the floor, not a solid — whatever
@@ -382,17 +387,20 @@ function Edges({
   geometry,
   color,
   angle = 1,
+  opacity = 1,
 }: {
   geometry: THREE.BufferGeometry;
   color: string;
   /** Only creases sharper than this many degrees get a line — what keeps a
    * cylinder to its two rims rather than forty facets. */
   angle?: number;
+  /** Below 1 for a faint outline (hints). */
+  opacity?: number;
 }) {
   const edges = useMemo(() => new THREE.EdgesGeometry(geometry, angle), [geometry, angle]);
   return (
-    <lineSegments geometry={edges}>
-      <lineBasicMaterial color={color} />
+    <lineSegments geometry={edges} raycast={opacity < 1 ? () => null : undefined}>
+      <lineBasicMaterial color={color} transparent={opacity < 1} opacity={opacity} />
     </lineSegments>
   );
 }
@@ -507,6 +515,22 @@ function bodyOf(shape: LayoutBox["shape"], w: number, h: number, d: number, fill
   const geometry = new THREE.BoxGeometry(w, h, d);
   const material = [flat(fill.right), flat(fill.right), flat(fill.top), flat(fill.top), flat(fill.left), flat(fill.left)];
   return { geometry, material, edgeAngle: 1 };
+}
+
+const HINT_FILL = new THREE.MeshBasicMaterial({ color: FILL_ACTIVE.top, transparent: true, opacity: 0.09, depthWrite: false });
+const ignore = () => null;
+
+/** A faint, untouchable outline of something inside a box (see `Hint`). */
+function HintBox({ hint, origin, thin }: { hint: Hint; origin: Vec2; thin: number }) {
+  const { pos, size } = hint.rect;
+  const height = Math.max(hint.height, thin);
+  const geometry = useMemo(() => new THREE.BoxGeometry(size.x, height, size.y), [size.x, size.y, height]);
+  return (
+    <group position={[origin.x + pos.x + size.x / 2, height / 2 + thin * 0.2, origin.y + pos.y + size.y / 2]}>
+      <mesh geometry={geometry} material={HINT_FILL} raycast={ignore} />
+      <Edges geometry={geometry} angle={1} color={FILL_ACTIVE.top} opacity={0.2} />
+    </group>
+  );
 }
 
 interface BoxMeshProps {

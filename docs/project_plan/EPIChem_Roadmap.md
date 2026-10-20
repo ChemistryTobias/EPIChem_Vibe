@@ -233,12 +233,17 @@ that before anything requires it is premature.
 ### 2.2 A node-based frontend for building procedures
 **Status: first cut done, reworked n8n-style.** Workflows → Procedures: a
 searchable library (new, duplicate, delete, last run). Workflows → Designer
-edits one procedure as a vertical chain of icon tiles with "+" between them;
-a node picker offers each station's plans (grouped by library, generated
-from the pod's `plans_allowed`/`devices_allowed`) and the flow-control
-steps; settings and live server-side validation in the side inspector.
-Workflows → Runs: live run state, Input answers, stop/abort; station
-control moved to Device Monitoring. Tiers 2 and 4 (capability contract,
+edits one procedure as a chain of icon tiles with "+" between them; steps
+are added from a picker (station → station actions / devices → device
+actions, generated from the pod's `plans_allowed`/`devices_allowed`, plus
+the flow-control steps) by click or drag-and-drop, wired handle to handle,
+cut, duplicated and deleted on the canvas; unconnected steps are kept but
+don't run. The side panel holds only a step's values (its station and
+device are fixed by where it was picked from), with live server-side
+validation.
+Workflows → Runs: live run state, Input answers, stop/abort, run a manual
+run again; station control lives in Device Monitoring (pinned actions,
+station actions, per-device drill-in, one-click runs). Tiers 2 and 4 (capability contract,
 safety) wait for 1.3's CapabilityClass/safety fields. The scheduler is the
 minimal dispatch layer described below — per-station queues are the
 queueserver's own; reservation/priority (§11) not yet.

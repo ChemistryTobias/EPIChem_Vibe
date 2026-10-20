@@ -30,9 +30,10 @@ import {
   stationsApi,
   zonesApi,
 } from "../../../api/entities";
-import type { EntityKind, GeometryDescriptor } from "../../../api/types";
+import type { EntityKind, GeometryDescriptor, Station } from "../../../api/types";
 import { Alert } from "../../../components/Alert";
 import { Button } from "../../../components/Button";
+import { Glyph, deviceGlyph, stationGlyph } from "../../../components/glyphs";
 import { Inspector } from "../../../components/Inspector";
 import { Menu } from "../../../components/Menu";
 import { EntityInspector } from "../../../components/inspectors";
@@ -355,7 +356,18 @@ export function LayoutScreen() {
                   how the old editor drilled down; a zone's is just a caption. */}
               <div className="layout__labels">
                 {boxes
-                  .map((b) => ({ key: b.uuid, name: b.name, enter: b.enterable }))
+                  .map((b) => ({
+                    key: b.uuid,
+                    name: b.name,
+                    enter: b.enterable,
+                    // A station carries its icon onto the floor plan too.
+                    glyph:
+                      b.kind === "Station"
+                        ? stationGlyph(data.stations.find((st) => st.uuid === b.uuid) ?? (b.row as Station))
+                        : b.kind === "Device"
+                          ? deviceGlyph(b.name)
+                          : null,
+                  }))
                   .map((item) => (
                   <button
                     key={item.key}
@@ -367,6 +379,7 @@ export function LayoutScreen() {
                     onClick={item.enter ? () => enter(item.key) : undefined}
                     title={item.enter ? `Enter ${item.name}` : item.name}
                   >
+                    {item.glyph && <Glyph name={item.glyph} size={14} className="layout__label-glyph" />}
                     {item.name}
                   </button>
                 ))}

@@ -194,6 +194,14 @@ still matters for the rewrite even though the code paths named below
 - **Manual runs reuse Run** (`kind="manual"`, no procedure, no sample): a
   plan launched from Device Monitoring is recorded and followed exactly like
   a procedure step, rather than a second fire-and-forget path.
+- **A procedure is still one chain; the canvas may hold more.** Steps gain
+  `detached`/`after` so the designer can keep loose steps and fragments
+  while someone rewires, without a graph model on the backend: the step
+  list stays the run order (connected steps first), and only connected
+  steps are validated, compiled or run. Branches/loops remain out (§9.4).
+- **Pins and similar view preferences live in the browser** (localStorage,
+  per station) until there are per-user settings on the backend; losing
+  them costs a click, not data.
 - **Samples change state only through events** — the §7.3 event log pulled
   forward into the otherwise-minimal Milestone 3 (ADR 0005's flat row
   otherwise kept).

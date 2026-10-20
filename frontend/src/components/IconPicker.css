@@ -31,3 +31,74 @@
   background: var(--color-mpg-green);
   border-color: var(--color-mpg-green);
 }
+
+/* The icon as a control: a pencil corner says it's clickable. */
+.station-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.station-icon__button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.station-icon__edit {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: 50%;
+  background: var(--color-white);
+  color: var(--color-mpg-green);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.station-icon__button:hover .station-icon__edit,
+.station-icon__button:focus-visible .station-icon__edit,
+.station-icon__button[aria-expanded="true"] .station-icon__edit {
+  opacity: 1;
+}
+
+.station-icon__pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: 300px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-grey-semilight);
+  background: var(--color-white);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  color: var(--color-black, #000);
+}
+
+.station-icon__title {
+  margin: 0 0 var(--space-2);
+}
+
+.station-icon__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  font-size: var(--font-size-small);
+}
+
+.station-icon-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-mpg-green);
+  font-size: var(--font-size-small);
+}

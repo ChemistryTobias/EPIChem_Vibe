@@ -175,6 +175,11 @@ export interface ProcedureStep {
   kwargs: Record<string, unknown>;
   label?: string | null;
   position?: [number, number] | null;
+  /** On the canvas but not connected: kept, never validated as part of the
+   * run, compiled or executed. */
+  detached?: boolean;
+  /** Detached steps: the step it follows within its loose fragment. */
+  after?: string | null;
 }
 
 export interface Procedure extends ObjectBase {
@@ -310,3 +315,12 @@ export interface DiscoveredPod {
   /** The station already using this pod, if any. */
   station_uuid: string | null;
 }
+
+/** `backend/app/core/access_control/users/schema.py` — never carries the password hash. */
+export interface User extends ObjectBase {
+  email: string | null;
+  active: boolean;
+}
+
+/** `backend/app/core/access_control/groups/schema.py`. */
+export type Group = ObjectBase;

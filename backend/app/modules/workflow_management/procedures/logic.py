@@ -12,7 +12,7 @@ import re
 from typing import Any, Optional
 from urllib.parse import urlparse
 
-from .schema import Diagnostic, ProcedureStep
+from .schema import Diagnostic, ProcedureStep, connected
 
 # Parameters EPIChem fills itself (run metadata), never shown or required.
 RESERVED_PARAMETERS = {"md"}
@@ -180,9 +180,12 @@ def validate_steps(
 ) -> list[Diagnostic]:
     """Every step, in order. `palettes`: station uuid -> {"plans", "devices",
     "registered"} or {"error": message} when that station can't be asked."""
-    diagnostics: list[Diagnostic] = []
+    diagnostics: list[Diagnostic] = [
+        Diagnostic(severity="warning", message="Not connected -- this step won't run.", step_id=s.id) for s in steps if s.detached
+    ]
+    steps = connected(steps)
     if not steps:
-        diagnostics.append(Diagnostic(severity="error", message="The procedure has no steps."))
+        diagnostics.append(Diagnostic(severity="error", message="The procedure has no connected steps."))
 
     seen: list[str] = []
     for step in steps:
@@ -227,7 +230,7 @@ def compile_plan_item(step: ProcedureStep, kwargs: dict[str, Any], meta: dict[st
 
 def compile_steps(steps: list[ProcedureStep], meta: dict[str, Any]) -> list[dict[str, Any]]:
     """Preview: the plan items, in order (control steps are EPIChem's own, not queue items)."""
-    return [compile_plan_item(step, step.kwargs, meta, i) for i, step in enumerate(steps) if step.type == "plan"]
+    return [compile_plan_item(step, step.kwargs, meta, i) for i, step in enumerate(connected(steps)) if step.type == "plan"]
 
 
 def lookup(outputs: dict[str, Any], step_id: str, path: str) -> Any:

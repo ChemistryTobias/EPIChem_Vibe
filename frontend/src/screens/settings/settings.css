@@ -1,0 +1,115 @@
+/* Settings and account: a column of cards, narrow enough to read. */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 760px;
+}
+
+.settings__card {
+  padding: var(--space-4);
+  border: 1px solid var(--color-grey-semilight);
+  background: var(--color-white);
+}
+
+.settings__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.settings__title {
+  flex: 1;
+  margin: 0;
+  color: var(--color-mpg-green-dark);
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+}
+
+.settings__hint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size-small);
+}
+
+.settings__list {
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.settings__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+  margin: 0;
+  border-bottom: 1px solid var(--color-grey-light);
+}
+
+.settings__name {
+  font-weight: var(--font-weight-bold);
+}
+
+.settings__meta {
+  flex: 1;
+  font-size: var(--font-size-small);
+}
+
+.settings__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-grey-light);
+  color: var(--color-mpg-green);
+}
+
+.settings__avatar--big {
+  width: 44px;
+  height: 44px;
+  background: var(--color-mpg-green);
+  color: var(--color-white);
+}
+
+.settings__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.settings__form .field__input {
+  width: 200px;
+}
+
+.settings__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 360px;
+}
+
+.settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.settings__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.settings__code {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  background: var(--color-grey-light);
+  font-size: 12px;
+}

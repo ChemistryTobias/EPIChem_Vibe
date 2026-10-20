@@ -38,6 +38,11 @@ const TONES: Record<string, Tone> = {
   executing_queue: "active",
   closed: "neutral",
   unreachable: "error",
+  // accounts, services
+  active: "ok",
+  inactive: "neutral",
+  online: "ok",
+  offline: "error",
 };
 
 export function toneOf(status: string): Tone {

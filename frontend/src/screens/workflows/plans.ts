@@ -5,7 +5,7 @@
  * shows up, with its form, the next time the palette loads.
  */
 
-import type { PlanParameter, PlanRepr, ProcedureStep } from "../../api/types";
+import type { Palette, PlanParameter, PlanRepr, ProcedureStep } from "../../api/types";
 
 /** Parameters EPIChem fills itself, never shown (mirrors the backend's RESERVED_PARAMETERS). */
 const RESERVED = new Set(["md"]);
@@ -132,8 +132,9 @@ export function previewItems(steps: ProcedureStep[], procedure: string | null, v
 export const newId = () => `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 /** A plan step on a station, required single-choice enums pre-filled. */
-export function newPlanStep(plan: PlanRepr, station: string): ProcedureStep {
-  return { ...newStep(plan), type: "plan", station_uuid: station };
+export function newPlanStep(plan: PlanRepr, station: string, preset: Record<string, unknown> = {}): ProcedureStep {
+  const step = newStep(plan);
+  return { ...step, type: "plan", station_uuid: station, kwargs: { ...step.kwargs, ...preset } };
 }
 
 export const CONTROL_STEPS = [
@@ -201,3 +202,80 @@ export function referencesBefore(steps: ProcedureStep[], index: number): { value
 }
 
 export const isTemplate = (value: unknown) => typeof value === "string" && /\{\{\s*steps\./.test(value);
+
+// ------------------------------------------------------------ actions
+
+/**
+ * One plan as something to do on a station: a station-level operation, or an
+ * action on one device (with that device filled in, `preset`).
+ */
+export interface Action {
+  plan: PlanRepr;
+  preset: Record<string, unknown>;
+  /** The device it acts on; null for a station action. */
+  device: string | null;
+}
+
+export interface DeviceActions {
+  name: string;
+  classname?: string;
+  actions: Action[];
+}
+
+/**
+ * A station's plans the way people think of them (Device Monitoring and the
+ * designer's picker both use this):
+ *
+ * - **station**: the operations its pod offers — every library that isn't a
+ *   low-level one;
+ * - **devices**: per device, the plans that act on it — generated from its
+ *   driver (`epichem_pod.auto.<device>_low_level`), or a low-level plan whose
+ *   one device argument can be it (filled in);
+ * - **other**: what's left — bluesky's stock plans, low-level plans tied to
+ *   no single device.
+ */
+export function catalog(palette: Palette): { station: Action[]; devices: DeviceActions[]; other: Action[] } {
+  const station: Action[] = [];
+  const other: Action[] = [];
+  const devices = new Map<string, DeviceActions>(
+    Object.entries(palette.devices).map(([name, d]) => [name, { name, classname: d.classname, actions: [] }]),
+  );
+  for (const plan of Object.values(palette.plans)) {
+    const module = plan.module ?? "";
+    const auto = module.match(/^epichem_pod\.auto\.(.+)_low_level$/);
+    if (auto && devices.has(auto[1])) {
+      devices.get(auto[1])!.actions.push({ plan, preset: {}, device: auto[1] });
+      continue;
+    }
+    if (module.endsWith("_low_level")) {
+      const params = parametersOf(plan).filter(isDeviceParameter);
+      const options = params.length === 1 ? Object.values(params[0].annotation?.devices ?? {}).flat() : [];
+      const targets = options.filter((d) => devices.has(d));
+      for (const d of targets) devices.get(d)!.actions.push({ plan, preset: { [params[0].name]: d }, device: d });
+      if (targets.length === 0) other.push({ plan, preset: {}, device: null });
+      continue;
+    }
+    (module.startsWith("bluesky.") ? other : station).push({ plan, preset: {}, device: null });
+  }
+  const byName = (a: Action, b: Action) => a.plan.name.localeCompare(b.plan.name);
+  return {
+    station: station.sort(byName),
+    devices: [...devices.values()].map((d) => ({ ...d, actions: d.actions.sort(byName) })),
+    other: other.sort(byName),
+  };
+}
+
+/** A stable key for an action — what pins remember. */
+export const actionKey = (a: Action) => `${a.device ?? ""}:${a.plan.name}`;
+
+/** "hotplate_off" on hotplate1 reads "off": drop the device's name, or its type. */
+export function actionLabel(a: Action): string {
+  if (!a.device) return humanize(a.plan.name);
+  return a.plan.name
+    .replace(new RegExp(`^${a.device}_`), "")
+    .replace(new RegExp(`^${a.device.replace(/\d+$/, "")}_`), "")
+    .replace(/_/g, " ");
+}
+
+/** The parameters a person still has to think about once the preset is in. */
+export const openParameters = (a: Action) => parametersOf(a.plan).filter((p) => !(p.name in a.preset));

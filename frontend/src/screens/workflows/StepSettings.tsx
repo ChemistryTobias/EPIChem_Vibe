@@ -1,27 +1,25 @@
 /**
- * A selected step's settings, in the inspector: a plan step's station and its
- * generated parameter form, or a flow-control step's own editor — Wait (how
+ * A selected step's settings, in the side panel: a plan step's generated
+ * parameter form (its station is fixed by where it was picked from), or a flow-control step's own editor — Wait (how
  * long), Input (what to ask and which values to collect), HTTP request (where,
  * how, what to send). Values can come from earlier steps (`{{steps.<id>.…}}`).
  */
 
-import type { Diagnostic, InputField, Palette, ProcedureStep, Station } from "../../api/types";
+import type { Diagnostic, InputField, Palette, PlanRepr, ProcedureStep } from "../../api/types";
 import { Button } from "../../components/Button";
-import { Glyph, stationGlyph } from "../../components/glyphs";
 import { Field, FieldGroup } from "../../components/Inspector";
 import { StepForm } from "./StepForm";
-import { isTemplate } from "./plans";
+import { isDeviceParameter, isTemplate, parametersOf } from "./plans";
 
 interface StepSettingsProps {
   step: ProcedureStep;
-  stations: Station[];
   palette: Palette | undefined;
   diagnostics: Diagnostic[];
   refs: { value: string; label: string }[];
   onChange: (step: ProcedureStep) => void;
 }
 
-export function StepSettings({ step, stations, palette, diagnostics, refs, onChange }: StepSettingsProps) {
+export function StepSettings({ step, palette, diagnostics, refs, onChange }: StepSettingsProps) {
   const set = (key: string, value: unknown) => onChange({ ...step, kwargs: { ...step.kwargs, [key]: value } });
   const issues = (parameter: string) =>
     diagnostics
@@ -43,35 +41,20 @@ export function StepSettings({ step, stations, palette, diagnostics, refs, onCha
     </Field>
   );
 
+  // Which station a step runs on is fixed by where it was picked from; here
+  // only its values change.
   if ((step.type ?? "plan") === "plan") {
-    const offering = stations.filter((s) => s.queueserver_url);
+    const plan = palette?.plans[step.plan];
     return (
-      <>
-        <FieldGroup title="Station">
-          <div className="station-choice">
-            <Glyph name={stationGlyph(stations.find((s) => s.uuid === step.station_uuid))} size={20} />
-            <select
-              className="field__input"
-              value={step.station_uuid ?? ""}
-              onChange={(e) => onChange({ ...step, station_uuid: e.target.value || null })}
-            >
-              {offering.map((s) => (
-                <option key={s.uuid} value={s.uuid}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </FieldGroup>
-        <StepForm
-          step={step}
-          plan={palette?.plans[step.plan]}
-          diagnostics={diagnostics}
-          registered={palette?.registered ?? []}
-          onChange={onChange}
-          refs={refs}
-        />
-      </>
+      <StepForm
+        step={step}
+        plan={plan}
+        diagnostics={diagnostics}
+        registered={palette?.registered ?? []}
+        onChange={onChange}
+        refs={refs}
+        fixed={plan ? fixedDevice(plan, step) : []}
+      />
     );
   }
 
@@ -183,6 +166,13 @@ export function StepSettings({ step, stations, palette, diagnostics, refs, onCha
       )}
     </>
   );
+}
+
+/** A device action (picked under a device) keeps its device, like its station. */
+function fixedDevice(plan: PlanRepr, step: ProcedureStep): string[] {
+  if (!(plan.module ?? "").endsWith("_low_level")) return [];
+  const devices = parametersOf(plan).filter(isDeviceParameter);
+  return devices.length === 1 && step.kwargs[devices[0].name] ? [devices[0].name] : [];
 }
 
 const UNITS = [

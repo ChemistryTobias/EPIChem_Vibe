@@ -178,6 +178,7 @@
 
 /* ---- tiles ---- */
 .tile {
+  position: relative;
   width: 150px;
   display: flex;
   flex-direction: column;
@@ -190,9 +191,74 @@
   cursor: pointer;
 }
 
+/* Handles: the dots you drag a link from (right) and to (left). Visible on
+ * hover so the canvas stays calm, larger than the default to be catchable. */
 .designer .tile .react-flow__handle {
   top: 42px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--color-white);
+  background: var(--color-mpg-green);
   opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.designer .tile:hover .react-flow__handle,
+.designer .react-flow__handle.connectingfrom,
+.designer .react-flow__handle.connectingto,
+.designer .react-flow__handle.valid {
+  opacity: 1;
+}
+
+/* A step not wired into the chain: dashed and faded until it is. */
+.tile--loose .tile__box {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+/* Duplicate / Delete, on the tile itself — shown on hover or when selected. */
+.tile__tools {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-grey-semilight);
+  border-radius: var(--radius);
+  background: var(--color-white);
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.tile:hover .tile__tools,
+.tile--selected .tile__tools {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.tile__tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-grey-dark);
+  cursor: pointer;
+}
+
+.tile__tools button:hover {
+  background: var(--color-grey-light);
+  color: var(--color-mpg-green);
+}
+
+.tile__tools .tile__tool--danger:hover {
+  color: var(--color-danger);
 }
 
 .tile--start .react-flow__handle,
@@ -321,8 +387,57 @@
   stroke-width: 1.5;
 }
 
-.edge-plus {
+.edge-tools {
   position: absolute;
+  display: flex;
+  gap: 3px;
+  pointer-events: all;
+}
+
+.edge-plus--cut {
+  display: none !important;
+}
+
+.edge-tools:hover .edge-plus--cut {
+  display: flex !important;
+}
+
+.edge-plus--cut:hover {
+  border-color: var(--color-danger) !important;
+  color: var(--color-danger) !important;
+}
+
+.designer .react-flow__edge.selected .react-flow__edge-path,
+.edge--selected {
+  stroke: var(--color-mpg-green-dark);
+  stroke-width: 2.5;
+}
+
+/* What the canvas needs to say for a moment (a refused link), and the
+ * standing hint while some tiles are loose. */
+.designer__notice,
+.designer__hint {
+  position: absolute;
+  left: 50%;
+  z-index: 4;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-grey-semilight);
+  background: var(--color-white);
+  font-size: var(--font-size-small);
+  transform: translateX(-50%);
+}
+
+.designer__notice {
+  top: var(--space-3);
+  border-color: var(--color-accent-orange);
+}
+
+.designer__hint {
+  bottom: var(--space-3);
+}
+
+.edge-plus {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -331,10 +446,10 @@
   border: 1px solid var(--color-grey);
   border-radius: var(--radius);
   background: var(--color-white);
-  color: var(--color-grey-dark);
+  border-color: var(--color-grey-semilight);
+  color: var(--color-grey);
   cursor: pointer;
   pointer-events: all;
-  opacity: 0.55;
 }
 
 .edge-plus:hover {
@@ -378,6 +493,31 @@
   background: none;
   font: inherit;
   text-align: left;
+  cursor: pointer;
+}
+
+.picker__item[draggable="true"] {
+  cursor: grab;
+}
+
+.picker__grip {
+  margin-left: auto;
+  color: var(--color-grey);
+  font-size: 11px;
+  letter-spacing: -2px;
+  opacity: 0;
+}
+
+.picker__item:hover .picker__grip {
+  opacity: 1;
+}
+
+.picker__hint {
+  margin: 0 0 var(--space-2);
+  font-size: 11px;
+}
+
+.picker__more summary {
   cursor: pointer;
 }
 
