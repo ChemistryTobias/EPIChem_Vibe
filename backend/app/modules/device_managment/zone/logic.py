@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.shared_schema.geometry.logic import find_free_slot_2d
 from app.core.shared_schema.geometry.schema import GeometryDescriptor
 from app.modules.device_managment.lab.schema import LabDB
 from app.modules.device_managment.site.schema import SiteDB
@@ -29,10 +30,24 @@ def get_default_geometry(data: dict) -> GeometryDescriptor:
     """Pydantic default_factory: `data` is the already-validated sibling fields (Pydantic 2.11+)."""
     from app.core.database.session_config import SessionLocal
 
+    from .schema import ZoneDB  # deferred: schema.py imports this module
+
     with SessionLocal() as session:
         parent_type = resolve_parent_type(session, data["parent_uuid"])
+        default = default_geometry_site if parent_type == "site" else default_geometry_lab
 
-    return default_geometry_site if parent_type == "site" else default_geometry_lab
+        # Zones keep off their sibling zones (they're drawn around stations/labs,
+        # so those don't count) -- same pattern as every other entity.
+        if parent_type == "site":
+            floors = session.get(SiteDB, data["parent_uuid"]).object_geometry
+            parent_geometry = floors[0] if floors else None
+        else:
+            parent_geometry = session.get(LabDB, data["parent_uuid"]).object_geometry
+        if not parent_geometry:
+            return default
+        siblings = session.query(ZoneDB).filter_by(parent_uuid=data["parent_uuid"]).all()
+        existing = [GeometryDescriptor(**z.object_geometry) for z in siblings if z.object_geometry]
+        return find_free_slot_2d(GeometryDescriptor(**parent_geometry), existing, default) or default
 
 
 def validate_zone_parent(
