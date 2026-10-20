@@ -2,7 +2,7 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Database
@@ -21,10 +21,17 @@ class DeviceDB(ObjectDB, ObjectGeometryDB, Database):
 
     station_uuid: Mapped[UUID] = mapped_column(ForeignKey("stations.uuid"), index=True)
     station: Mapped["StationDB"] = relationship(back_populates="devices")
+    # The device's name in its station pod's worker namespace (what plans
+    # take as a device argument) -- the link between this record and the
+    # ophyd object. The first of Roadmap 1.3's descriptor fields.
+    ophyd_name: Mapped[Optional[str]] = mapped_column(String(100), default=None, index=True)
 
 
 class DeviceBase(BaseModel):
     station_uuid: UUID
+    ophyd_name: Optional[str] = Field(
+        default=None, max_length=100, description="Name of the ophyd device in the station pod, e.g. hotplate1."
+    )
 
 
 class Device(Object, DeviceBase, ObjectGeometry):
