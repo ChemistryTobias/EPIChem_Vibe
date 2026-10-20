@@ -23,8 +23,8 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three";
 
 import { clampToFloor, round3, slideTo, softSnap, type Rect, type Vec2 } from "./constraints";
-import type { LayoutBox, LayoutZone, LevelModel } from "./levels";
-import { EDGE, FLOOR, FLOOR_EDGE, GRID, LAB, SELECT, ZONE, type BoxFill } from "./palette";
+import type { LayoutBox, LevelModel } from "./levels";
+import { EDGE, FLOOR, FLOOR_EDGE, GRID, LAB, SELECT, type BoxFill, type Wash } from "./palette";
 
 /** What the overlay's zoom controls drive. */
 export interface ViewApi {
@@ -201,7 +201,9 @@ function Contents({
   const drag = (box: LayoutBox, mode: "move" | "resize") => (event: PointerEvent) => {
     const start = floorPoint(event);
     const from = box.rect;
-    const others = boxes.filter((b) => b.uuid !== box.uuid).map((b) => b.rect);
+    // Only boxes on the same layer get in the way: a zone is drawn around
+    // stations, so it can't be blocked by them, nor they by it.
+    const others = boxes.filter((b) => b.uuid !== box.uuid && b.layer === box.layer).map((b) => b.rect);
     // A quarter of a cell: close enough to help, small enough that the box
     // still tracks the pointer for most of the drag.
     const tolerance = model.grid * 0.25;
@@ -271,13 +273,8 @@ function Contents({
     <>
       <Room size={model.size} grid={model.grid} thin={thin} onPan={pan} />
 
-      {model.zones.map((zone) => (
-        <FlatArea key={zone.uuid} rect={zone.rect} y={thin * 0.05} colour={ZONE} />
-      ))}
-
       <LabelPositions
         boxes={boxes}
-        zones={model.zones}
         nodes={labelNodes}
         // Top down shows no height, so there is no height handle and the
         // name has nothing to clear.
@@ -286,13 +283,13 @@ function Contents({
 
       {boxes.map((box) =>
         box.flat ? (
-          // A lab is a wash on the floor, not a solid — the stations inside it
-          // have to read through.
+          // A lab or a zone is a wash on the floor, not a solid — whatever
+          // stands inside it has to read through. Zones sit under labs.
           <FlatArea
             key={box.uuid}
             rect={box.rect}
-            y={thin * 0.1}
-            colour={LAB}
+            y={thin * (box.layer === "zone" ? 0.05 : 0.1)}
+            colour={box.wash ?? LAB}
             selected={box.uuid === selected}
             onSelect={() => onSelect(box.uuid)}
             onDrill={() => onDrill(box.uuid)}
@@ -317,6 +314,20 @@ function Contents({
       )}
     </>
   );
+}
+
+/** Pointer cursor over anything selectable; a grip's own cursor wins. */
+function useHoverCursor(cursor: string) {
+  const { gl } = useThree();
+  return {
+    onPointerOver: (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      if (!gl.domElement.style.cursor) gl.domElement.style.cursor = cursor;
+    },
+    onPointerOut: () => {
+      if (gl.domElement.style.cursor === cursor) gl.domElement.style.cursor = "";
+    },
+  };
 }
 
 const overlaps = (a: Rect, b: Rect) =>
@@ -367,8 +378,18 @@ function Grip({
 }
 
 /** Outline of whatever geometry it's given — every surface here has one. */
-function Edges({ geometry, color }: { geometry: THREE.BufferGeometry; color: string }) {
-  const edges = useMemo(() => new THREE.EdgesGeometry(geometry), [geometry]);
+function Edges({
+  geometry,
+  color,
+  angle = 1,
+}: {
+  geometry: THREE.BufferGeometry;
+  color: string;
+  /** Only creases sharper than this many degrees get a line — what keeps a
+   * cylinder to its two rims rather than forty facets. */
+  angle?: number;
+}) {
+  const edges = useMemo(() => new THREE.EdgesGeometry(geometry, angle), [geometry, angle]);
   return (
     <lineSegments geometry={edges}>
       <lineBasicMaterial color={color} />
@@ -416,7 +437,7 @@ function Room({ size, grid, thin, onPan }: { size: Vec2; grid: number; thin: num
 interface FlatAreaProps {
   rect: Rect;
   y: number;
-  colour: { fill: string; opacity: number; edge: string };
+  colour: Wash;
   selected?: boolean;
   onSelect?: () => void;
   onDrill?: () => void;
@@ -427,9 +448,11 @@ interface FlatAreaProps {
 function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResize }: FlatAreaProps) {
   const { pos, size } = rect;
   const geometry = useMemo(() => new THREE.PlaneGeometry(size.x, size.y), [size.x, size.y]);
+  const hover = useHoverCursor(onDrag ? "move" : "pointer");
   return (
     <group position={[pos.x + size.x / 2, y, pos.y + size.y / 2]}>
       <mesh
+        {...(onSelect ? hover : {})}
         rotation={[-Math.PI / 2, 0, 0]}
         geometry={geometry}
         onClick={onSelect && ((e) => { e.stopPropagation(); onSelect(); })}
@@ -457,13 +480,33 @@ function FlatArea({ rect, y, colour, selected, onSelect, onDrill, onDrag, onResi
 }
 
 /**
- * One box. The three visible faces carry the old palette's three tones:
- * three.js +x reads as the screen-right face and +z as the screen-left one,
- * which is the same handedness the old projection had.
+ * What a body looks like, from the primitive its geometry names. This is the
+ * one place a solid's appearance is decided, and so the seam a richer asset
+ * (a glTF mesh, a MuJoCo body — see docs/project_plan/DIGITAL_TWIN.md) plugs
+ * into later: everything else — selection, dragging, handles, labels — works
+ * on the footprint and the height, never on the mesh.
+ *
+ * Built at its real size rather than scaled, so outlines stay one pixel.
+ *
+ * A box's three visible faces carry the old palette's three tones: three.js
+ * +x reads as the screen-right face and +z as the screen-left one, which is
+ * the same handedness the old projection had.
  */
-function faceMaterials(fill: BoxFill) {
+function bodyOf(shape: LayoutBox["shape"], w: number, h: number, d: number, fill: BoxFill) {
   const flat = (color: string) => new THREE.MeshBasicMaterial({ color });
-  return [flat(fill.right), flat(fill.right), flat(fill.top), flat(fill.top), flat(fill.left), flat(fill.left)];
+  if (shape === "cylinder") {
+    // Groups: side, top cap, bottom cap. Elliptical when the footprint isn't
+    // square, so it always fills its footprint exactly.
+    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 40).scale(w, h, d);
+    return { geometry, material: [flat(fill.left), flat(fill.top), flat(fill.top)], edgeAngle: 30 };
+  }
+  if (shape === "sphere") {
+    const geometry = new THREE.SphereGeometry(0.5, 32, 16).scale(w, h, d);
+    return { geometry, material: flat(fill.top), edgeAngle: 89 };
+  }
+  const geometry = new THREE.BoxGeometry(w, h, d);
+  const material = [flat(fill.right), flat(fill.right), flat(fill.top), flat(fill.top), flat(fill.left), flat(fill.left)];
+  return { geometry, material, edgeAngle: 1 };
 }
 
 interface BoxMeshProps {
@@ -494,18 +537,19 @@ function BoxMesh({
   const { pos, size } = box.rect;
   // A box with no recorded height still needs to be a box you can grab.
   const height = Math.max(box.height, Math.max(size.x, size.y) * 0.05);
-  const geometry = useMemo(
-    () => new THREE.BoxGeometry(size.x, height, size.y),
-    [size.x, size.y, height],
+  const body = useMemo(
+    () => bodyOf(box.shape, size.x, height, size.y, box.fill),
+    [box.shape, size.x, size.y, height, box.fill],
   );
-  const materials = useMemo(() => faceMaterials(box.fill), [box.fill]);
+  const hover = useHoverCursor(editing ? "move" : "pointer");
   const centre: [number, number, number] = [pos.x + size.x / 2, height / 2, pos.y + size.y / 2];
 
   return (
     <group position={centre}>
       <mesh
-        geometry={geometry}
-        material={materials}
+        {...hover}
+        geometry={body.geometry}
+        material={body.material}
         onClick={(e) => {
           e.stopPropagation();
           onSelect();
@@ -521,7 +565,7 @@ function BoxMesh({
           onDrag(e.nativeEvent);
         }}
       />
-      <Edges geometry={geometry} color={selected ? SELECT : EDGE} />
+      <Edges geometry={body.geometry} angle={body.edgeAngle} color={selected ? SELECT : EDGE} />
 
       {/* Footprint on the floor, height on the roof — each handle sits on
           the thing it changes. */}
@@ -561,12 +605,10 @@ function BoxMesh({
  */
 function LabelPositions({
   boxes,
-  zones,
   nodes,
   raised,
 }: {
   boxes: LayoutBox[];
-  zones: LayoutZone[];
   nodes: RefObject<Map<string, HTMLElement>>;
   /** The box whose name steps up, if any: the one being edited, whose height
    * handle sits in the middle of its roof — right where the name would be. */
@@ -592,7 +634,6 @@ function LabelPositions({
         b.rect.pos.y + b.rect.size.y / 2,
         b.uuid === raised ? RAISED_PX : 0,
       );
-    for (const z of zones) place(z.uuid, z.rect.pos.x + z.rect.size.x / 2, 0, z.rect.pos.y + z.rect.size.y / 2);
   });
 
   return null;

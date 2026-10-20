@@ -14,7 +14,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { API_BY_KIND } from "../../api/entities";
-import type { EntityKind } from "../../api/types";
+import type { EntityKind, EntityRow } from "../../api/types";
 import { Field } from "../Inspector";
 import type { InspectorEdit } from "../Inspector";
 import { useEntityIndex } from "./sections";
@@ -75,7 +75,7 @@ export const ADDABLE: EntityKind[] = ["Site", "Lab", "Zone", "Station", "Module"
  * Returns an `edit` in the same shape the editor uses, so the panel's header
  * needs no special case.
  */
-export function useCreator() {
+export function useCreator(options: { onCreated?: (kind: EntityKind, row: EntityRow) => void } = {}) {
   const [kind, setKind] = useState<EntityKind | null>(null);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const queryClient = useQueryClient();
@@ -86,11 +86,13 @@ export function useCreator() {
   };
 
   const create = useMutation({
-    mutationFn: (): Promise<unknown> =>
-      kind ? API_BY_KIND[kind].create(draft) : Promise.resolve(null),
-    onSuccess: async () => {
+    mutationFn: async (): Promise<{ kind: EntityKind; row: EntityRow } | null> =>
+      kind ? { kind, row: (await API_BY_KIND[kind].create(draft)) as EntityRow } : null,
+    onSuccess: async (created) => {
       close();
       await queryClient.invalidateQueries();
+      // After the refetch, so whatever the screen selects is already drawn.
+      if (created) options.onCreated?.(created.kind, created.row);
     },
   });
 

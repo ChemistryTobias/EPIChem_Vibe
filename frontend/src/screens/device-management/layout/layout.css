@@ -92,6 +92,7 @@
 }
 
 .canvas-overlay__bar > .btn,
+.canvas-overlay__bar > .menu,
 .canvas-overlay__bar > .path {
   pointer-events: auto;
 }

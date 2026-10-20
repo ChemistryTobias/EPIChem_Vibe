@@ -16,7 +16,6 @@
  * conventions will drift.
  */
 
-import { devicesApi, labsApi, modulesApi, sitesApi, stationsApi } from "../../../api/entities";
 import type {
   Device,
   EntityKind,
@@ -29,7 +28,7 @@ import type {
   Zone,
 } from "../../../api/types";
 import type { Rect, Vec2 } from "./constraints";
-import { FILL_ACTIVE, FILL_GREY, LAB, type BoxFill } from "./palette";
+import { FILL_ACTIVE, FILL_GREY, LAB, ZONE, type BoxFill, type Wash } from "./palette";
 
 export type Level = "site" | "lab" | "station";
 
@@ -52,6 +51,13 @@ export interface LevelContext {
   floor: number;
 }
 
+/**
+ * Which boxes may not overlap. Solids (labs on a site, stations, modules,
+ * devices) keep off each other; zones are areas drawn *around* solids, so they
+ * only keep off other zones.
+ */
+export type Layer = "solid" | "zone";
+
 export interface LayoutBox {
   uuid: string;
   kind: EntityKind;
@@ -60,17 +66,19 @@ export interface LayoutBox {
   /** Metres tall. Zero draws the footprint flat on the floor. */
   height: number;
   fill: BoxFill;
-  /** Labs draw as a translucent wash rather than a solid box. */
+  /** Labs and zones draw as a translucent wash rather than a solid box. */
   flat: boolean;
+  /** The wash colours, for a flat box. */
+  wash?: Wash;
+  layer: Layer;
+  /** The primitive the geometry asks for — the renderer's one switch point
+   * for what a body looks like (see `Body` in Scene.tsx). */
+  shape: GeometryDescriptor["shape"];
+  /** Whether its name drills down a level. */
+  enterable: boolean;
   row: EntityRow;
   /** The geometry to PATCH back, with everything but the numbers preserved. */
   geometry: GeometryDescriptor;
-}
-
-export interface LayoutZone {
-  uuid: string;
-  name: string;
-  rect: Rect;
 }
 
 export interface LevelModel {
@@ -78,12 +86,13 @@ export interface LevelModel {
   /** Floor extent in metres. */
   size: Vec2;
   grid: number;
+  /** Everything on this floor, zones included (they're boxes on the zone
+   * layer). */
   boxes: LayoutBox[];
-  zones: LayoutZone[];
   /** What a box at this level is, for labels and empty states. */
   childLabel: string;
-  /** The entity an Add on this level creates. */
-  childKind: EntityKind;
+  /** What an Add on this level can create, the main kind first. */
+  addable: EntityKind[];
 }
 
 /** Backend Z-up geometry → a floor footprint plus a height, in metres. */
@@ -111,10 +120,11 @@ const box = (
   kind: EntityKind,
   row: EntityRow & { object_geometry: GeometryDescriptor | null },
   fill: BoxFill,
-  flat = false,
+  options: { wash?: Wash; layer?: Layer; enterable?: boolean } = {},
 ): LayoutBox | null => {
   if (row.object_geometry === null) return null;
   const { rect, height } = rectOf(row.object_geometry);
+  const flat = options.wash !== undefined;
   return {
     uuid: row.uuid,
     kind,
@@ -123,6 +133,10 @@ const box = (
     height: flat ? 0 : height,
     fill,
     flat,
+    wash: options.wash,
+    layer: options.layer ?? "solid",
+    shape: row.object_geometry.shape ?? "rectangle",
+    enterable: options.enterable ?? false,
     row,
     geometry: row.object_geometry,
   };
@@ -130,12 +144,15 @@ const box = (
 
 const isRect = (g: { box_dimension_xyz: number[] }) => g.box_dimension_xyz[0] > 0;
 
-function zonesOf(rows: Zone[], parentUuid: string): LayoutZone[] {
+function zonesOf(rows: Zone[], parentUuid: string): LayoutBox[] {
   return rows
     .filter((z) => z.parent_uuid === parentUuid && z.object_geometry !== null)
     .filter((z) => isRect(z.object_geometry!))
-    .map((z) => ({ uuid: z.uuid, name: z.name, rect: rectOf(z.object_geometry!).rect }));
+    .map((z) => box("Zone", z, FILL_GREY, { wash: ZONE, layer: "zone" }))
+    .filter((b): b is LayoutBox => b !== null);
 }
+
+const present = (b: LayoutBox | null): b is LayoutBox => b !== null;
 
 /** The level the current context points at, or null when it isn't reachable. */
 export function buildLevel(ctx: LevelContext, data: LayoutData): LevelModel | null {
@@ -158,13 +175,15 @@ function siteLevel(site: Site, data: LayoutData, floor: number): LevelModel | nu
     ...frame("site", rect.size),
     // Labs carry no floor number yet, so every lab draws on whichever floor
     // is showing — the single-floor case, which is all that exists today.
-    boxes: data.labs
-      .filter((l) => l.site_uuid === site.uuid)
-      .map((l) => box("Lab", l, { top: LAB.fill, left: LAB.fill, right: LAB.fill }, true))
-      .filter((b): b is LayoutBox => b !== null),
-    zones: zonesOf(data.zones, site.uuid),
+    boxes: [
+      ...zonesOf(data.zones, site.uuid),
+      ...data.labs
+        .filter((l) => l.site_uuid === site.uuid)
+        .map((l) => box("Lab", l, FILL_ACTIVE, { wash: LAB, enterable: true }))
+        .filter(present),
+    ],
     childLabel: "lab",
-    childKind: "Lab",
+    addable: ["Lab", "Zone"],
   };
 }
 
@@ -174,13 +193,15 @@ function labLevel(lab: Lab, data: LayoutData): LevelModel | null {
   return {
     level: "lab",
     ...frame("lab", rect.size),
-    boxes: data.stations
-      .filter((s) => s.lab_uuid === lab.uuid)
-      .map((s) => box("Station", s, FILL_ACTIVE))
-      .filter((b): b is LayoutBox => b !== null),
-    zones: zonesOf(data.zones, lab.uuid),
+    boxes: [
+      ...zonesOf(data.zones, lab.uuid),
+      ...data.stations
+        .filter((s) => s.lab_uuid === lab.uuid)
+        .map((s) => box("Station", s, FILL_ACTIVE, { enterable: true }))
+        .filter(present),
+    ],
     childLabel: "station",
-    childKind: "Station",
+    addable: ["Station", "Zone"],
   };
 }
 
@@ -197,27 +218,15 @@ function stationLevel(station: Station, data: LayoutData): LevelModel | null {
       ...data.devices
         .filter((d) => d.station_uuid === station.uuid)
         .map((d) => box("Device", d, FILL_ACTIVE)),
-    ].filter((b): b is LayoutBox => b !== null),
-    zones: [],
+    ].filter(present),
     childLabel: "device",
-    childKind: "Device",
+    addable: ["Device", "Module"],
   };
 }
 
-/** Which endpoint owns a box, for writing its geometry back. */
-export const API_FOR: Record<
-  string,
-  { update: (id: string, body: unknown) => Promise<unknown>; remove: (id: string) => Promise<unknown> }
-> = {
-  Site: sitesApi,
-  Lab: labsApi,
-  Station: stationsApi,
-  Module: modulesApi,
-  Device: devicesApi,
-};
-
 /** The context patch that descends into a box, or null at the leaf. */
 export function drillInto(model: LevelModel, box: LayoutBox): Partial<LevelContext> | null {
+  if (!box.enterable) return null;
   if (model.level === "site") return { lab: box.row as Lab, station: null };
   if (model.level === "lab") return { station: box.row as Station };
   return null;
