@@ -103,14 +103,19 @@ is not a blocker for 1.2 — 1.2 can ship on the existing JointJS approach and
 move to Three.js later without changing `levels.ts`'s contract.
 
 ### 1.3 Devices and stations as deployable, updatable pods
-**Status: in progress.** Built: the reference pod image (`bluesky/`,
-[`docs/BLUESKY.md`](../BLUESKY.md)) — queueserver + HTTP server, one
-profile per station (`spinbot`, `synthesis`), drivers wrapped as ophyd
-devices from a `station.yaml`, two-level plan libraries; `Station.queueserver_url`
-as the execution binding; `Device.ophyd_name` as the first descriptor field,
-with register-devices-from-pod. Not built: the git-versioned deploy/redeploy
-mechanism, `epichem-runner`, CapabilityClass and the remaining Device fields
-below.
+**Status: in progress.** Built: the pod as a pip package (`epichem-pod`,
+`bluesky/`, [`docs/BLUESKY.md`](../BLUESKY.md)) — `init`/`discover`/`serve`;
+queueserver + HTTP server over a station script or profile directory;
+`expose(globals())` auto-discovers plain driver objects into ophyd devices
+(getters → readings) and one plan per method (parameters from signature +
+docstring); demo stations `bench`, `spinbot` (hand-written wrappers,
+two-level plan libraries), `synthesis`. Pods announce themselves; New
+Device → Discover adopts one as a station (or links it) and registers its
+devices. `Station.queueserver_url` as the execution binding, `Station.icon`,
+`Device.ophyd_name` as the first descriptor field; live readings and
+one-click plan runs in Device Monitoring. Not built: the git-versioned
+deploy/redeploy mechanism, `epichem-runner`, CapabilityClass and the
+remaining Device fields below.
 
 *Original scope — new, not in the original plan:*
 
@@ -208,11 +213,15 @@ mechanism exists in the meantime.
 ## Milestone 2 — Workflow design
 
 ### 2.1 Composing devices' Bluesky plans into a procedure
-**Status: first cut done.** `procedures` (`backend/app/modules/workflow_management/`):
-an ordered list of plan calls for one station, version-bumped on step edits,
-compiled to queue items with `meta.epichem` provenance. A run freezes the
-items it dispatched (reconstructible forever, PROJECT_HISTORY). Control
-flow (§9.4) still deliberately absent.
+**Status: first cut done, plus flow control.** `procedures`
+(`backend/app/modules/workflow_management/`): an ordered list of steps,
+each on any station, version-bumped on step edits, plan steps compiled to
+queue items with `meta.epichem` provenance. Step types beyond plans:
+`wait`, `input` (operator answers in Runs; values feed later steps) and
+`http`; `{{steps.<id>.…}}` references between steps. An in-API orchestrator
+advances runs across stations. A run freezes the items it dispatched
+(reconstructible forever, PROJECT_HISTORY). Branches/loops (§9.4) still
+deliberately absent.
 
 Each device (via its pod, per 1.3) exposes Bluesky plans as linear,
 parameterized action calls. 2.1 is putting a sequence of these together into
@@ -222,12 +231,14 @@ branch/loop/codegen tier until a real procedure actually needs it; building
 that before anything requires it is premature.
 
 ### 2.2 A node-based frontend for building procedures
-**Status: first cut done.** Workflows → Designer: palette and parameter forms
-generated from the station pod's `plans_allowed`/`devices_allowed`, grouped
-by plan library; live server-side validation (tier 1 + the linear graph
-checks, plus "device not registered" warnings) badged on the nodes; queue-item
-preview; launch. Workflows → Runs: station pod status, live run state synced
-from queue + history, stop/abort. Tiers 2 and 4 (capability contract,
+**Status: first cut done, reworked n8n-style.** Workflows → Procedures: a
+searchable library (new, duplicate, delete, last run). Workflows → Designer
+edits one procedure as a vertical chain of icon tiles with "+" between them;
+a node picker offers each station's plans (grouped by library, generated
+from the pod's `plans_allowed`/`devices_allowed`) and the flow-control
+steps; settings and live server-side validation in the side inspector.
+Workflows → Runs: live run state, Input answers, stop/abort; station
+control moved to Device Monitoring. Tiers 2 and 4 (capability contract,
 safety) wait for 1.3's CapabilityClass/safety fields. The scheduler is the
 minimal dispatch layer described below — per-station queues are the
 queueserver's own; reservation/priority (§11) not yet.

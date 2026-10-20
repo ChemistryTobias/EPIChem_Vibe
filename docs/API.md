@@ -58,28 +58,63 @@ devices carry `ophyd_name` (their name in that pod).
 GET  /stations/{id}/execution                    configured/reachable + RE Manager state
 GET  /stations/{id}/execution/palette            plans_allowed, devices_allowed, registered
 GET  /stations/{id}/execution/queue              pending, running, recent history
+GET  /stations/{id}/execution/readings           live device readings (the pod's read_devices function)
 POST /stations/{id}/execution/environment/open
 POST /stations/{id}/execution/queue/start
 POST /stations/{id}/execution/devices/register   a registry Device per unregistered pod device
+POST /stations/{id}/execution/run                {plan, kwargs} -> a manual Run of one plan, now
 ```
 
-**procedures** — ordered plan steps for one station (same five routes as
+Stations also carry `icon` (a glyph name the console draws; null → a
+default by name).
+
+**discovery** — pods that announced themselves or were probed (plan §6.2;
+nothing is adopted without a person):
+
+```
+POST   /discovery/announce              pod heartbeat; Authorization: ApiKey <EPICHEM_QSERVER_API_KEY>, no bearer token
+GET    /discovery/pods                  with online (heard from within 90 s) and station_uuid if already linked
+POST   /discovery/probe                 {url} -> read a pod's status/plans/devices directly
+POST   /discovery/pods/{id}/adopt       {lab_uuid, name} (new station) or {station_uuid} (link) -> Station, devices registered
+DELETE /discovery/pods/{id}             dismiss
+```
+
+**procedures** — ordered steps, each on any station (same five routes as
 above, by UUID or name), plus:
 
 ```
+GET  /procedures?q=                search by name/description
 POST /procedures/validate          {station_uuid, steps} -> {valid, diagnostics[]}  (saved or not)
 GET  /procedures/{id}/compile      the queue items a run would dispatch
+POST /procedures/{id}/duplicate    -> "<name> (copy)"
 ```
 
-**runs** — one dispatch of a procedure; state synced from the station on read:
+A step is `{id, type, plan, station_uuid, kwargs, label}`; `type` is
+`plan` (a pod plan; `station_uuid` null → the procedure's default station),
+`wait` (`kwargs.duration_s`), `input` (`kwargs.prompt`, `kwargs.fields:
+[{name, label, type: text|number|boolean, required}]`) or `http`
+(`kwargs.method, url, body, expect_status`). Any kwarg can be a template
+`{{steps.<earlier id>.<path>}}`, resolved when the step is dispatched (a
+whole-value reference keeps its type).
+
+**runs** — one execution of a procedure, or a manual run of one plan.
+EPIChem's orchestrator (a background thread in the API) advances runs:
+dispatches each contiguous same-station block of plan steps, waits, asks,
+calls out; state is observed from the pods every couple of seconds:
 
 ```
-GET  /runs                         newest first, ?station_uuid=&procedure_uuid=
-GET  /runs/{id-or-code}
-POST /runs                         {procedure_uuid, sample?: {...}, autostart?} -> validate, register sample, dispatch
+GET  /runs                         newest first, ?station_uuid=&procedure_uuid=&kind=procedure|manual
+GET  /runs/{id-or-code}            items[]: per step status, kwargs_sent (resolved), run_uids, output
+POST /runs                         {procedure_uuid, sample?: {...}} -> validate, register sample, dispatch
+POST /runs/{id}/input              {step_id, values} answers a waiting Input step
 POST /runs/{id}/stop               remove pending steps; the running one finishes
 POST /runs/{id}/abort              stop now
 ```
+
+Run states: `queued`, `running`, `waiting` (an Input step needs an answer),
+`completed`, `failed`, `stopped` (abort ends here too), `unknown`. HTTP steps only reach hosts in
+`EPICHEM_HTTP_STEP_HOSTS` (comma-separated; unset = any) and time out after
+`EPICHEM_HTTP_STEP_TIMEOUT_S` (15).
 
 **samples** — state and location change only through events:
 

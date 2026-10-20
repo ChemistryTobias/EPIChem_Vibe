@@ -33,9 +33,11 @@ noted in `backend/tests/TESTED.md`.
 `frontend/` targets `backend/app/` (flat bodies, `PATCH`); `frontend_old/`
 is the previous console, kept for reference only.
 
-`bluesky/` is the station pod image (bluesky-queueserver + httpserver, ophyd
-devices wrapping instrument drivers, plan libraries, one profile per
-station) — see `docs/BLUESKY.md`. EPIChem dispatches to pods over HTTP and
+`bluesky/` is the `epichem-pod` pip package and image (bluesky-queueserver +
+httpserver; `expose()` turns plain driver objects into ophyd devices and
+plans; `init`/`discover`/`serve` CLI that announces pods to EPIChem; demo
+stations under `profiles/`) — see `docs/BLUESKY.md`. Runs are advanced by an
+in-API orchestrator thread (`workflow_management/runs/orchestrator.py`). EPIChem dispatches to pods over HTTP and
 never executes anything itself (plan §3).
 
 ## Working in this repo
@@ -48,8 +50,9 @@ never executes anything itself (plan §3).
   db` and set `DATABASE_URL` — see `.env.example`. Workflow tests use a fake
   queueserver (`tests/test_workflows.py`); talking to a real pod needs
   `EPICHEM_QSERVER_API_KEY`.
-- **Pods**: `docker compose up station-spinbot station-synthesis`, or see
-  `docs/BLUESKY.md` for running one without Docker.
+- **Pods**: `docker compose up station-spinbot station-synthesis station-bench`,
+  or `pip install -e bluesky && epichem-pod serve bluesky/profiles/bench/station.py`
+  (tests: `cd bluesky && pytest`).
 - **`frontend/`**: `npm run dev` (proxies `/api` to `:8000`), `npm run
   typecheck`, `npm run build`. Read `frontend/README.md` before adding a
   dependency — no router/data-fetching-library/UI-kit/codegen is deliberate,
