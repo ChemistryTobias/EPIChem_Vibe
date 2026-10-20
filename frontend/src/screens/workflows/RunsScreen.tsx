@@ -1,24 +1,26 @@
 /**
- * Runs (Roadmap 2.2's dispatch layer, plan §13's Queue/Runs screens, first
- * cut): the executable stations and what their pods are doing, every run
- * with its live state, and per run its steps as the station reports them.
+ * Runs (Roadmap 2.2's dispatch layer, plan §13's Runs screen): every run —
+ * procedures and the manual actions started from Device Monitoring — with its
+ * live state, and per run its steps: plan steps as their stations report
+ * them, flow-control steps as EPIChem carries them out. A run waiting at an
+ * Input step is answered here. (Stations themselves are in Device Monitoring.)
  *
- * State here is observed, never decided: each list read syncs unfinished
- * runs from their station's queue and history (backend `runs/api.py`), so
- * the table polls quickly while anything is in flight and slowly otherwise.
+ * State is advanced by the backend's orchestrator; the table polls quickly
+ * while anything is in flight and slowly otherwise.
  */
 
-import { useMemo } from "react";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 
 import { stationsApi } from "../../api/entities";
 import { samplesApi } from "../../api/samples";
-import type { Run, Station } from "../../api/types";
-import { TERMINAL_RUN_STATES, executionApi, runsApi } from "../../api/workflows";
+import type { InputField, Run, RunItem } from "../../api/types";
+import { TERMINAL_RUN_STATES, runsApi } from "../../api/workflows";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { DataTable, type Columns } from "../../components/DataTable";
+import { Glyph, STEP_GLYPH, stationGlyph } from "../../components/glyphs";
 import { Field, FieldGroup, Inspector } from "../../components/Inspector";
 import { QueryBoundary } from "../../components/QueryBoundary";
 import { ScreenHeader } from "../../components/ScreenHeader";
@@ -43,6 +45,7 @@ export function RunsScreen() {
   const samples = useQuery({ queryKey: ["samples"], queryFn: samplesApi.list, refetchInterval: 5000 });
 
   const stationNames = useMemo(() => nameMap(stations.data), [stations.data]);
+  const stationById = useMemo(() => new Map((stations.data ?? []).map((st) => [st.uuid, st])), [stations.data]);
   const sampleCodes = useMemo(
     () => new Map((samples.data ?? []).map((s) => [s.uuid, s.code])),
     [samples.data],
@@ -71,15 +74,33 @@ export function RunsScreen() {
       },
       {
         id: "procedure",
-        header: "Procedure",
+        header: "What",
         accessorFn: (r) => r.procedure_name,
+        cell: (c) =>
+          c.row.original.kind === "manual" ? (
+            <span>
+              <span className="mono">{c.row.original.procedure_name}</span> <span className="muted">manual</span>
+            </span>
+          ) : (
+            <span className="table__name">
+              {c.row.original.procedure_name} <span className="muted">v{c.row.original.procedure_version}</span>
+            </span>
+          ),
+      },
+      {
+        id: "station",
+        header: "Stations",
+        accessorFn: (r) => stationsOf(r).map((id) => stationNames.get(id) ?? "").join(", "),
         cell: (c) => (
-          <span className="table__name">
-            {c.row.original.procedure_name} <span className="muted">v{c.row.original.procedure_version}</span>
+          <span className="run-stations">
+            {stationsOf(c.row.original).map((id) => (
+              <span key={id} title={stationNames.get(id)} className="run-stations__icon">
+                <Glyph name={stationGlyph(stationById.get(id))} size={16} />
+              </span>
+            ))}
           </span>
         ),
       },
-      { id: "station", header: "Station", accessorFn: (r) => stationNames.get(r.station_uuid) ?? "" },
       { accessorKey: "state", header: "State", cell: (c) => <StatusPill status={c.row.original.state} /> },
       {
         id: "progress",
@@ -115,27 +136,34 @@ export function RunsScreen() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stationNames, sampleCodes],
+    [stationNames, stationById, sampleCodes],
   );
 
   const active = (runs.data ?? []).filter(isActive).length;
+  const waiting = (runs.data ?? []).filter((r) => r.state === "waiting");
 
   return (
     <>
       <ScreenHeader
         title="Runs"
         subtitle={runs.data ? `${runs.data.length} run${runs.data.length === 1 ? "" : "s"} · ${active} in flight` : "Loading…"}
-        actions={<Button onClick={() => navigate({ to: "/workflows/designer" })}>Designer</Button>}
+        actions={<Button onClick={() => navigate({ to: "/workflows/procedures" })}>Procedures</Button>}
       />
       <div className="screen">
         <div className="screen__content" data-inspects>
-          <section className="section">
-            <h3 className="section__title">Stations</h3>
-            <StationCards stations={(stations.data ?? []).filter((s) => s.queueserver_url)} />
-          </section>
+          {waiting.map((r) => (
+            <div key={r.uuid} className="waiting-banner">
+              <Glyph name="input" size={18} />
+              <span>
+                <span className="mono">{r.code}</span> ({r.procedure_name}) is waiting for your input.
+              </span>
+              <Button size="sm" variant="primary" onClick={() => select(r.code)}>
+                Answer
+              </Button>
+            </div>
+          ))}
 
           <section className="section">
-            <h3 className="section__title">Runs</h3>
             <QueryBoundary query={runs}>
               {(rows) => (
                 <DataTable
@@ -158,7 +186,7 @@ export function RunsScreen() {
           {selected && (
             <RunDetail
               run={selected}
-              stationName={stationNames.get(selected.station_uuid)}
+              stationNames={stationNames}
               sampleCode={sampleCodes.get(selected.sample_uuids[0])}
               busy={act.isPending}
               error={act.error as Error | null}
@@ -176,83 +204,9 @@ export function RunsScreen() {
   );
 }
 
-/** One card per executable station: its pod's state and the two actions an operator needs. */
-function StationCards({ stations }: { stations: Station[] }) {
-  const queryClient = useQueryClient();
-  const statuses = useQueries({
-    queries: stations.map((s) => ({
-      queryKey: ["execution", s.uuid],
-      queryFn: () => executionApi.status(s.uuid),
-      refetchInterval: 4000,
-    })),
-  });
-  const act = useMutation({
-    mutationFn: ({ station, how }: { station: string; how: "open" | "start" }) =>
-      how === "open" ? executionApi.openEnvironment(station) : executionApi.startQueue(station),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["execution"] }),
-  });
-
-  if (stations.length === 0) {
-    return (
-      <Alert kind="info">
-        No executable station yet. In Device Management, give a station a queueserver URL — with{" "}
-        <span className="mono">docker compose up</span>, <span className="mono">http://station-spinbot:60610</span> and{" "}
-        <span className="mono">http://station-synthesis:60610</span> are running.
-      </Alert>
-    );
-  }
-
-  return (
-    <div className="station-cards">
-      {stations.map((station, i) => {
-        const s = statuses[i]?.data;
-        const st = s?.status;
-        return (
-          <div key={station.uuid} className="station-card">
-            <div className="station-card__top">
-              <span className="station-card__name">{station.name}</span>
-              {!s ? (
-                <span className="muted">…</span>
-              ) : !s.reachable || !st ? (
-                <span title={s.error ?? undefined}>
-                  <StatusPill status="unreachable" />
-                </span>
-              ) : (
-                <StatusPill status={st.worker_environment_exists ? st.manager_state : "closed"} />
-              )}
-            </div>
-            <p className="station-card__url mono muted">{station.queueserver_url}</p>
-            {st && (
-              <p className="station-card__line">
-                {st.items_in_queue} queued · {st.items_in_history} done
-                {st.re_state && st.re_state !== "idle" ? ` · engine ${st.re_state}` : ""}
-              </p>
-            )}
-            {s && !s.reachable && <p className="station-card__line create__error">{s.error}</p>}
-            {st && (
-              <div className="station-card__actions">
-                {!st.worker_environment_exists && (
-                  <Button size="sm" onClick={() => act.mutate({ station: station.uuid, how: "open" })}>
-                    Open environment
-                  </Button>
-                )}
-                {st.worker_environment_exists && st.manager_state === "idle" && st.items_in_queue > 0 && (
-                  <Button size="sm" onClick={() => act.mutate({ station: station.uuid, how: "start" })}>
-                    Start queue
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 interface RunDetailProps {
   run: Run;
-  stationName: string | undefined;
+  stationNames: Map<string, string>;
   sampleCode: string | undefined;
   busy: boolean;
   error: Error | null;
@@ -261,7 +215,7 @@ interface RunDetailProps {
   onSample: (code: string) => void;
 }
 
-function RunDetail({ run, stationName, sampleCode, busy, error, onStop, onAbort, onSample }: RunDetailProps) {
+function RunDetail({ run, stationNames, sampleCode, busy, error, onStop, onAbort, onSample }: RunDetailProps) {
   const active = isActive(run);
   return (
     <>
@@ -283,8 +237,10 @@ function RunDetail({ run, stationName, sampleCode, busy, error, onStop, onAbort,
         <Field label="State">
           <StatusPill status={run.state} />
         </Field>
-        <Field label="Procedure">{`${run.procedure_name} · v${run.procedure_version}`}</Field>
-        <Field label="Station">{stationName}</Field>
+        <Field label={run.kind === "manual" ? "Plan (manual)" : "Procedure"}>
+          {run.kind === "manual" ? run.procedure_name : `${run.procedure_name} · v${run.procedure_version}`}
+        </Field>
+        <Field label="Stations">{stationsOf(run).map((id) => stationNames.get(id)).join(", ")}</Field>
         <Field label="Sample">
           {sampleCode && (
             <button className="field__link mono" onClick={() => onSample(sampleCode)}>
@@ -301,15 +257,28 @@ function RunDetail({ run, stationName, sampleCode, busy, error, onStop, onAbort,
       <FieldGroup title="Steps">
         <ol className="run-steps">
           {run.items.map((item, i) => (
-            <li key={item.item_uid ?? i} className="run-steps__item">
+            <li key={item.step_id ?? i} className="run-steps__item">
               <div className="run-steps__head">
                 <span className="mono run-steps__index">{i + 1}</span>
-                <span className="run-steps__plan mono">{item.plan}</span>
-                <StatusPill status={item.status} />
+                {item.type !== "plan" && <Glyph name={STEP_GLYPH[item.type as keyof typeof STEP_GLYPH]} size={14} />}
+                <span className="run-steps__plan mono">{item.label || (item.type === "plan" ? item.plan : item.type)}</span>
+                <StatusPill status={item.status === "waiting_input" ? "waiting" : item.status} tone={item.status === "waiting_input" ? "warning" : undefined} />
               </div>
-              {Object.keys(item.kwargs).length > 0 && (
+              {item.type === "plan" && item.station_uuid && (
+                <p className="run-steps__meta muted">on {stationNames.get(item.station_uuid) ?? "a deleted station"}</p>
+              )}
+              {item.status === "waiting_input" && <InputAnswer run={run} item={item} />}
+              {item.type !== "input" && item.type !== "plan" && item.output && (
+                <p className="run-steps__kwargs mono muted">→ {JSON.stringify(item.output).slice(0, 160)}</p>
+              )}
+              {item.type === "input" && item.status === "completed" && item.output && (
                 <p className="run-steps__kwargs mono muted">
-                  {Object.entries(item.kwargs)
+                  {Object.entries(item.output).map(([k, v]) => `${k}=${String(v)}`).join(", ")}
+                </p>
+              )}
+              {item.type === "plan" && Object.keys(item.kwargs_sent ?? item.kwargs).length > 0 && (
+                <p className="run-steps__kwargs mono muted">
+                  {Object.entries(item.kwargs_sent ?? item.kwargs)
                     .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
                     .join(", ")}
                 </p>
@@ -328,5 +297,48 @@ function RunDetail({ run, stationName, sampleCode, busy, error, onStop, onAbort,
         </ol>
       </FieldGroup>
     </>
+  );
+}
+
+const stationsOf = (run: Run) => [
+  ...new Set(run.items.map((i) => i.station_uuid).filter(Boolean).concat(run.station_uuid ? [run.station_uuid] : [])),
+] as string[];
+
+/** Answering an Input step: its prompt, its fields, Continue. */
+function InputAnswer({ run, item }: { run: Run; item: RunItem }) {
+  const queryClient = useQueryClient();
+  const fields = (item.kwargs.fields as InputField[] | undefined) ?? [];
+  const [values, setValues] = useState<Record<string, unknown>>({});
+  const answer = useMutation({
+    mutationFn: () => runsApi.answer(run.uuid, item.step_id, values),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["runs"] }),
+  });
+  return (
+    <div className="input-answer">
+      <p className="input-answer__prompt">{String(item.kwargs.prompt ?? "")}</p>
+      {fields.map((f) => (
+        <label key={f.name} className="input-answer__field">
+          <span className="label">
+            {f.label || f.name}
+            {f.required ? " *" : ""}
+          </span>
+          {f.type === "boolean" ? (
+            <input type="checkbox" checked={Boolean(values[f.name])} onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.checked }))} />
+          ) : (
+            <input
+              className="field__input"
+              type={f.type === "number" ? "number" : "text"}
+              step="any"
+              value={String(values[f.name] ?? "")}
+              onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+            />
+          )}
+        </label>
+      ))}
+      <Button size="sm" variant="primary" onClick={() => answer.mutate()} disabled={answer.isPending}>
+        {fields.length ? "Submit and continue" : "Confirm and continue"}
+      </Button>
+      {answer.isError && <p className="create__error">{(answer.error as Error).message}</p>}
+    </div>
   );
 }

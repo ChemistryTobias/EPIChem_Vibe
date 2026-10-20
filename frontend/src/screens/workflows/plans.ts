@@ -126,3 +126,78 @@ export function previewItems(steps: ProcedureStep[], procedure: string | null, v
     },
   }));
 }
+
+// ------------------------------------------------------------ flow control
+
+export const newId = () => `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/** A plan step on a station, required single-choice enums pre-filled. */
+export function newPlanStep(plan: PlanRepr, station: string): ProcedureStep {
+  return { ...newStep(plan), type: "plan", station_uuid: station };
+}
+
+export const CONTROL_STEPS = [
+  { type: "wait", label: "Wait", description: "Pause for a fixed time before the next step." },
+  { type: "input", label: "Input", description: "Ask the operator to confirm or enter values; the run waits." },
+  { type: "http", label: "HTTP request", description: "Call an API — notify someone, ask an optimiser for parameters." },
+] as const;
+
+export function newControlStep(type: "wait" | "input" | "http"): ProcedureStep {
+  const kwargs: Record<string, Record<string, unknown>> = {
+    wait: { duration_s: 60 },
+    input: { prompt: "", fields: [] },
+    http: { method: "POST", url: "", body: "" },
+  };
+  return { id: newId(), type, plan: "", kwargs: kwargs[type] };
+}
+
+/** One line under a node: what the step will do. */
+export function describeStep(step: ProcedureStep, stationName?: string): string {
+  const k = step.kwargs;
+  switch (step.type ?? "plan") {
+    case "wait": {
+      const s = Number(k.duration_s);
+      return Number.isFinite(s) ? (s >= 3600 ? `${s / 3600} h` : s >= 60 ? `${s / 60} min` : `${s} s`) : "set a duration";
+    }
+    case "input":
+      return String(k.prompt || "set a prompt").slice(0, 40);
+    case "http": {
+      try {
+        return `${k.method ?? "GET"} ${new URL(String(k.url)).host}`;
+      } catch {
+        return `${k.method ?? "GET"} — set a URL`;
+      }
+    }
+    default:
+      return stationName ?? "";
+  }
+}
+
+/** Plan names read better as words: coat_sample -> "coat sample". */
+export const humanize = (name: string) => name.replace(/_/g, " ");
+
+/**
+ * What a step's later neighbours can reference (`{{steps.<id>.<field>}}`):
+ * an input's fields, an HTTP response's status and body, a plan's run uids.
+ */
+export function referencesBefore(steps: ProcedureStep[], index: number): { value: string; label: string }[] {
+  const refs: { value: string; label: string }[] = [];
+  steps.slice(0, index).forEach((step, i) => {
+    const kind = { wait: "Wait", input: "Input", http: "HTTP request" }[step.type as "wait"];
+    const name = `${i + 1} ${step.label || (step.type === "plan" || !step.type ? humanize(step.plan) : kind)}`;
+    const ref = (path: string) => `{{steps.${step.id}.${path}}}`;
+    if (step.type === "input") {
+      for (const f of (step.kwargs.fields as { name: string; label?: string }[] | undefined) ?? []) {
+        if (f.name) refs.push({ value: ref(f.name), label: `${name} → ${f.label || f.name}` });
+      }
+    } else if (step.type === "http") {
+      refs.push({ value: ref("status"), label: `${name} → status` });
+      refs.push({ value: ref("json"), label: `${name} → response JSON` });
+    } else if (!step.type || step.type === "plan") {
+      refs.push({ value: ref("run_uids.0"), label: `${name} → bluesky run uid` });
+    }
+  });
+  return refs;
+}
+
+export const isTemplate = (value: unknown) => typeof value === "string" && /\{\{\s*steps\./.test(value);
