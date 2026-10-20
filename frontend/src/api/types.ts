@@ -175,6 +175,11 @@ export interface ProcedureStep {
   kwargs: Record<string, unknown>;
   label?: string | null;
   position?: [number, number] | null;
+  /** On the canvas but not connected: kept, never validated as part of the
+   * run, compiled or executed. */
+  detached?: boolean;
+  /** Detached steps: the step it follows within its loose fragment. */
+  after?: string | null;
 }
 
 export interface Procedure extends ObjectBase {

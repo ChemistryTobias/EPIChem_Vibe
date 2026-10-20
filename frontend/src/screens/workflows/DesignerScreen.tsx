@@ -1,18 +1,21 @@
 /**
  * The workflow designer (Roadmap 2.1/2.2, plan §9 and §10.4), n8n-style:
  * one procedure on a full-width canvas — Start, then a tile per step, an end
- * "+" — and a side panel that is either the node picker (stations with their
- * plans, flow-control steps) or the selected step's settings.
+ * "+" — and a side panel that is either the step picker (stations → station
+ * and device actions, flow-control steps) or the selected step's values.
  *
  * - Plans come from each station pod's `plans_allowed` (§9.2); steps can use
  *   different stations, and Wait / Input / HTTP steps EPIChem runs itself.
+ * - Add a step from the picker (click, or drag it onto the canvas), wire tiles
+ *   by dragging handle to handle, cut a link with its "×"; each tile carries
+ *   its own Duplicate / Delete. Only steps connected to Start run (`chain.ts`).
  * - Validation runs server-side on every change and badges the tiles (§9.3);
  *   issues and the compiled queue items sit in a collapsible panel.
  * - The draft is local until Save — one save, one revision. Run saves first
  *   if needed. Pick a different procedure in Workflows → Procedures.
  */
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
@@ -23,6 +26,8 @@ import {
   ReactFlowProvider,
   applyNodeChanges,
   useReactFlow,
+  type Connection,
+  type Edge,
   type Node,
   type NodeChange,
 } from "@xyflow/react";
@@ -38,7 +43,8 @@ import { Inspector } from "../../components/Inspector";
 import { StatusPill } from "../../components/StatusPill";
 import { rememberProcedure } from "../../router";
 import { edgeTypes, nodeTypes, type PlusEdgeType, type StepTileNode } from "./canvas";
-import { NodePicker } from "./NodePicker";
+import { START, chainEnd, connect, disconnect, insertAfter, linksOf, positions, removeStep } from "./chain";
+import { DRAG_TYPE, NodePicker, type StepTemplate } from "./NodePicker";
 import { describeStep, humanize, newControlStep, newId, newPlanStep, previewItems, referencesBefore } from "./plans";
 import { RunLauncher, type SampleDraft } from "./RunLauncher";
 import { StepSettings } from "./StepSettings";
@@ -46,6 +52,7 @@ import { StepSettings } from "./StepSettings";
 import "./workflows.css";
 
 const GAP = 180;
+const ROW = 190;
 
 interface Draft {
   name: string;
@@ -54,7 +61,8 @@ interface Draft {
   steps: ProcedureStep[];
 }
 
-type Panel = { mode: "pick"; at: number } | { mode: "step"; id: string } | { mode: "run" } | null;
+/** pick: the picker, adding after `after` (Start or a step). */
+type Panel = { mode: "pick"; after: string } | { mode: "step"; id: string } | { mode: "run" } | null;
 
 const toDraft = (p: Procedure): Draft => ({
   name: p.name,
@@ -68,6 +76,9 @@ const toDraft = (p: Procedure): Draft => ({
     station_uuid: (s.type ?? "plan") === "plan" ? (s.station_uuid ?? p.station_uuid) : null,
     kwargs: s.kwargs,
     label: s.label ?? null,
+    position: s.position ?? null,
+    detached: Boolean(s.detached),
+    after: s.after ?? null,
   })),
 });
 
@@ -110,7 +121,7 @@ function Designer() {
     if (procedure.data && loadedFor.current !== procedure.data.uuid) {
       loadedFor.current = procedure.data.uuid;
       setDraft(toDraft(procedure.data));
-      setPanel(procedure.data.steps.length ? null : { mode: "pick", at: 0 });
+      setPanel(procedure.data.steps.length ? null : { mode: "pick", after: START });
       rememberProcedure(procedure.data.uuid);
     }
   }, [procedure.data]);
@@ -141,25 +152,44 @@ function Designer() {
   // ---- editing --------------------------------------------------------------
   const setSteps = (next: ProcedureStep[]) => setDraft((d) => (d ? { ...d, steps: next } : d));
   const selectedId = panel?.mode === "step" ? panel.id : null;
+  const connectedSteps = steps.filter((s) => !s.detached);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  function insert(step: ProcedureStep, at: number) {
-    const next = [...steps];
-    next.splice(at, 0, step);
-    setSteps(next);
+  const make = useCallback(
+    (t: StepTemplate): ProcedureStep | null => {
+      if (t.kind === "control") return newControlStep(t.type);
+      const plan = palettes.get(t.station)?.data?.plans[t.plan];
+      return plan ? newPlanStep(plan, t.station, t.preset) : null;
+    },
+    [palettes],
+  );
+  function add(t: StepTemplate, after: string) {
+    const step = make(t);
+    if (!step) return;
+    setSteps(insertAfter(steps, after, step));
     setPanel({ mode: "step", id: step.id });
   }
-  function move(id: string, by: number) {
-    const from = steps.findIndex((s) => s.id === id);
-    const to = from + by;
-    if (from < 0 || to < 0 || to >= steps.length) return;
-    const next = [...steps];
-    const [step] = next.splice(from, 1);
-    next.splice(to, 0, step);
-    setSteps(next);
-  }
   function remove(id: string) {
-    setSteps(steps.filter((s) => s.id !== id));
-    setPanel(null);
+    setSteps(removeStep(steps, id));
+    if (selectedId === id) setPanel(null);
+  }
+  function duplicate(id: string) {
+    const original = steps.find((s) => s.id === id);
+    if (!original) return;
+    const copy: ProcedureStep = { ...original, id: newId(), position: null };
+    if (original.detached) {
+      const [x, y] = original.position ?? [0, 0];
+      setSteps([...steps, { ...copy, after: null, position: original.position ? [x + 30, y + 150] : null }]);
+    } else {
+      setSteps(insertAfter(steps, id, copy));
+    }
+    setPanel({ mode: "step", id: copy.id });
+  }
+  function wire(source: string | null, target: string | null) {
+    if (!source || !target) return;
+    const next = connect(steps, source, target);
+    if (next) setSteps(next);
+    else setNotice("That link would make a loop — a procedure runs straight through.");
   }
 
   // ---- canvas ---------------------------------------------------------------
@@ -167,63 +197,113 @@ function Designer() {
     (step: ProcedureStep) => step.label || ((step.type ?? "plan") === "plan" ? humanize(step.plan) : { wait: "Wait", input: "Input", http: "HTTP request" }[step.type as "wait"]),
     [],
   );
+  const placed = useMemo(() => positions(steps, GAP, ROW), [steps]);
+  /** The device a plan step acts on, if one of its values names one. */
+  const deviceOf = useCallback(
+    (step: ProcedureStep) => {
+      const palette = step.station_uuid ? palettes.get(step.station_uuid)?.data : undefined;
+      if (!palette) return undefined;
+      const generated = palette.plans[step.plan]?.module?.match(/^epichem_pod\.auto\.(.+)_low_level$/);
+      return generated?.[1] ?? Object.values(step.kwargs).find((v): v is string => typeof v === "string" && v in palette.devices);
+    },
+    [palettes],
+  );
   const layout = useCallback((): Node[] => {
-    const tiles: StepTileNode[] = steps.map((step, index) => {
+    let index = 0;
+    const tiles: StepTileNode[] = steps.map((step) => {
       const station = step.station_uuid ? stationById.get(step.station_uuid) : undefined;
       const control = (step.type ?? "plan") !== "plan";
       return {
         id: step.id,
         type: "step",
-        position: { x: (index + 1) * GAP, y: 0 },
+        position: placed.get(step.id)!,
         selected: step.id === selectedId,
         data: {
-          index,
+          index: step.detached ? null : index++,
           glyph: control ? STEP_GLYPH[step.type as keyof typeof STEP_GLYPH] : stationGlyph(station),
           title: titleOf(step),
-          subtitle: describeStep(step, station?.name),
+          subtitle: describeStep(step, [station?.name, deviceOf(step)].filter(Boolean).join(" · ")),
           control,
           errors: diagnostics.filter((d) => d.step_id === step.id && d.severity === "error").length,
           warnings: diagnostics.filter((d) => d.step_id === step.id && d.severity === "warning").length,
+          onDuplicate: () => duplicate(step.id),
+          onDelete: () => remove(step.id),
         },
       };
     });
+    // The "+" goes after the last connected step — past any tile on its row,
+    // so it never lands on a step someone moved there.
+    const end = placed.get(chainEnd(steps))!;
+    const rowRight = Math.max(end.x, ...steps.map((s) => placed.get(s.id)!).filter((at) => Math.abs(at.y - end.y) < 120).map((at) => at.x));
     return [
-      { id: "__start", type: "start", position: { x: 0, y: 22 }, draggable: false, selectable: false, data: {} },
+      { id: START, type: "start", position: { x: 0, y: 22 }, draggable: false, selectable: false, data: {} },
       ...tiles,
       {
         id: "__add",
         type: "add",
-        position: { x: (steps.length + 1) * GAP, y: 22 },
+        position: { x: rowRight + GAP, y: end.y + 22 },
         draggable: false,
         selectable: false,
-        data: { onAdd: () => setPanel({ mode: "pick", at: steps.length }), empty: steps.length === 0 },
+        connectable: false,
+        data: { onAdd: () => setPanel({ mode: "pick", after: chainEnd(steps) }), empty: steps.length === 0 },
       },
     ];
-  }, [steps, stationById, selectedId, diagnostics, titleOf]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [steps, placed, stationById, selectedId, diagnostics, titleOf, deviceOf]);
 
   const [nodes, setNodes] = useState<Node[]>([]);
   useEffect(() => setNodes(layout()), [layout]);
 
-  const ids = ["__start", ...steps.map((s) => s.id), "__add"];
-  const edges: PlusEdgeType[] = ids.slice(1).map((target, i) => ({
-    id: `${ids[i]}->${target}`,
-    source: ids[i],
-    target,
-    type: "plus",
-    markerEnd: { type: MarkerType.ArrowClosed, color: "#006C66" },
-    data: target === "__add" ? {} : { onInsert: () => setPanel({ mode: "pick", at: i }) },
-  }));
+  const edges: PlusEdgeType[] = [
+    ...linksOf(steps).map(([source, target]) => ({
+      id: `${source}->${target}`,
+      source,
+      target,
+      type: "plus" as const,
+      reconnectable: true,
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#006C66" },
+      data: { onInsert: () => setPanel({ mode: "pick", after: source }), onCut: () => setSteps(disconnect(steps, source, target)) },
+    })),
+    {
+      id: "__end",
+      source: chainEnd(steps),
+      target: "__add",
+      type: "plus",
+      reconnectable: false,
+      selectable: false,
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#006C66" },
+      data: {},
+    },
+  ];
 
   useEffect(() => {
     const t = setTimeout(() => flow.fitView({ padding: 0.12, maxZoom: 1, duration: 200 }), 40);
     return () => clearTimeout(t);
   }, [steps.length, procedureId, panel !== null, flow]);
 
-  function reorderFromCanvas() {
-    const order = nodes.filter((n) => n.type === "step").sort((a, b) => a.position.x - b.position.x).map((n) => n.id);
-    const byId = new Map(steps.map((s) => [s.id, s]));
-    if (order.join() !== steps.map((s) => s.id).join()) setSteps(order.map((id) => byId.get(id)!));
-    else setNodes(layout());
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  /** Where someone puts a tile, it stays. */
+  function keepPositions(moved: Node[]) {
+    const at = new Map(moved.filter((n) => n.type === "step").map((n) => [n.id, [Math.round(n.position.x), Math.round(n.position.y)] as [number, number]]));
+    if (at.size) setSteps(steps.map((s) => (at.has(s.id) ? { ...s, position: at.get(s.id)! } : s)));
+  }
+  function onDrop(e: DragEvent) {
+    const raw = e.dataTransfer.getData(DRAG_TYPE);
+    if (!raw) return;
+    e.preventDefault();
+    const step = make(JSON.parse(raw) as StepTemplate);
+    if (!step) return;
+    const at = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const placedStep = { ...step, position: [Math.round(at.x - 45), Math.round(at.y - 45)] as [number, number] };
+    // Onto an empty canvas it's the first step; otherwise it lands loose,
+    // ready to be wired where it belongs.
+    setSteps(connectedSteps.length === 0 ? insertAfter(steps, START, placedStep) : [...steps, { ...placedStep, detached: true, after: null }]);
+    setPanel({ mode: "step", id: step.id });
   }
 
   // ---- keyboard -------------------------------------------------------------
@@ -231,9 +311,15 @@ function Designer() {
   keys.current = (e: KeyboardEvent) => {
     if ((e.target as HTMLElement)?.closest("input, textarea, select")) return;
     if (e.key === "Escape") setPanel(null);
-    if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
-      e.preventDefault();
-      remove(selectedId);
+    if (e.key === "Delete" || e.key === "Backspace") {
+      const edge = flow.getEdges().find((x) => x.selected && x.id !== "__end");
+      if (edge) {
+        e.preventDefault();
+        setSteps(disconnect(steps, edge.source, edge.target));
+      } else if (selectedId) {
+        e.preventDefault();
+        remove(selectedId);
+      }
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "s") {
       e.preventDefault();
@@ -250,7 +336,7 @@ function Designer() {
   const save = useMutation({
     mutationFn: () => {
       const d = draft!;
-      const firstStation = d.steps.find((s) => (s.type ?? "plan") === "plan")?.station_uuid ?? d.station_uuid;
+      const firstStation = d.steps.find((s) => (s.type ?? "plan") === "plan" && !s.detached)?.station_uuid ?? d.station_uuid;
       return proceduresApi.update(procedureId, { ...d, name: d.name.trim() || saved!.name, station_uuid: firstStation });
     },
     onSuccess: async (p) => {
@@ -296,14 +382,14 @@ function Designer() {
   if (!draft || !saved) return <div className="screen__content muted">Loading…</div>;
 
   const selected = steps.find((s) => s.id === selectedId) ?? null;
-  const selectedIndex = selected ? steps.indexOf(selected) : -1;
-  const usedStations = [...new Set(steps.filter((s) => (s.type ?? "plan") === "plan").map((s) => s.station_uuid))]
+  const selectedIndex = selected && !selected.detached ? connectedSteps.indexOf(selected) : -1;
+  const usedStations = [...new Set(connectedSteps.filter((s) => (s.type ?? "plan") === "plan").map((s) => s.station_uuid))]
     .map((id) => (id ? stationById.get(id)?.name : undefined))
     .filter(Boolean)
     .join(", ");
   const blocked =
-    steps.length === 0
-      ? "The procedure has no steps."
+    connectedSteps.length === 0
+      ? "No step is connected to Start."
       : errors.length > 0
         ? `${errors.length} issue${errors.length === 1 ? "" : "s"} to fix first — see Issues on the canvas.`
         : null;
@@ -337,6 +423,12 @@ function Designer() {
             <StatusPill status="valid" tone="ok" />
           ) : null}
         </button>
+        <Button onClick={() => setPanel({ mode: "pick", after: chainEnd(steps) })}>
+          <Glyph name="plus" size={12} /> Add step
+        </Button>
+        <Button onClick={() => setSteps(steps.map((s) => ({ ...s, position: null })))} disabled={!steps.some((s) => s.position)} title="Line the tiles up again">
+          Tidy up
+        </Button>
         <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
           Save
         </Button>
@@ -348,7 +440,17 @@ function Designer() {
       <div className="screen">
         <div className={panel ? "designer designer--inspecting" : "designer"}>
           {save.isError && <Alert kind="error">{(save.error as Error).message}</Alert>}
-          <div className="designer__canvas" data-inspects>
+          <div
+            className="designer__canvas"
+            data-inspects
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes(DRAG_TYPE)) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+              }
+            }}
+            onDrop={onDrop}
+          >
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -356,9 +458,17 @@ function Designer() {
               edgeTypes={edgeTypes}
               onNodesChange={(changes: NodeChange[]) => setNodes((n) => applyNodeChanges(changes, n))}
               onNodeClick={(_, node) => node.type === "step" && setPanel({ mode: "step", id: node.id })}
-              onNodeDragStop={reorderFromCanvas}
+              onNodeDragStop={(_, __, moved) => keepPositions(moved)}
               onPaneClick={() => panel?.mode === "step" && setPanel(null)}
-              nodesConnectable={false}
+              onConnect={(c: Connection) => wire(c.source, c.target)}
+              onReconnect={(old: Edge, c: Connection) => {
+                const cut = disconnect(steps, old.source, old.target);
+                const next = c.source && c.target ? connect(cut, c.source, c.target) : null;
+                if (next) setSteps(next);
+                else setNotice("That link would make a loop — a procedure runs straight through.");
+              }}
+              isValidConnection={(c) => c.target !== START && c.target !== "__add" && c.source !== "__add" && c.source !== c.target}
+              connectionRadius={30}
               deleteKeyCode={null}
               minZoom={0.2}
               maxZoom={1.5}
@@ -367,6 +477,11 @@ function Designer() {
               <Background color="#DCDCDC" gap={22} />
               <Controls showInteractive={false} position="bottom-right" />
             </ReactFlow>
+
+            {notice && <div className="designer__notice">{notice}</div>}
+            {steps.length > 0 && connectedSteps.length < steps.length && (
+              <div className="designer__hint muted">Dashed tiles aren&apos;t connected and won&apos;t run — drag from a tile&apos;s right edge to the next one&apos;s left.</div>
+            )}
 
             {issuesOpen && (
               <div className="issues">
@@ -388,13 +503,14 @@ function Designer() {
                     ) : (
                       <ul className="diagnostics">
                         {diagnostics.map((d, i) => {
-                          const index = steps.findIndex((s) => s.id === d.step_id);
+                          const index = connectedSteps.findIndex((s) => s.id === d.step_id);
+                          const step = steps.find((s) => s.id === d.step_id);
                           return (
                             <li key={i}>
                               <button className="diagnostics__item" onClick={() => d.step_id && setPanel({ mode: "step", id: d.step_id })}>
                                 <StatusPill status={d.severity} tone={d.severity === "error" ? "error" : "warning"} />
                                 <span className="mono diagnostics__where">
-                                  {index >= 0 ? `${index + 1} ${titleOf(steps[index])}` : "procedure"}
+                                  {step ? `${index >= 0 ? index + 1 : "loose"} ${titleOf(step)}` : "procedure"}
                                   {d.parameter ? ` · ${d.parameter}` : ""}
                                 </span>
                                 <span>{d.message}</span>
@@ -405,7 +521,7 @@ function Designer() {
                       </ul>
                     )
                   ) : (
-                    <pre className="designer__items mono">{JSON.stringify(previewItems(steps.filter((s) => (s.type ?? "plan") === "plan"), procedureId, saved.version), null, 2)}</pre>
+                    <pre className="designer__items mono">{JSON.stringify(previewItems(connectedSteps.filter((s) => (s.type ?? "plan") === "plan"), procedureId, saved.version), null, 2)}</pre>
                   )}
                 </div>
               </div>
@@ -415,19 +531,32 @@ function Designer() {
 
         <Inspector
           open={panel !== null}
-          kind={panel?.mode === "pick" ? "Add step" : panel?.mode === "run" ? "Run" : "Step"}
-          title={panel?.mode === "pick" ? `Step ${panel.at + 1}` : panel?.mode === "run" ? "Launch a run" : selected ? titleOf(selected) : ""}
-          subtitle={selected && panel?.mode === "step" ? `step ${selectedIndex + 1} of ${steps.length}` : undefined}
+          kind="Step"
+          heading={panel?.mode === "pick" ? "Add a step" : panel?.mode === "run" ? "Run" : "Step settings"}
+          title={
+            panel?.mode === "pick"
+              ? panel.after === START
+                ? "At the start"
+                : `After ${titleOf(steps.find((s) => s.id === panel.after) ?? steps[0])}`
+              : panel?.mode === "run"
+                ? "Launch a run"
+                : selected
+                  ? titleOf(selected)
+                  : ""
+          }
+          subtitle={
+            selected && panel?.mode === "step"
+              ? [
+                  selected.detached ? "not connected" : `step ${selectedIndex + 1} of ${connectedSteps.length}`,
+                  selected.station_uuid ? stationById.get(selected.station_uuid)?.name : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : undefined
+          }
           onClose={() => setPanel(null)}
         >
-          {panel?.mode === "pick" && (
-            <NodePicker
-              stations={stations.data ?? []}
-              palettes={palettes}
-              onPlan={(plan, station) => insert(newPlanStep(plan, station.uuid), panel.at)}
-              onControl={(type) => insert(newControlStep(type), panel.at)}
-            />
-          )}
+          {panel?.mode === "pick" && <NodePicker stations={stations.data ?? []} palettes={palettes} onPick={(t) => add(t, panel.after)} />}
           {panel?.mode === "run" && (
             <RunLauncher
               procedure={saved}
@@ -441,30 +570,13 @@ function Designer() {
             />
           )}
           {panel?.mode === "step" && selected && (
-            <>
-              <div className="step-form__actions">
-                <Button size="sm" onClick={() => move(selected.id, -1)} disabled={selectedIndex === 0}>
-                  ← Earlier
-                </Button>
-                <Button size="sm" onClick={() => move(selected.id, 1)} disabled={selectedIndex === steps.length - 1}>
-                  Later →
-                </Button>
-                <Button size="sm" onClick={() => insert({ ...selected, id: newId() }, selectedIndex + 1)}>
-                  Duplicate
-                </Button>
-                <Button size="sm" variant="danger" onClick={() => remove(selected.id)}>
-                  Remove
-                </Button>
-              </div>
-              <StepSettings
-                step={selected}
-                stations={stations.data ?? []}
-                palette={selected.station_uuid ? palettes.get(selected.station_uuid)?.data : undefined}
-                diagnostics={diagnostics.filter((d) => d.step_id === selected.id)}
-                refs={referencesBefore(steps, selectedIndex)}
-                onChange={(step) => setSteps(steps.map((s) => (s.id === step.id ? step : s)))}
-              />
-            </>
+            <StepSettings
+              step={selected}
+              palette={selected.station_uuid ? palettes.get(selected.station_uuid)?.data : undefined}
+              diagnostics={diagnostics.filter((d) => d.step_id === selected.id)}
+              refs={selected.detached ? [] : referencesBefore(connectedSteps, selectedIndex)}
+              onChange={(step) => setSteps(steps.map((s) => (s.id === step.id ? step : s)))}
+            />
           )}
         </Inspector>
       </div>

@@ -36,6 +36,9 @@ interface InspectorProps {
   open: boolean;
   /** The entity kind — the panel says "<kind> inspector" or "<kind> editor". */
   kind: string;
+  /** Replaces "<kind> inspector" where the panel isn't inspecting a record
+   * (the designer's "Add a step", "Step settings"). */
+  heading?: string;
   title?: string;
   subtitle?: string;
   onClose?: () => void;
@@ -43,7 +46,7 @@ interface InspectorProps {
   children?: ReactNode;
 }
 
-export function Inspector({ open, kind, title, subtitle, onClose, edit, children }: InspectorProps) {
+export function Inspector({ open, kind, heading, title, subtitle, onClose, edit, children }: InspectorProps) {
   const editing = edit?.editing ?? false;
 
   // Click away to close. Anything that *chooses* what the inspector shows —
@@ -68,7 +71,7 @@ export function Inspector({ open, kind, title, subtitle, onClose, edit, children
           <header className="inspector__header">
             <div className="inspector__top">
               <p className="label">
-                {`${kind} ${editing ? (edit?.creating ? "creator" : "editor") : "inspector"}`}
+                {heading ?? `${kind} ${editing ? (edit?.creating ? "creator" : "editor") : "inspector"}`}
               </p>
               <div className="inspector__tools">
                 {/* Nothing to read yet while creating, so no way back to it. */}
