@@ -71,6 +71,8 @@ def test_one_plan_per_action_method_with_its_signature(station):
 def test_generated_plans_run_and_driver_errors_surface(station):
     ns, _ = station
     RE = RunEngine({})
+    RE(ns["hotplate_set_temperature_setpoint"](80))  # positionally, as the queueserver calls it
+    assert ns["hotplate"].driver.get_temperature_setpoint() == 80
     RE(ns["hotplate_set_temperature_setpoint"](T_SET=80))
     RE(ns["hotplate_start_heating"]())
     assert ns["hotplate"].driver.get_temperature_setpoint() == 80

@@ -177,8 +177,10 @@ def _make_plan(device: Device, device_name: str, method_name: str, method: Calla
     summary, docs = parse_docstring(inspect.getdoc(method))
     target = getattr(device, f"act_{method_name}")
 
-    def plan(**kwargs):
-        yield from do(target, kwargs)
+    def plan(*args, **kwargs):
+        # The queueserver may pass arguments positionally; bind them to names.
+        bound = signature.bind(*args, **kwargs)
+        yield from do(target, dict(bound.arguments))
 
     plan.__name__ = plan.__qualname__ = f"{device_name}_{method_name}"
     plan.__signature__ = signature

@@ -60,6 +60,8 @@ class RunItem(BaseModel):
     label: Optional[str] = None
     station_uuid: Optional[UUID] = None
     kwargs: dict[str, Any] = Field(default_factory=dict)
+    # The arguments actually sent, with `{{steps.…}}` references filled in.
+    kwargs_sent: Optional[dict[str, Any]] = None
     item_uid: Optional[str] = None
     status: str = "pending"
     run_uids: list[str] = Field(default_factory=list)

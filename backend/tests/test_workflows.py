@@ -86,6 +86,8 @@ class FakeQueueserver:
 
     def finish(self, status="completed", msg=""):
         item, self.running = self.running, None
+        if status == "failed":
+            self.pending.insert(0, item)  # what the queueserver does with a failed item
         self.history.append({**item, "result": {"exit_status": status, "msg": msg, "run_uids": ["r-" + item["item_uid"][:4]],
                                                 "time_start": time.time() - 1, "time_stop": time.time()}})
 

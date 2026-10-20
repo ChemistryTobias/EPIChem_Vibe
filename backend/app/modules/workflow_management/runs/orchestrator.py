@@ -192,7 +192,7 @@ def advance(run: RunDB, stations: Stations, *, raise_dispatch: bool = False) -> 
             if not run.error:
                 where = item.get("label") or item.get("plan") or kind
                 run.error = f"Step {index + 1} ({where}) {item['status']}: {item.get('message') or 'no message'}"
-            _clear_rest(items, index + 1, stations)
+            _clear_rest(items, index, stations)
             break
         if item["status"] in ITEM_HALTS:
             run.state = "running" if any(i["status"] == "running" for i in items) else "stopped"
@@ -256,9 +256,18 @@ def advance(run: RunDB, stations: Stations, *, raise_dispatch: bool = False) -> 
 
 
 def _clear_rest(items: list[dict], start: int, stations: Stations) -> None:
-    """After a failure: take the run's later steps off station queues, skip the rest."""
+    """After a failure: take the run's items off station queues -- the failed one
+    too, which the queueserver puts back at the front of its queue -- and skip
+    the rest, so nothing of this run fires when someone next starts that queue."""
     for item in items[start:]:
-        if item["status"] == "queued" and item.get("item_uid"):
+        if item["status"] in ITEM_FAILURES and item.get("item_uid"):
+            try:
+                queue, _ = stations.snapshot(item["station_uuid"])
+                if any(q.get("item_uid") == item["item_uid"] for q in queue.get("items", [])):
+                    stations.client(item["station_uuid"]).remove_item(item["item_uid"])
+            except QueueserverError:
+                pass
+        elif item["status"] == "queued" and item.get("item_uid"):
             try:
                 stations.client(item["station_uuid"]).remove_item(item["item_uid"])
                 item["status"] = "removed"
