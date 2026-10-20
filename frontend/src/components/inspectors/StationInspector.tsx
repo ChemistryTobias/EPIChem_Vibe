@@ -1,10 +1,8 @@
 /** A station: which lab it belongs to, any zone grouping it, and the pod that executes its workflows. */
 
 import type { Station } from "../../api/types";
-import { Glyph, stationGlyph } from "../glyphs";
-import { IconPicker } from "../IconPicker";
+import { StationIcon } from "../IconPicker";
 import { Field, FieldGroup } from "../Inspector";
-import { useEditSession, useFieldValue } from "./edit";
 import { ExecutionSection } from "./ExecutionSection";
 import { DescriptionSection, GeometrySection, ParentField, RecordSection, TextField } from "./sections";
 
@@ -28,20 +26,14 @@ export function StationInspector({ row }: { row: Station }) {
   );
 }
 
-/** The station's pictogram — shown, or picked in the editor. */
+/** The station's pictogram — click it to change it; saved at once. */
 function IconField({ row }: { row: Station }) {
-  const session = useEditSession();
-  const icon = useFieldValue<string | null>(row, "icon");
   return (
     <Field label="Icon">
-      {session?.editing ? (
-        <IconPicker value={icon ?? stationGlyph(row)} onChange={(key) => session.set("icon", key)} />
-      ) : (
-        <span className="station-icon-field">
-          <Glyph name={stationGlyph({ ...row, icon })} size={22} />
-          {icon ? "" : <span className="muted"> (guessed from the name)</span>}
-        </span>
-      )}
+      <span className="station-icon-field">
+        <StationIcon station={row} size={26} />
+        <span className="muted">click it to change</span>
+      </span>
     </Field>
   );
 }

@@ -121,6 +121,7 @@ const P: Record<string, ReactNode> = {
     </>
   ),
   close: <path d="M6 6l12 12M18 6 6 18" />,
+  pencil: <path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3" />,
   play: <path d="M8 5v14l11-7z" />,
   back: <path d="M15 5l-7 7 7 7" />,
   chevron: <path d="M9 5l7 7-7 7" />,
