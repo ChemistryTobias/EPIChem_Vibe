@@ -93,6 +93,34 @@ const P: Record<string, ReactNode> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  cog: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" />
+      <circle cx="12" cy="12" r="6.5" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="8" y="8" width="12" height="12" />
+      <path d="M16 8V4H4v12h4" />
+    </>
+  ),
+  trash: <path d="M4 6h16M9 6V3.5h6V6M6.5 6l1 14.5h9l1-14.5M10 10v7M14 10v7" />,
+  pin: <path d="M9 3h6l-1 6 4 4H6l4-4zM12 13v8" />,
+  rerun: (
+    <>
+      <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
+      <path d="M19.5 3.5v4h-4" />
+    </>
+  ),
+  close: <path d="M6 6l12 12M18 6 6 18" />,
   play: <path d="M8 5v14l11-7z" />,
   back: <path d="M15 5l-7 7 7 7" />,
   chevron: <path d="M9 5l7 7-7 7" />,

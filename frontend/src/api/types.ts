@@ -310,3 +310,12 @@ export interface DiscoveredPod {
   /** The station already using this pod, if any. */
   station_uuid: string | null;
 }
+
+/** `backend/app/core/access_control/users/schema.py` — never carries the password hash. */
+export interface User extends ObjectBase {
+  email: string | null;
+  active: boolean;
+}
+
+/** `backend/app/core/access_control/groups/schema.py`. */
+export type Group = ObjectBase;

@@ -1,11 +1,10 @@
-/** Fixed left navigation: wordmark, the app's sections, and a build note. */
+/** Fixed left navigation: wordmark, the app's sections, and at the foot you (your account) and the settings cog. */
 
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { logout } from "../api/auth";
 import { lastDeviceRoute, rememberDeviceRoute } from "../router";
+import { Glyph } from "./glyphs";
 
 import "./NavRail.css";
 
@@ -25,7 +24,6 @@ const LEAVES = [{ path: "/samples", label: "Samples" }];
 
 export function NavRail({ user }: { user: string }) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const deviceMgmtActive = pathname.startsWith("/devices");
   const workflowsActive = pathname.startsWith("/workflows");
@@ -35,11 +33,6 @@ export function NavRail({ user }: { user: string }) {
   useEffect(() => {
     if (deviceMgmtActive && pathname !== "/devices") rememberDeviceRoute(pathname);
   }, [deviceMgmtActive, pathname]);
-
-  async function signOut() {
-    await logout();
-    queryClient.clear();
-  }
 
   return (
     <nav className="nav-rail" aria-label="Main">
@@ -122,12 +115,24 @@ export function NavRail({ user }: { user: string }) {
       </ul>
 
       <div className="nav-rail__footer">
-        <p className="nav-rail__footer-section-header">Signed in</p>
-        <p>
-          {user} — <button className="nav-rail__signout" onClick={signOut}>sign out</button>
-        </p>
-        <p className="nav-rail__footer-section-header">Build</p>
-        <p>This is a very early build of the EPIChem orchestrator, do not use this in production!</p>
+        <button
+          className={pathname === "/account" ? "nav-rail__me nav-rail__me--active" : "nav-rail__me"}
+          onClick={() => navigate({ to: "/account" })}
+          title="Your account"
+        >
+          <span className="nav-rail__avatar">
+            <Glyph name="user" size={16} />
+          </span>
+          <span className="nav-rail__me-name">{user}</span>
+        </button>
+        <button
+          className={pathname === "/settings" ? "nav-rail__cog nav-rail__cog--active" : "nav-rail__cog"}
+          onClick={() => navigate({ to: "/settings" })}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <Glyph name="cog" size={20} />
+        </button>
       </div>
     </nav>
   );
