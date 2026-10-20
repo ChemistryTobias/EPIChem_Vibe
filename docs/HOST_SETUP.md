@@ -82,7 +82,7 @@ No toolchain, no Node, no build step — Docker and registry access only.
 
 ```bash
 sudo mkdir -p /srv/epichem && cd /srv/epichem
-git clone git@gitlab.gwdg.de:lotschgroup/automation-digitalisation/it-services/EPIChem.git .
+git clone git@github.com:ChemistryTobias/EPIChem_Vibe.git .
 docker login <registry-host> -u <deploy-token-user> -p <deploy-token>
 ```
 
