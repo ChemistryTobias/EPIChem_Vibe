@@ -9,7 +9,7 @@
 # What comes up, in order:
 #
 #     db  ->  api  ->  web
-#     redis -> station-spinbot, station-synthesis   (Bluesky station pods, docs/BLUESKY.md)
+#     redis -> station-spinbot, station-synthesis, station-bench   (Bluesky pods, docs/BLUESKY.md)
 #
 # `api` creates its own tables on boot (no migration tool yet — see
 # docs/PROJECT_HISTORY.md's "no Alembic yet" decision) and there is no seed
@@ -76,12 +76,12 @@ services:
       start_period: 10s
 
   # ------------------------------------------------------ station pods
-  # Bluesky station pods: bluesky-queueserver (RE Manager + worker) and
-  # bluesky-httpserver in one container each, from ./bluesky -- one image, the
-  # station is picked by STATION_PROFILE (a directory under bluesky/profiles).
-  # Both run simulated drivers. In the console, set a Station's "Queueserver
-  # URL" to http://station-spinbot:60610 or http://station-synthesis:60610 and
-  # its plans appear in the workflow designer. See docs/BLUESKY.md.
+  # Bluesky station pods, from ./bluesky (the epichem-pod package): each runs
+  # bluesky-queueserver + bluesky-httpserver for one station and announces
+  # itself to the API, so it appears under New Device -> Discover. spinbot and
+  # synthesis are hand-written profiles; bench is the `epichem-pod init`
+  # template -- plain driver objects auto-discovered by expose(). All run
+  # simulated drivers. See docs/BLUESKY.md.
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
@@ -94,13 +94,14 @@ services:
       STATION_PROFILE: spinbot
       REDIS_ADDR: redis:6379  # pods share it; each queue lives under its own key prefix
       QSERVER_HTTP_SERVER_SINGLE_USER_API_KEY: ${EPICHEM_QSERVER_API_KEY:-epichemdevkey}
+      EPICHEM_URL: http://api:8000              # announce here
+      EPICHEM_POD_URL: http://station-spinbot:60610   # how the API reaches this pod
       EPICHEM_SIM_SPEED: ${EPICHEM_SIM_SPEED:-10}
+      PYTHONPATH: /pod  # the bind-mounted package below wins over the installed one
     volumes:
-      # Edit plans/devices/config on the host, `docker compose restart station-spinbot`.
+      # Edit code or profiles on the host, `docker compose restart station-spinbot`.
       - ./bluesky/profiles:/pod/profiles
-      - ./bluesky/epichem_devices:/pod/epichem_devices
-      - ./bluesky/epichem_plans:/pod/epichem_plans
-      - ./bluesky/drivers:/pod/drivers
+      - ./bluesky/epichem_pod:/pod/epichem_pod
     ports:
       - "127.0.0.1:${STATION_SPINBOT_PORT:-60610}:60610"
 
@@ -109,8 +110,18 @@ services:
     environment:
       <<: *station-env
       STATION_PROFILE: synthesis
+      EPICHEM_POD_URL: http://station-synthesis:60610
     ports:
       - "127.0.0.1:${STATION_SYNTHESIS_PORT:-60611}:60610"
+
+  station-bench:
+    <<: *station-pod
+    environment:
+      <<: *station-env
+      STATION_PROFILE: bench
+      EPICHEM_POD_URL: http://station-bench:60610
+    ports:
+      - "127.0.0.1:${STATION_BENCH_PORT:-60612}:60610"
 
   # ---------------------------------------------------------------- seed
   # Optional, local dev only. Creates an admin user (admin/12345678) + one

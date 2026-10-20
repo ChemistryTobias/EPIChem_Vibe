@@ -1,0 +1,30 @@
+[project]
+name = "epichem-pod"
+version = "0.2.0"
+description = "A station's Bluesky control stack for EPIChem: drivers -> ophyd devices -> plans, served by bluesky-queueserver"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  # Pinned: the queueserver's plan-representation format is what EPIChem's
+  # palette parses, so an upgrade is a deliberate, tested change.
+  "bluesky==1.15.1",
+  "bluesky-queueserver==0.0.25",
+  "bluesky-httpserver==0.0.14",
+  "ophyd==1.11.2",
+  # Imported by bluesky-httpserver (via queueserver's conversions) but not declared by it.
+  "pandas>=2.2",
+  "pyyaml>=6",
+]
+
+[project.scripts]
+epichem-pod = "epichem_pod.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["epichem_pod*"]
+
+[tool.setuptools.package-data]
+epichem_pod = ["data/*", "templates/*"]

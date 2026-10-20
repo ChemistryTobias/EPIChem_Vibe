@@ -1,0 +1,12 @@
+# {{name}} next to an EPIChem stack: docker compose up --build
+services:
+  {{name}}:
+    build: .
+    environment:
+      QSERVER_HTTP_SERVER_SINGLE_USER_API_KEY: ${EPICHEM_QSERVER_API_KEY:-epichemdevkey}
+      EPICHEM_URL: ${EPICHEM_URL:-http://host.docker.internal:8000}
+      EPICHEM_POD_URL: ${EPICHEM_POD_URL:-http://localhost:60610}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "60610:60610"

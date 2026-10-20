@@ -12,8 +12,8 @@ import bluesky.plan_stubs as bps
 import bluesky.preprocessors as bpp
 from bluesky_queueserver import parameter_annotation_decorator
 
-from epichem_devices.lab import do
-from epichem_devices.station import Station
+from epichem_pod.devices.lab import do
+from epichem_pod.devices.station import Station
 
 
 def build(station: Station) -> dict:

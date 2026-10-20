@@ -1,5 +1,5 @@
 """Synthesis station: heat, stir, dispense, wait, measure -- simple, device-parameterised plans
-over the soft devices in `epichem_devices.ramp`.
+over the soft devices in `epichem_pod.devices.ramp`.
 
 Annotate every parameter: EPIChem builds its node palette and parameter forms
 from these signatures, docstrings and `parameter_annotation_decorator`
