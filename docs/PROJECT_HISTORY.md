@@ -138,6 +138,39 @@ still matters for the rewrite even though the code paths named below
   tuple is deliberately variadic: each entry declares its own length, so a
   2-D point and a 6-D pose can coexist without a second field or a shape
   discriminator. Stored and returned; not surfaced in the console yet.
+- **Dev sqlite is a throwaway file, not in-memory** *(supersedes the
+  in-memory StaticPool default)*. One shared connection across FastAPI's
+  thread pool let parallel requests trample each other's transactions — auth
+  lookups came back empty, the API answered 401, the console signed itself
+  out. Unset `DATABASE_URL` now means a sqlite file in a temp dir (WAL,
+  foreign keys on), deleted on exit: same wipe-on-restart semantics.
+- **Geometry is parent-local.** A child's `box_position_xyz` is measured from
+  its parent's corner, never in the grandparent's frame — what the canvas
+  always assumed and what a kinematic tree (MJCF, see
+  `project_plan/DIGITAL_TWIN.md`) needs. `find_free_slot_2d` was fixed to
+  match (it used the parent's own position as the origin).
+- **The execution binding lives on Station** (`queueserver_url`), and a
+  device links to its ophyd object by `ophyd_name` — the minimal answers to
+  plan §5.1's binding question and Roadmap 1.3's descriptor, enough for
+  workflows. One pod per station; pods share one Redis by key prefix.
+- **A pod is driver → ophyd wrapper → plans.** Drivers are plain objects
+  named by import path in a station config (simulators by default); one
+  wrapper per instrument type turns each driver call into a Movable with a
+  Status, so plans stay pure bluesky and the RunEngine keeps control. A
+  station's plans ship as two libraries (`<station>` / `<station>_low_level`)
+  and the palette groups by module. See `docs/BLUESKY.md`.
+- **A Run freezes what it sent, instead of a ProcedureVersion table.** The plan
+  says never mutate a published version; here a procedure stays editable
+  (version bumps on step changes) and each Run stores its procedure version
+  and the exact compiled queue items. Reconstructible per run, one table
+  fewer. Revisit if procedures need publishing/approval.
+- **Run state is observed, not decided.** Every read syncs unfinished runs
+  from the station's queue + history; on a failed step EPIChem removes the
+  run's leftover items from the station queue. A dispatch the station
+  refuses records nothing (no run, no sample).
+- **Samples change state only through events** — the §7.3 event log pulled
+  forward into the otherwise-minimal Milestone 3 (ADR 0005's flat row
+  otherwise kept).
 - **Docs are plain Markdown, no static site.** GitLab Pages + Zensical
   (`zensical.toml`, the `pages`/`docs:openapi` CI jobs) were tried, then
   dropped in favor of Markdown files viewable directly in GitLab, entered
@@ -193,6 +226,8 @@ still matters for the rewrite even though the code paths named below
   the new backend (`backend/app/`) now has real per-user auth (0.2, done),
   but no access-*level* logic yet — any valid token grants full access to
   everything, see `app/core/access_control/README.md`.
+- **Fixed: `GET /users` returned password hashes** (no response model on the
+  list route) — found October 2026, fixed with a test.
 - **No observability** in either backend yet — nothing to debug a
   distributed run with, but there's also no distributed run yet.
 - A few cosmetic (non-correctness) schema/spec mismatches were found and

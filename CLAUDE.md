@@ -17,7 +17,9 @@ reference: [`docs/API.md`](docs/API.md).
 ## The backend
 
 `backend/app/` is the only backend — a vertical slice per entity, one file
-per concern (`modules/device_managment/<entity>/{schema,api,logic}.py`),
+per concern (`modules/<area>/<entity>/{schema,api,logic}.py`, areas:
+`device_managment`, `workflow_management` (procedures, runs, station
+execution), `sample_tracking`),
 shared code in `app/core/`: `shared_schema` (`object` — id/name/description
 mixins; `geometry` — `GeometryDescriptor` + the `get_default_geometry`
 collision-free-placement pattern), `access_control` (auth/users/groups),
@@ -28,20 +30,26 @@ The original registry-pattern backend (`backend/epichem/`) was deleted once
 documented in `docs/PROJECT_HISTORY.md`, and what its 101 tests covered is
 noted in `backend/tests/TESTED.md`.
 
-**`frontend/` still targets that old, now-deleted API shape** (envelope
-bodies, full-replace `PUT`). Repointing it at `backend/app/`'s flat
-bodies/`PATCH` is Roadmap milestone 0.3 — don't assume the frontend and
-`backend/app/` are wired together yet; running `docker compose up` today
-gives you a working API and a console that errors against it.
+`frontend/` targets `backend/app/` (flat bodies, `PATCH`); `frontend_old/`
+is the previous console, kept for reference only.
+
+`bluesky/` is the station pod image (bluesky-queueserver + httpserver, ophyd
+devices wrapping instrument drivers, plan libraries, one profile per
+station) — see `docs/BLUESKY.md`. EPIChem dispatches to pods over HTTP and
+never executes anything itself (plan §3).
 
 ## Working in this repo
 
 - **Backend**: `backend/.venv/bin/pytest`, `.venv/bin/ruff check app`. No
-  Postgres needed for local dev — falls back to an in-memory sqlite DB
-  (`DATABASE_URL` env var to point at real Postgres). Note the in-memory DB is
-  wiped on every restart, taking users and auth tokens with it, so the console
-  signs you out each time; for a session that survives restarts run
-  `docker compose up -d db` and set `DATABASE_URL` — see `.env.example`.
+  Postgres needed for local dev — falls back to a throwaway sqlite file
+  (`DATABASE_URL` env var to point at real Postgres). It is wiped on every
+  restart, taking users and auth tokens with it, so the console signs you out
+  each time; for a session that survives restarts run `docker compose up -d
+  db` and set `DATABASE_URL` — see `.env.example`. Workflow tests use a fake
+  queueserver (`tests/test_workflows.py`); talking to a real pod needs
+  `EPICHEM_QSERVER_API_KEY`.
+- **Pods**: `docker compose up station-spinbot station-synthesis`, or see
+  `docs/BLUESKY.md` for running one without Docker.
 - **`frontend/`**: `npm run dev` (proxies `/api` to `:8000`), `npm run
   typecheck`, `npm run build`. Read `frontend/README.md` before adding a
   dependency — no router/data-fetching-library/UI-kit/codegen is deliberate,
@@ -56,6 +64,10 @@ gives you a working API and a console that errors against it.
   — full JSON snapshot + acting user, queryable via `GET /revisions`. Follow
   the pattern already in every `device_managment` entity's `api.py` rather
   than inventing a second write path.
+- **Geometry is parent-local** — a child's position is measured from its
+  parent's corner (see PROJECT_HISTORY).
+- **A sample's state/location change only via `samples/logic.transition`**
+  (a `SampleEvent`), never by setting the column.
 - **Every endpoint requires a bearer token** (`app/core/access_control/`)
   except `POST /auth/login` and `POST /users` (bootstrap). No access
   *level* logic yet — see `app/core/access_control/README.md` for the
