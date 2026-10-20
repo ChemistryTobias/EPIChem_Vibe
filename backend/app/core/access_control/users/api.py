@@ -17,7 +17,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 # --- GET ---------------------------------------------------------------------
-@router.get("")
+@router.get("", response_model=list[User])  # the model is what keeps password_hash out of the body
 def get_all_users(session: SessionDepends, user: CurrentUser, response: Response, limit: LimitParam = 50, offset: OffsetParam = 0):
     """List all users."""
     return paginate(session.query(UserDB), response, limit, offset)
