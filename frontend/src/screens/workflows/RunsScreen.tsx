@@ -16,7 +16,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { stationsApi } from "../../api/entities";
 import { samplesApi } from "../../api/samples";
 import type { InputField, Run, RunItem } from "../../api/types";
-import { TERMINAL_RUN_STATES, runsApi } from "../../api/workflows";
+import { TERMINAL_RUN_STATES, executionApi, runsApi } from "../../api/workflows";
 import { Alert } from "../../components/Alert";
 import { Button } from "../../components/Button";
 import { DataTable, type Columns } from "../../components/DataTable";
@@ -59,6 +59,17 @@ export function RunsScreen() {
     mutationFn: ({ run, how }: { run: Run; how: "stop" | "abort" }) =>
       how === "stop" ? runsApi.stop(run.uuid) : runsApi.abort(run.uuid),
     onSuccess: () => queryClient.invalidateQueries(),
+  });
+  /** A manual run, again: same plan, same station, the values it actually sent. */
+  const again = useMutation({
+    mutationFn: (run: Run) => {
+      const item = run.items[0];
+      return executionApi.run(run.station_uuid!, item.plan, item.kwargs_sent ?? item.kwargs);
+    },
+    onSuccess: async (run) => {
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+      select(run.code);
+    },
   });
 
   const columns: Columns<Run> = useMemo(
@@ -188,8 +199,9 @@ export function RunsScreen() {
               run={selected}
               stationNames={stationNames}
               sampleCode={sampleCodes.get(selected.sample_uuids[0])}
-              busy={act.isPending}
-              error={act.error as Error | null}
+              busy={act.isPending || again.isPending}
+              error={(act.error ?? again.error) as Error | null}
+              onAgain={() => again.mutate(selected)}
               onStop={() => act.mutate({ run: selected, how: "stop" })}
               onAbort={() =>
                 confirm(`Abort ${selected.code} now? The running step is interrupted.`) &&
@@ -212,13 +224,21 @@ interface RunDetailProps {
   error: Error | null;
   onStop: () => void;
   onAbort: () => void;
+  onAgain: () => void;
   onSample: (code: string) => void;
 }
 
-function RunDetail({ run, stationNames, sampleCode, busy, error, onStop, onAbort, onSample }: RunDetailProps) {
+function RunDetail({ run, stationNames, sampleCode, busy, error, onStop, onAbort, onAgain, onSample }: RunDetailProps) {
   const active = isActive(run);
   return (
     <>
+      {!active && run.kind === "manual" && run.station_uuid && run.items[0] && (
+        <div className="step-form__actions">
+          <Button size="sm" variant="primary" onClick={onAgain} disabled={busy} title="Same plan, same values">
+            <Glyph name="rerun" size={12} /> Run again
+          </Button>
+        </div>
+      )}
       {active && (
         <div className="step-form__actions">
           <Button size="sm" onClick={onStop} disabled={busy} title="Take the remaining steps off the queue; the current one finishes">
