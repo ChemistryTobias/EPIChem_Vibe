@@ -4,6 +4,7 @@ import os
 import tempfile
 
 # Must happen before anything imports app.core.database, which reads it at import.
+os.environ["EPICHEM_ORCHESTRATOR"] = "off"  # tests advance runs explicitly (tick())
 os.environ["DATABASE_URL"] = f"sqlite:///{tempfile.mkdtemp(prefix='epichem-test-')}/test.db"
 
 import pytest

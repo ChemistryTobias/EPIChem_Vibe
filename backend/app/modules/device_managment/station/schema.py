@@ -30,6 +30,9 @@ class StationDB(ObjectDB, ObjectGeometryDB, Database):
     # Execution binding (plan §5.1 / Roadmap 1.3): the station pod's
     # bluesky-httpserver. Workflows dispatch here; unset means "not executable".
     queueserver_url: Mapped[Optional[str]] = mapped_column(String(200), default=None)
+    # Which pictogram the console draws for this station (a key into the
+    # frontend's icon set, e.g. "robot", "heat"); None = the default.
+    icon: Mapped[Optional[str]] = mapped_column(String(30), default=None)
 
 
 class StationBase(BaseModel):
@@ -38,8 +41,9 @@ class StationBase(BaseModel):
     queueserver_url: Optional[str] = Field(
         default=None,
         max_length=200,
-        description="Base URL of this station's bluesky-httpserver, e.g. http://station-sim:60610.",
+        description="Base URL of this station's bluesky-httpserver, e.g. http://station-spinbot:60610.",
     )
+    icon: Optional[str] = Field(default=None, max_length=30, description="Icon key for the console, e.g. robot.")
 
 
 class Station(Object, StationBase, ObjectGeometry):

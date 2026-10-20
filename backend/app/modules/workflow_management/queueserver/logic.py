@@ -30,10 +30,10 @@ class QueueserverClient:
         key = api_key if api_key is not None else os.environ.get(API_KEY_ENV)
         self._headers = {"Authorization": f"ApiKey {key}"} if key else {}
 
-    def _call(self, method: str, path: str, body: dict | None = None) -> dict[str, Any]:
+    def _call(self, method: str, path: str, body: dict | None = None, timeout: float | None = None) -> dict[str, Any]:
         url = f"{self.base_url}/api{path}"
         try:
-            response = httpx.request(method, url, json=body, headers=self._headers, timeout=TIMEOUT_S)
+            response = httpx.request(method, url, json=body, headers=self._headers, timeout=timeout or TIMEOUT_S)
         except httpx.HTTPError as exc:
             raise QueueserverError(f"Station queueserver at {self.base_url} is unreachable: {exc}") from exc
         if response.status_code in (401, 403):
@@ -81,6 +81,28 @@ class QueueserverClient:
 
     def open_environment(self) -> None:
         self._call("POST", "/environment/open")
+
+    def call_function(self, name: str, kwargs: dict | None = None, wait_s: float = 5.0) -> Any:
+        """Run a function from the worker namespace in the background (it can
+        run while a plan does) and return its result -- e.g. `read_devices`."""
+        import time
+
+        task = self._call(
+            "POST",
+            "/function/execute",
+            {"item": {"item_type": "function", "name": name, "args": [], "kwargs": kwargs or {}}, "run_in_background": True},
+        )
+        deadline = time.monotonic() + wait_s
+        while True:
+            result = self._call("GET", "/task/result", {"task_uid": task["task_uid"]})
+            if result.get("status") == "completed":
+                outcome = result.get("result") or {}
+                if not outcome.get("success", False):
+                    raise QueueserverError(f"Station function {name} failed: {outcome.get('msg') or 'no message'}")
+                return outcome.get("return_value")
+            if time.monotonic() > deadline:
+                raise QueueserverError(f"Station function {name} didn't finish within {wait_s:.0f} s.")
+            time.sleep(0.1)
 
     def abort(self) -> None:
         """Stop *now*: pause immediately, then abort the running plan."""
